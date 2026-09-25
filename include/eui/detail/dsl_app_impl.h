@@ -362,7 +362,10 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
     }
 
 #if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
-    devtools.update();
+    if (devtools.update()) {
+        detail::dslRuntime().requestFullPaint();
+        changed = true;
+    }
 #endif
 
     return changed;

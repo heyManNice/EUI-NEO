@@ -15,7 +15,7 @@ public:
     int contentHeight() const;
     bool visible() const { return visible_; }
     void filterInput(std::vector<PointerEvent>& pointerEvents, ScrollEvent& scrollEvent);
-    void update();
+    bool update();
     void render(int width, int height, float dpiScale, const Rect* dirtyRect);
     void releaseGraphicsResources();
     void shutdown();

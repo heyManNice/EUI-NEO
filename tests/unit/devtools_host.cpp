@@ -30,6 +30,17 @@ int main() {
     assert(host.visible());
     assert(host.contentHeight() < 600);
     assert(core::detail::inputQueue(window).keys.empty());
+    assert(host.update());
+    assert(!host.update());
+
+    core::PointerEvent toolbarPointer;
+    toolbarPointer.x = 20.0;
+    toolbarPointer.y = static_cast<double>(host.contentHeight() + 20);
+    core::ScrollEvent toolbarScroll;
+    std::vector<core::PointerEvent> toolbarEvents{toolbarPointer};
+    host.filterInput(toolbarEvents, toolbarScroll);
+    assert(host.update());
+    assert(!host.update());
 
     core::queueKeyInput(window, {core::InputKey::F12, core::KeyAction::Repeat, {}, 0});
     core::queueKeyInput(window, {core::InputKey::F12, core::KeyAction::Release, {}, 0});

@@ -800,7 +800,7 @@ if(EUI_ENABLE_INSTALL)
         FILES_MATCHING PATTERN "*.h"
         PATTERN "debug" EXCLUDE
     )
-    install(FILES core/debug/devtools_host.h
+    install(FILES core/debug/devtools_host.h core/debug/devtools_icons.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/eui-neo/core/debug
         CONFIGURATIONS Debug
     )
