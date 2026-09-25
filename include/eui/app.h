@@ -5,12 +5,40 @@
 #include "eui/window.h"
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace app {
 
 using DslWindowCompose = std::function<void(eui::Ui&, const eui::Screen&)>;
+
+namespace detail {
+struct DslWindowState {
+    enum class Phase { Pending, Open, Closed };
+    Phase phase = Phase::Pending;
+    bool closeRequested = false;
+};
+}
+
+class DslWindowHandle {
+public:
+    DslWindowHandle() = default;
+
+    // Window handles are used on the UI thread. A close request is processed by the window manager.
+    explicit operator bool() const { return static_cast<bool>(state_); }
+    bool isOpen() const { return state_ && state_->phase == detail::DslWindowState::Phase::Open; }
+    bool isClosed() const { return state_ && state_->phase == detail::DslWindowState::Phase::Closed; }
+    void requestClose() const;
+
+private:
+    explicit DslWindowHandle(std::shared_ptr<detail::DslWindowState> state)
+        : state_(std::move(state)) {}
+
+    template <typename> friend class DslWindowManager;
+    friend DslWindowHandle openWindow(const struct DslWindowConfig&, DslWindowCompose);
+    std::shared_ptr<detail::DslWindowState> state_;
+};
 
 struct DslWindowRequest {
     std::string title = "Window";
@@ -20,7 +48,9 @@ struct DslWindowRequest {
     int height = 420;
     bool modal = false;
     std::function<void(const eui::KeyEvent&)> onKeyEvent;
+    std::function<void()> onClosed;
     DslWindowCompose compose;
+    DslWindowHandle handle;
 };
 
 const char* windowTitle();

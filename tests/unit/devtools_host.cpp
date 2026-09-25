@@ -181,6 +181,120 @@ int main() {
     assert(host.contentHeight() == 600);
 
     host.shutdown();
+
+    core::debug::DevtoolsHost dockHost;
+    int detachedOpens = 0;
+    int detachedCloses = 0;
+    dockHost.setDetachedWindowOpener([&] { ++detachedOpens; });
+    dockHost.setDetachedWindowCloser([&] { ++detachedCloses; });
+    core::queueKeyInput(window, {core::InputKey::F12, core::KeyAction::Press, {}, 0});
+    assert(dockHost.beginFrame(window, 800, 600, 1.0f, true));
+    assert(dockHost.update());
+
+    const auto clickDocked = [&](double x, double y) {
+        core::PointerEvent press;
+        press.x = x;
+        press.y = y;
+        press.action = core::PointerAction::Press;
+        press.button = core::PointerButton::Left;
+        press.buttons.set(core::PointerButton::Left, true);
+        std::vector<core::PointerEvent> events{press};
+        core::ScrollEvent scroll;
+        dockHost.filterInput(events, scroll);
+        dockHost.update();
+
+        press.action = core::PointerAction::Release;
+        press.buttons.set(core::PointerButton::Left, false);
+        events = {press};
+        dockHost.filterInput(events, scroll);
+        dockHost.update();
+    };
+    const auto chooseDock = [&](int row) {
+        const core::Rect content = dockHost.contentBounds();
+        const bool side = dockHost.dockPosition() != core::debug::DockPosition::Bottom;
+        const double panelX = side && dockHost.dockPosition() == core::debug::DockPosition::Right
+            ? content.width : 0.0;
+        const double panelY = side ? 0.0 : content.height;
+        const double panelWidth = side ? 800.0 - content.width : 800.0;
+        clickDocked(panelX + panelWidth - 48.0, panelY + 16.0);
+        clickDocked(panelX + panelWidth - 136.0 - 36.0 + 10.0,
+                    panelY + 31.0 + 6.0 + 2.0 + (static_cast<double>(row) + 0.5) * 22.67);
+    };
+
+    chooseDock(1);
+    assert(dockHost.dockPosition() == core::debug::DockPosition::Left);
+    assert(dockHost.contentBounds().x == 300.0f);
+    assert(dockHost.contentBounds().width == 500.0f);
+    assert(dockHost.contentBounds().height == 600.0f);
+
+    chooseDock(3);
+    assert(dockHost.dockPosition() == core::debug::DockPosition::Right);
+    assert(dockHost.contentBounds().x == 0.0f);
+    assert(dockHost.contentBounds().width == 500.0f);
+
+    core::PointerEvent sideResize;
+    sideResize.x = 502.0;
+    sideResize.y = 200.0;
+    sideResize.action = core::PointerAction::Press;
+    sideResize.button = core::PointerButton::Left;
+    sideResize.buttons.set(core::PointerButton::Left, true);
+    std::vector<core::PointerEvent> sideResizeEvents{sideResize};
+    core::ScrollEvent sideResizeScroll;
+    dockHost.filterInput(sideResizeEvents, sideResizeScroll);
+    assert(sideResizeEvents.front().x < 0.0);
+    dockHost.update();
+    sideResize.action = core::PointerAction::Move;
+    sideResize.button = core::PointerButton::None;
+    sideResize.x = 452.0;
+    sideResizeEvents = {sideResize};
+    dockHost.filterInput(sideResizeEvents, sideResizeScroll);
+    assert(dockHost.contentBounds().width == 450.0f);
+    dockHost.update();
+    sideResize.action = core::PointerAction::Release;
+    sideResize.button = core::PointerButton::Left;
+    sideResize.buttons.set(core::PointerButton::Left, false);
+    sideResizeEvents = {sideResize};
+    dockHost.filterInput(sideResizeEvents, sideResizeScroll);
+    dockHost.update();
+
+    chooseDock(2);
+    assert(dockHost.dockPosition() == core::debug::DockPosition::Bottom);
+    assert(dockHost.contentBounds().height < 600.0f);
+
+    chooseDock(0);
+    assert(dockHost.dockPosition() == core::debug::DockPosition::Floating);
+    assert(dockHost.contentBounds().width == 800.0f);
+    assert(dockHost.contentBounds().height == 600.0f);
+    assert(detachedOpens == 1);
+
+    core::dsl::Runtime detachedRuntime;
+    const auto composeDetached = [&] {
+        detachedRuntime.compose("eui.devtools.detached", 640.0f, 420.0f,
+            [&](core::dsl::Ui& ui, const core::dsl::Screen& screen) {
+                dockHost.composeDetached(ui, screen);
+            });
+    };
+    const auto clickDetached = [&](double x, double y) {
+        core::queuePointerButton(nullptr, x, y, core::PointerButton::Left, core::PointerAction::Press, {});
+        detachedRuntime.update(nullptr, 0.0f, 1.0f, 1.0f);
+        core::queuePointerButton(nullptr, x, y, core::PointerButton::Left, core::PointerAction::Release, {});
+        detachedRuntime.update(nullptr, 0.0f, 1.0f, 1.0f);
+        if (detachedRuntime.composeRequested()) {
+            composeDetached();
+            detachedRuntime.update(nullptr, 0.0f, 1.0f, 1.0f);
+        }
+    };
+    composeDetached();
+    detachedRuntime.update(nullptr, 0.0f, 1.0f, 1.0f);
+    clickDetached(592.0, 16.0);
+    clickDetached(478.0, 95.0);
+    assert(dockHost.dockPosition() == core::debug::DockPosition::Bottom);
+    assert(detachedCloses == 1);
+    dockHost.detachedWindowClosed();
+    assert(dockHost.visible());
+    assert(dockHost.contentBounds().height < 600.0f);
+    detachedRuntime.shutdown(false);
+    dockHost.shutdown();
     core::detail::inputQueues().erase(window);
     core::detail::pointerStates().erase(window);
 }

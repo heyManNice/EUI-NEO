@@ -2,7 +2,11 @@
 
 #include "core/dsl_runtime.h"
 
+#include <functional>
+
 namespace core::debug {
+
+enum class DockPosition { Floating, Left, Bottom, Right };
 
 class DevtoolsHost {
 public:
@@ -12,8 +16,15 @@ public:
                     float dpiScale,
                     bool inputEnabled);
 
+    Rect contentBounds() const;
     int contentHeight() const;
     bool visible() const { return visible_; }
+    DockPosition dockPosition() const { return dockPosition_; }
+    void setDetachedWindowOpener(std::function<void()> opener);
+    void setDetachedWindowCloser(std::function<void()> closer);
+    void detachedWindowClosed();
+    void composeDetached(core::dsl::Ui& ui, const core::dsl::Screen& screen);
+    void handleDetachedKey(const KeyEvent& key);
     void filterInput(std::vector<PointerEvent>& pointerEvents, ScrollEvent& scrollEvent);
     bool update();
     void updateCursor(core::window::Handle window);
@@ -22,9 +33,13 @@ public:
     void shutdown();
 
 private:
-    int panelHeight() const;
-    int minimumPanelHeight() const;
-    int maximumPanelHeight() const;
+    int panelSize() const;
+    int minimumPanelSize() const;
+    int maximumPanelSize() const;
+    Rect panelBounds() const;
+    void selectDockPosition(DockPosition position);
+    void close();
+    void composeUi(core::dsl::Ui& ui, float width, float height, const Rect& panel, bool detached);
     bool overResizeBoundary(double x, double y) const;
     void resetCursor();
 
@@ -33,14 +48,19 @@ private:
     int framebufferHeight_ = 0;
     float dpiScale_ = 1.0f;
     float panelHeightLogical_ = 0.0f;
+    float panelWidthLogical_ = 0.0f;
+    double dragStartX_ = 0.0;
     double dragStartY_ = 0.0;
-    int dragStartHeight_ = 0;
+    int dragStartSize_ = 0;
     bool resizing_ = false;
     bool resizeCursorActive_ = false;
     bool resizeCursorApplied_ = false;
     core::window::CursorHandle handCursor_ = nullptr;
     core::window::Handle cursorWindow_ = nullptr;
     bool visible_ = false;
+    DockPosition dockPosition_ = DockPosition::Bottom;
+    std::function<void()> detachedWindowOpener_;
+    std::function<void()> detachedWindowCloser_;
     bool moreMenuOpen_ = false;
     bool composeRequested_ = true;
 };

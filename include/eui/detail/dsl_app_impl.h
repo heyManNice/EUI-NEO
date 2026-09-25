@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <memory>
 #include <vector>
 
 #if defined(__APPLE__)
@@ -134,12 +135,20 @@ inline void applyWindowIcon(core::window::Handle window) {
 
 } // namespace detail
 
-void openWindow(const DslWindowConfig& config, DslWindowCompose composeFn) {
+void DslWindowHandle::requestClose() const {
+    if (state_ && state_->phase != detail::DslWindowState::Phase::Closed) {
+        state_->closeRequested = true;
+        requestUpdate();
+    }
+}
+
+DslWindowHandle openWindow(const DslWindowConfig& config, DslWindowCompose composeFn) {
     if (!composeFn) {
-        return;
+        return {};
     }
 
     DslWindowRequest request;
+    request.handle = DslWindowHandle(std::make_shared<detail::DslWindowState>());
     request.title = config.titleValue.empty() ? "Window" : config.titleValue;
     request.pageId = config.pageIdValue.empty() ? request.title : config.pageIdValue;
     request.clearColor = config.clearColorValue;
@@ -147,13 +156,16 @@ void openWindow(const DslWindowConfig& config, DslWindowCompose composeFn) {
     request.height = std::max(120, config.windowHeightValue);
     request.modal = config.modalValue;
     request.onKeyEvent = config.keyEventHandler;
+    request.onClosed = config.closedHandler;
     request.compose = std::move(composeFn);
+    DslWindowHandle handle = request.handle;
     detail::dslWindowRequests().push_back(std::move(request));
     requestUpdate();
+    return handle;
 }
 
-void openWindow(const char* title, int width, int height, DslWindowCompose composeFn) {
-    openWindow(DslWindowConfig{}
+DslWindowHandle openWindow(const char* title, int width, int height, DslWindowCompose composeFn) {
+    return openWindow(DslWindowConfig{}
                    .title(title != nullptr ? title : "Window")
                    .pageId(title != nullptr ? title : "window")
                    .windowSize(width, height),
@@ -288,6 +300,30 @@ bool initialize(core::window::Handle window) {
     detail::dslRuntime().setOverlayRenderer([](int width, int height, float dpiScale, const core::Rect* dirtyRect) {
         core::debug::devtoolsHost().render(width, height, dpiScale, dirtyRect);
     });
+    auto detachedHandle = std::make_shared<DslWindowHandle>();
+    auto detachedGeneration = std::make_shared<unsigned int>(0);
+    core::debug::devtoolsHost().setDetachedWindowOpener([detachedHandle, detachedGeneration] {
+        const unsigned int generation = ++*detachedGeneration;
+        *detachedHandle = openWindow(DslWindowConfig{}
+            .title("EUI DevTools")
+            .pageId("eui.devtools.detached")
+            .clearColor({0.125f, 0.145f, 0.176f, 1.0f})
+            .windowSize(640, 420)
+            .onKeyEvent([](const eui::KeyEvent& key) {
+                core::debug::devtoolsHost().handleDetachedKey(key);
+            })
+            .onClosed([detachedGeneration, generation] {
+                if (*detachedGeneration == generation) {
+                    core::debug::devtoolsHost().detachedWindowClosed();
+                }
+            }),
+            [](eui::Ui& ui, const eui::Screen& screen) {
+                core::debug::devtoolsHost().composeDetached(ui, screen);
+            });
+    });
+    core::debug::devtoolsHost().setDetachedWindowCloser([detachedHandle] {
+        detachedHandle->requestClose();
+    });
 #endif
 
     detail::DslAppState& state = detail::dslAppState();
@@ -315,26 +351,46 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
 
     const DslAppConfig& config = dslAppConfig();
     const float effectiveScale = dpiScale * uiScale();
-    const float logicalWidth = static_cast<float>(windowWidth) / effectiveScale;
+    int contentWidth = windowWidth;
     int contentHeight = windowHeight;
 #if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+    int contentX = 0;
     core::debug::DevtoolsHost& devtools = core::debug::devtoolsHost();
     if (devtools.beginFrame(window, windowWidth, windowHeight, effectiveScale, inputEnabled)) {
         detail::dslRuntime().requestFullPaint();
         updateRequested = true;
     }
-    contentHeight = devtools.contentHeight();
+    const core::Rect content = devtools.contentBounds();
+    contentX = static_cast<int>(content.x);
+    contentWidth = static_cast<int>(content.width);
+    contentHeight = static_cast<int>(content.height);
 #endif
+    float logicalWidth = static_cast<float>(contentWidth) / effectiveScale;
     float logicalHeight = static_cast<float>(contentHeight) / effectiveScale;
     detail::DslAppState& state = detail::dslAppState();
 
     const auto composeFrame = [&] {
-        detail::dslRuntime().compose(config.pageIdValue, logicalWidth, logicalHeight, [](core::dsl::Ui& ui, const core::dsl::Screen& screen) {
-            compose(ui, screen);
-            const DslAppConfig& config = dslAppConfig();
-            if (showDebugOverlay()) {
-                config.debugOverlayCompose(ui, screen);
+        detail::dslRuntime().compose(config.pageIdValue, logicalWidth, logicalHeight, [&](core::dsl::Ui& ui, const core::dsl::Screen& screen) {
+            const auto composeContent = [&] {
+                compose(ui, screen);
+                if (showDebugOverlay()) {
+                    config.debugOverlayCompose(ui, screen);
+                }
+            };
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+            if (contentX > 0) {
+                ui.stack("eui.devtools.content")
+                    .position(static_cast<float>(contentX) / effectiveScale, 0.0f)
+                    .size(logicalWidth, logicalHeight)
+                    .clip()
+                    .content(composeContent)
+                    .build();
+            } else {
+                composeContent();
             }
+#else
+            composeContent();
+#endif
         });
         state.composed = true;
         state.logicalWidth = logicalWidth;
@@ -366,8 +422,14 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
         detail::dslRuntime().requestFullPaint();
         changed = true;
     }
-    if (contentHeight != devtools.contentHeight()) {
-        contentHeight = devtools.contentHeight();
+    const core::Rect updatedContent = devtools.contentBounds();
+    if (contentX != static_cast<int>(updatedContent.x) ||
+        contentWidth != static_cast<int>(updatedContent.width) ||
+        contentHeight != static_cast<int>(updatedContent.height)) {
+        contentX = static_cast<int>(updatedContent.x);
+        contentWidth = static_cast<int>(updatedContent.width);
+        contentHeight = static_cast<int>(updatedContent.height);
+        logicalWidth = static_cast<float>(contentWidth) / effectiveScale;
         logicalHeight = static_cast<float>(contentHeight) / effectiveScale;
         detail::dslRuntime().requestFullPaint();
         composeFrame();

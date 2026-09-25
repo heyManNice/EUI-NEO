@@ -105,6 +105,15 @@ Debug 配置只控制诊断输出，不参与业务状态。`showDebugStatsInTit
 
 不设置 `.textFont(...)` 时使用 `core/render/text.cpp` 里的全局默认文本字体；不设置 `.iconFont(...)` 时使用全局默认图标字体。默认字体优先从可执行文件旁的 `assets/`、工作目录 `assets/`、上级运行目录 `assets/` 查找；找不到内置字体资源时会回退到平台系统字体，避免单 exe 漏带 assets 后普通文本整段不可见。
 
+子窗口由 `app::openWindow` 打开，并返回可复制的 `DslWindowHandle`。在 UI 线程调用 `handle.requestClose()` 可请求关闭；`DslWindowConfig::onClosed` 在窗口销毁后调用，也会在创建失败或创建前取消时调用。`handle.isOpen()` 表示窗口已创建且尚未关闭，`handle.isClosed()` 表示关闭流程已完成。
+
+```cpp
+app::DslWindowHandle details = app::openWindow(
+    app::DslWindowConfig{}.title("Details").onClosed([] { /* release window state */ }),
+    [](eui::Ui& ui, const eui::Screen& screen) { /* compose window content */ });
+details.requestClose();
+```
+
 ## 颜色
 
 所有接收 `eui::Color`（即 `core::Color`）的接口均可直接使用 HEX 字符串，原有浮点 RGBA 写法继续可用：

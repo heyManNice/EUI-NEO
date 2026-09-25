@@ -105,7 +105,9 @@ void composeToolbarTab(core::dsl::Ui& ui, const std::string& id, const std::stri
 }
 
 void composeDockOption(core::dsl::Ui& ui, const std::string& id, const char* svg,
-                       const std::string& label, bool selected) {
+                       const std::string& label, DockPosition position, DockPosition selectedPosition,
+                       const std::function<void(DockPosition)>& onSelect) {
+    const bool selected = position == selectedPosition;
     ui.stack(id)
         .width(core::SizeValue::fill())
         .height(kMoreMenuRowHeight)
@@ -119,7 +121,7 @@ void composeDockOption(core::dsl::Ui& ui, const std::string& id, const char* svg
                         {0.27f, 0.35f, 0.45f, 1.0f})
                 .radius(5.0f)
                 .instantStates()
-                .interactive()
+                .onClick([onSelect, position] { onSelect(position); })
                 .build();
             ui.row(id + ".content")
                 .fill()
@@ -147,7 +149,8 @@ void composeDockOption(core::dsl::Ui& ui, const std::string& id, const char* svg
         .build();
 }
 
-void composeMoreMenu(core::dsl::Ui& ui, float x, float y) {
+void composeMoreMenu(core::dsl::Ui& ui, float x, float y, DockPosition selectedPosition,
+                     const std::function<void(DockPosition)>& onSelect) {
     ui.stack("more.menu")
         .position(x, y)
         .width(kMoreMenuWidth)
@@ -166,13 +169,13 @@ void composeMoreMenu(core::dsl::Ui& ui, float x, float y) {
                 .padding(kMoreMenuPadding)
                 .content([&] {
                     composeDockOption(ui, "more.menu.dock.floating", icons::kDockFloatingSvg,
-                                      "Separate Window", false);
+                                      "Separate Window", DockPosition::Floating, selectedPosition, onSelect);
                     composeDockOption(ui, "more.menu.dock.left", icons::kDockLeftSvg,
-                                      "Dock to Left", false);
+                                      "Dock to Left", DockPosition::Left, selectedPosition, onSelect);
                     composeDockOption(ui, "more.menu.dock.bottom", icons::kDockBottomSvg,
-                                      "Dock to Bottom", true);
+                                      "Dock to Bottom", DockPosition::Bottom, selectedPosition, onSelect);
                     composeDockOption(ui, "more.menu.dock.right", icons::kDockRightSvg,
-                                      "Dock to Right", false);
+                                      "Dock to Right", DockPosition::Right, selectedPosition, onSelect);
                 })
                 .build();
         })
@@ -184,6 +187,63 @@ void composeMoreMenu(core::dsl::Ui& ui, float x, float y) {
 DevtoolsHost& devtoolsHost() {
     static DevtoolsHost host;
     return host;
+}
+
+void DevtoolsHost::setDetachedWindowOpener(std::function<void()> opener) {
+    detachedWindowOpener_ = std::move(opener);
+}
+
+void DevtoolsHost::setDetachedWindowCloser(std::function<void()> closer) {
+    detachedWindowCloser_ = std::move(closer);
+}
+
+void DevtoolsHost::close() {
+    visible_ = false;
+    moreMenuOpen_ = false;
+    composeRequested_ = true;
+    resizing_ = false;
+    resizeCursorActive_ = false;
+    if (dockPosition_ == DockPosition::Floating && detachedWindowCloser_) {
+        detachedWindowCloser_();
+    }
+    resetCursor();
+    core::platform::requestUiUpdate();
+}
+
+void DevtoolsHost::selectDockPosition(DockPosition position) {
+    moreMenuOpen_ = false;
+    if (position == dockPosition_) {
+        composeRequested_ = true;
+        return;
+    }
+    if (dockPosition_ == DockPosition::Floating && detachedWindowCloser_) {
+        detachedWindowCloser_();
+    }
+    dockPosition_ = position;
+    resizing_ = false;
+    resizeCursorActive_ = false;
+    resetCursor();
+    composeRequested_ = true;
+    if (position == DockPosition::Floating) {
+        if (detachedWindowOpener_) {
+            detachedWindowOpener_();
+        }
+    }
+    core::platform::requestUiUpdate();
+}
+
+void DevtoolsHost::detachedWindowClosed() {
+    if (dockPosition_ == DockPosition::Floating) {
+        close();
+    }
+}
+
+void DevtoolsHost::handleDetachedKey(const KeyEvent& key) {
+    if (key.action == KeyAction::Press &&
+        (key.key == InputKey::F12 ||
+         (key.key == InputKey::I && key.modifiers.control && key.modifiers.shift))) {
+        close();
+    }
 }
 
 bool DevtoolsHost::beginFrame(core::window::Handle window,
@@ -213,13 +273,14 @@ bool DevtoolsHost::beginFrame(core::window::Handle window,
             return false;
         }
         if (key.action == KeyAction::Press) {
-            visible_ = !visible_;
-            composeRequested_ = true;
-            if (!visible_) {
-                moreMenuOpen_ = false;
-                resizing_ = false;
-                resizeCursorActive_ = false;
-                resetCursor();
+            if (visible_) {
+                close();
+            } else {
+                visible_ = true;
+                composeRequested_ = true;
+                if (dockPosition_ == DockPosition::Floating && detachedWindowOpener_) {
+                    detachedWindowOpener_();
+                }
             }
             toggled = true;
         }
@@ -228,40 +289,84 @@ bool DevtoolsHost::beginFrame(core::window::Handle window,
     return toggled;
 }
 
-int DevtoolsHost::panelHeight() const {
-    if (!visible_ || framebufferHeight_ <= 0) {
+int DevtoolsHost::panelSize() const {
+    if (!visible_ || dockPosition_ == DockPosition::Floating ||
+        framebufferWidth_ <= 0 || framebufferHeight_ <= 0) {
         return 0;
     }
-    const int minimumPanel = minimumPanelHeight();
-    const int maximumPanel = maximumPanelHeight();
-    const int preferred = std::clamp(static_cast<int>(std::lround(framebufferHeight_ * 0.42f)),
-                                     minimumPanel,
-                                     std::min(maximumPanel, static_cast<int>(std::lround(320.0f * dpiScale_))));
-    const int requested = panelHeightLogical_ > 0.0f
-        ? static_cast<int>(std::lround(panelHeightLogical_ * dpiScale_)) : preferred;
-    return std::clamp(requested, minimumPanel, maximumPanel);
+    const bool horizontal = dockPosition_ != DockPosition::Bottom;
+    const int available = horizontal ? framebufferWidth_ : framebufferHeight_;
+    const int maximum = maximumPanelSize();
+    const int minimum = minimumPanelSize();
+    const int preferred = std::clamp(static_cast<int>(std::lround(available * (horizontal ? 0.35f : 0.42f))),
+                                     minimum, std::min(maximum, static_cast<int>(std::lround(
+                                         (horizontal ? 460.0f : 320.0f) * dpiScale_))));
+    const float savedLogical = horizontal ? panelWidthLogical_ : panelHeightLogical_;
+    const int requested = savedLogical > 0.0f
+        ? static_cast<int>(std::lround(savedLogical * dpiScale_)) : preferred;
+    return std::clamp(requested, minimum, maximum);
 }
 
-int DevtoolsHost::minimumPanelHeight() const {
-    return std::min(maximumPanelHeight(), static_cast<int>(std::lround(180.0f * dpiScale_)));
+int DevtoolsHost::minimumPanelSize() const {
+    const float logical = dockPosition_ == DockPosition::Bottom ? 180.0f : 300.0f;
+    return std::min(maximumPanelSize(), static_cast<int>(std::lround(logical * dpiScale_)));
 }
 
-int DevtoolsHost::maximumPanelHeight() const {
+int DevtoolsHost::maximumPanelSize() const {
     const int minimumContent = std::max(80, static_cast<int>(std::lround(120.0f * dpiScale_)));
-    return std::max(0, framebufferHeight_ - minimumContent);
+    const int available = dockPosition_ == DockPosition::Bottom ? framebufferHeight_ : framebufferWidth_;
+    return std::max(0, available - minimumContent);
+}
+
+Rect DevtoolsHost::panelBounds() const {
+    const float size = static_cast<float>(panelSize());
+    if (dockPosition_ == DockPosition::Left) {
+        return {0.0f, 0.0f, size, static_cast<float>(framebufferHeight_)};
+    }
+    if (dockPosition_ == DockPosition::Right) {
+        return {static_cast<float>(framebufferWidth_) - size, 0.0f, size,
+                static_cast<float>(framebufferHeight_)};
+    }
+    if (dockPosition_ == DockPosition::Bottom) {
+        return {0.0f, static_cast<float>(framebufferHeight_) - size,
+                static_cast<float>(framebufferWidth_), size};
+    }
+    return {};
+}
+
+Rect DevtoolsHost::contentBounds() const {
+    const float width = static_cast<float>(framebufferWidth_);
+    const float height = static_cast<float>(framebufferHeight_);
+    if (!visible_ || dockPosition_ == DockPosition::Floating) {
+        return {0.0f, 0.0f, width, height};
+    }
+    const Rect panel = panelBounds();
+    if (dockPosition_ == DockPosition::Left) {
+        return {panel.width, 0.0f, width - panel.width, height};
+    }
+    if (dockPosition_ == DockPosition::Right) {
+        return {0.0f, 0.0f, width - panel.width, height};
+    }
+    return {0.0f, 0.0f, width, height - panel.height};
 }
 
 int DevtoolsHost::contentHeight() const {
-    return framebufferHeight_ - panelHeight();
+    return static_cast<int>(contentBounds().height);
 }
 
 bool DevtoolsHost::overResizeBoundary(double x, double y) const {
-    return x >= 0.0 && x < framebufferWidth_ &&
-           std::abs(y - contentHeight()) <= kResizeBoundaryHalfWidth * dpiScale_;
+    const Rect panel = panelBounds();
+    if (dockPosition_ == DockPosition::Bottom) {
+        return x >= 0.0 && x < framebufferWidth_ &&
+               std::abs(y - panel.y) <= kResizeBoundaryHalfWidth * dpiScale_;
+    }
+    const float boundary = dockPosition_ == DockPosition::Left ? panel.width : panel.x;
+    return y >= 0.0 && y < framebufferHeight_ &&
+           std::abs(x - boundary) <= kResizeBoundaryHalfWidth * dpiScale_;
 }
 
 void DevtoolsHost::filterInput(std::vector<PointerEvent>& pointerEvents, ScrollEvent& scrollEvent) {
-    if (!visible_ || panelHeight() <= 0) {
+    if (!visible_ || panelSize() <= 0) {
         return;
     }
     bool pointerInPanel = false;
@@ -270,14 +375,18 @@ void DevtoolsHost::filterInput(std::vector<PointerEvent>& pointerEvents, ScrollE
         const bool captured = resizing_;
         if (event.isPress(PointerButton::Left) && overBoundary) {
             resizing_ = true;
+            dragStartX_ = event.x;
             dragStartY_ = event.y;
-            dragStartHeight_ = panelHeight();
+            dragStartSize_ = panelSize();
         }
         if (resizing_ && (event.action == PointerAction::Move || event.isRelease(PointerButton::Left))) {
-            const int height = std::clamp(static_cast<int>(std::lround(dragStartHeight_ - (event.y - dragStartY_))),
-                                          minimumPanelHeight(), maximumPanelHeight());
-            if (height != panelHeight()) {
-                panelHeightLogical_ = static_cast<float>(height) / dpiScale_;
+            const double delta = dockPosition_ == DockPosition::Bottom ? dragStartY_ - event.y
+                : dockPosition_ == DockPosition::Left ? event.x - dragStartX_ : dragStartX_ - event.x;
+            const int size = std::clamp(static_cast<int>(std::lround(dragStartSize_ + delta)),
+                                        minimumPanelSize(), maximumPanelSize());
+            if (size != panelSize()) {
+                (dockPosition_ == DockPosition::Bottom ? panelHeightLogical_ : panelWidthLogical_) =
+                    static_cast<float>(size) / dpiScale_;
                 composeRequested_ = true;
             }
         }
@@ -286,9 +395,9 @@ void DevtoolsHost::filterInput(std::vector<PointerEvent>& pointerEvents, ScrollE
             resizing_ = false;
         }
         resizeCursorActive_ = resizing_ || overResizeBoundary(event.x, event.y);
-        const int panelTop = contentHeight();
-        const bool inside = event.y >= panelTop && event.y < framebufferHeight_ &&
-                            event.x >= 0.0 && event.x < framebufferWidth_;
+        const Rect panel = panelBounds();
+        const bool inside = event.x >= panel.x && event.x < panel.x + panel.width &&
+                            event.y >= panel.y && event.y < panel.y + panel.height;
         queueDevtoolsPointer(event, inside && !resizeCursorActive_);
         if (!inside && !overBoundary && !captured) {
             pointerInPanel = false;
@@ -308,123 +417,132 @@ void DevtoolsHost::filterInput(std::vector<PointerEvent>& pointerEvents, ScrollE
     }
 }
 
+void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height,
+                             const Rect& panel, bool detached) {
+    ui.stack("root")
+        .size(width, height)
+        .content([&] {
+            ui.column("panel")
+                .position(panel.x, panel.y)
+                .size(panel.width, panel.height)
+                .content([&] {
+                    ui.rect("panel.background")
+                        .fill()
+                        .ignoreLayout()
+                        .color("#20252D")
+                        .build();
+                    if (!detached) {
+                        ui.rect("panel.border")
+                            .width(core::SizeValue::fill())
+                            .height(1.0f)
+                            .color("#596574")
+                            .build();
+                    }
+                    ui.stack("toolbar")
+                        .width(core::SizeValue::fill())
+                        .height(kToolbarHeight)
+                        .content([&] {
+                            ui.rect("toolbar.background")
+                                .fill()
+                                .ignoreLayout()
+                                .color("#292F38")
+                                .build();
+                            ui.row("toolbar.items")
+                                .fill()
+                                .padding(8.0f, 0.0f)
+                                .alignItems(core::Align::CENTER)
+                                .content([&] {
+                                    ui.row("toolbar.leading")
+                                        .width(core::SizeValue::wrapContent())
+                                        .height(24.0f)
+                                        .gap(4.0f)
+                                        .content([&] {
+                                            composeToolbarIcon(ui, "selectElement", icons::kSelectElementSvg);
+                                            composeToolbarIcon(ui, "deviceViewport", icons::kDeviceViewportSvg);
+                                        })
+                                        .build();
+                                    ui.row("toolbar.tabs")
+                                        .width(core::SizeValue::wrapContent())
+                                        .height(kToolbarHeight)
+                                        .margin(8.0f, 0.0f, 0.0f, 0.0f)
+                                        .content([&] {
+                                            composeToolbarTab(ui, "elements.tab", "Elements", true);
+                                        })
+                                        .build();
+                                    ui.stack("toolbar.spacer")
+                                        .width(core::SizeValue::fill())
+                                        .height(1.0f)
+                                        .build();
+                                    ui.row("toolbar.trailing")
+                                        .width(core::SizeValue::wrapContent())
+                                        .height(24.0f)
+                                        .gap(4.0f)
+                                        .content([&] {
+                                            composeToolbarIcon(ui, "settings", icons::kSettingsSvg);
+                                            composeToolbarIcon(ui, "more", icons::kMoreSvg, [this] {
+                                                moreMenuOpen_ = !moreMenuOpen_;
+                                                composeRequested_ = true;
+                                            });
+                                            composeToolbarIcon(ui, "close", icons::kCloseSvg, [this] {
+                                                close();
+                                            });
+                                        })
+                                        .build();
+                                })
+                                .build();
+                        })
+                        .build();
+                    ui.column("panel.content")
+                        .width(core::SizeValue::fill())
+                        .height(core::SizeValue::fill())
+                        .padding(24.0f, 28.0f, 24.0f, 0.0f)
+                        .gap(10.0f)
+                        .content([&] {
+                            ui.text("empty.title")
+                                .width(core::SizeValue::fill())
+                                .height(28.0f)
+                                .text("EUI DevTools")
+                                .fontSize(19.0f)
+                                .color("#ECF3FA")
+                                .build();
+                            ui.text("empty.description")
+                                .width(core::SizeValue::fill())
+                                .height(24.0f)
+                                .text("Element inspection is the next milestone.")
+                                .fontSize(13.0f)
+                                .color("#9CA9B8")
+                                .build();
+                        })
+                        .build();
+                })
+                .build();
+            if (moreMenuOpen_) {
+                composeMoreMenu(ui,
+                                std::max(panel.x + 8.0f, panel.x + panel.width - kMoreMenuWidth - 36.0f),
+                                panel.y + kToolbarHeight + 6.0f, dockPosition_,
+                                [this](DockPosition position) { selectDockPosition(position); });
+            }
+        })
+        .build();
+}
+
+void DevtoolsHost::composeDetached(core::dsl::Ui& ui, const core::dsl::Screen& screen) {
+    composeUi(ui, screen.width, screen.height, {0.0f, 0.0f, screen.width, screen.height}, true);
+}
+
 bool DevtoolsHost::update() {
-    if (!visible_ || panelHeight() <= 0 || dpiScale_ <= 0.0f) {
+    if (!visible_ || dockPosition_ == DockPosition::Floating || panelSize() <= 0 || dpiScale_ <= 0.0f) {
         return false;
     }
 
     const auto composePanel = [&] {
         const float width = static_cast<float>(framebufferWidth_) / dpiScale_;
         const float height = static_cast<float>(framebufferHeight_) / dpiScale_;
-        const float panelTop = static_cast<float>(contentHeight()) / dpiScale_;
-        const float panelSize = height - panelTop;
+        const Rect pixelPanel = panelBounds();
+        const Rect logicalPanel{pixelPanel.x / dpiScale_, pixelPanel.y / dpiScale_,
+                                pixelPanel.width / dpiScale_, pixelPanel.height / dpiScale_};
         runtime_.compose("eui.devtools", width, height, [&](core::dsl::Ui& ui, const core::dsl::Screen&) {
-            ui.stack("root")
-                .size(width, height)
-                .content([&] {
-                    ui.column("panel")
-                        .position(0.0f, panelTop)
-                        .size(width, panelSize)
-                        .content([&] {
-                            ui.rect("panel.background")
-                                .fill()
-                                .ignoreLayout()
-                                .color("#20252D")
-                                .build();
-                            ui.rect("panel.border")
-                                .width(core::SizeValue::fill())
-                                .height(1.0f)
-                                .color("#596574")
-                                .build();
-                            ui.stack("toolbar")
-                                .width(core::SizeValue::fill())
-                                .height(kToolbarHeight)
-                                .content([&] {
-                                    ui.rect("toolbar.background")
-                                        .fill()
-                                        .ignoreLayout()
-                                        .color("#292F38")
-                                        .build();
-                                    ui.row("toolbar.items")
-                                        .fill()
-                                        .padding(8.0f, 0.0f)
-                                        .alignItems(core::Align::CENTER)
-                                        .content([&] {
-                                            ui.row("toolbar.leading")
-                                                .width(core::SizeValue::wrapContent())
-                                                .height(24.0f)
-                                                .gap(4.0f)
-                                                .content([&] {
-                                                    composeToolbarIcon(ui, "selectElement", icons::kSelectElementSvg);
-                                                    composeToolbarIcon(ui, "deviceViewport", icons::kDeviceViewportSvg);
-                                                })
-                                                .build();
-                                            ui.row("toolbar.tabs")
-                                                .width(core::SizeValue::wrapContent())
-                                                .height(kToolbarHeight)
-                                                .margin(8.0f, 0.0f, 0.0f, 0.0f)
-                                                .content([&] {
-                                                    composeToolbarTab(ui, "elements.tab", "Elements", true);
-                                                })
-                                                .build();
-                                            ui.stack("toolbar.spacer")
-                                                .width(core::SizeValue::fill())
-                                                .height(1.0f)
-                                                .build();
-                                            ui.row("toolbar.trailing")
-                                                .width(core::SizeValue::wrapContent())
-                                                .height(24.0f)
-                                                .gap(4.0f)
-                                                .content([&] {
-                                                    composeToolbarIcon(ui, "settings", icons::kSettingsSvg);
-                                                    composeToolbarIcon(ui, "more", icons::kMoreSvg, [this] {
-                                                        moreMenuOpen_ = !moreMenuOpen_;
-                                                        composeRequested_ = true;
-                                                    });
-                                                    composeToolbarIcon(ui, "close", icons::kCloseSvg, [this] {
-                                                        visible_ = false;
-                                                        moreMenuOpen_ = false;
-                                                        composeRequested_ = true;
-                                                        resizing_ = false;
-                                                        resizeCursorActive_ = false;
-                                                        resetCursor();
-                                                    });
-                                                })
-                                                .build();
-                                        })
-                                        .build();
-                                })
-                                .build();
-                            ui.column("panel.content")
-                                .width(core::SizeValue::fill())
-                                .height(core::SizeValue::fill())
-                                .padding(24.0f, 28.0f, 24.0f, 0.0f)
-                                .gap(10.0f)
-                                .content([&] {
-                                    ui.text("empty.title")
-                                        .width(core::SizeValue::fill())
-                                        .height(28.0f)
-                                        .text("EUI DevTools")
-                                        .fontSize(19.0f)
-                                        .color("#ECF3FA")
-                                        .build();
-                                    ui.text("empty.description")
-                                        .width(core::SizeValue::fill())
-                                        .height(24.0f)
-                                        .text("Element inspection is the next milestone.")
-                                        .fontSize(13.0f)
-                                        .color("#9CA9B8")
-                                        .build();
-                                })
-                                .build();
-                        })
-                        .build();
-                    if (moreMenuOpen_) {
-                        composeMoreMenu(ui, std::max(8.0f, width - kMoreMenuWidth - 36.0f),
-                                        panelTop + kToolbarHeight + 6.0f);
-                    }
-                })
-                .build();
+            composeUi(ui, width, height, logicalPanel, false);
         });
         composeRequested_ = false;
     };
@@ -432,17 +550,18 @@ bool DevtoolsHost::update() {
         composePanel();
     }
     const bool wasVisible = visible_;
+    const DockPosition previousDock = dockPosition_;
     const bool repainted = runtime_.update(nullptr, 0.0f, 1.0f, dpiScale_);
-    const bool menuChanged = visible_ && composeRequested_;
-    if (menuChanged) {
+    const bool panelChanged = visible_ && dockPosition_ != DockPosition::Floating && composeRequested_;
+    if (panelChanged) {
         composePanel();
         runtime_.update(nullptr, 0.0f, 1.0f, dpiScale_);
     }
-    return repainted || wasVisible != visible_ || menuChanged;
+    return repainted || wasVisible != visible_ || previousDock != dockPosition_ || panelChanged;
 }
 
 void DevtoolsHost::updateCursor(core::window::Handle window) {
-    if (visible_ && resizeCursorActive_) {
+    if (visible_ && dockPosition_ != DockPosition::Floating && resizeCursorActive_) {
         if (!handCursor_) {
             handCursor_ = core::window::createStandardCursor(core::window::CursorType::Hand);
         }
@@ -461,7 +580,7 @@ void DevtoolsHost::resetCursor() {
 }
 
 void DevtoolsHost::render(int width, int height, float dpiScale, const Rect* dirtyRect) {
-    if (visible_) {
+    if (visible_ && dockPosition_ != DockPosition::Floating) {
         runtime_.renderDirectOverlay(width, height, dpiScale, dirtyRect);
     }
 }
@@ -479,10 +598,14 @@ void DevtoolsHost::shutdown() {
     }
     runtime_.shutdown(false);
     visible_ = false;
+    dockPosition_ = DockPosition::Bottom;
+    detachedWindowOpener_ = {};
+    detachedWindowCloser_ = {};
     moreMenuOpen_ = false;
     resizing_ = false;
     resizeCursorActive_ = false;
     panelHeightLogical_ = 0.0f;
+    panelWidthLogical_ = 0.0f;
     resizeCursorApplied_ = false;
     cursorWindow_ = nullptr;
     composeRequested_ = true;

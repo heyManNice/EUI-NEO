@@ -144,6 +144,7 @@ struct DslWindowConfig {
     int windowHeightValue = 420;
     bool modalValue = false;
     std::function<void(const eui::KeyEvent&)> keyEventHandler;
+    std::function<void()> closedHandler;
 
     DslWindowConfig& title(std::string value) { titleValue = std::move(value); return *this; }
     DslWindowConfig& pageId(std::string value) { pageIdValue = std::move(value); return *this; }
@@ -161,12 +162,16 @@ struct DslWindowConfig {
         keyEventHandler = std::move(handler);
         return *this;
     }
+    DslWindowConfig& onClosed(std::function<void()> handler) {
+        closedHandler = std::move(handler);
+        return *this;
+    }
 };
 
 const DslAppConfig& dslAppConfig();
 void compose(eui::Ui& ui, const eui::Screen& screen);
 
-void openWindow(const DslWindowConfig& config, DslWindowCompose composeFn);
-void openWindow(const char* title, int width, int height, DslWindowCompose composeFn);
+DslWindowHandle openWindow(const DslWindowConfig& config, DslWindowCompose composeFn);
+DslWindowHandle openWindow(const char* title, int width, int height, DslWindowCompose composeFn);
 
 } // namespace app
