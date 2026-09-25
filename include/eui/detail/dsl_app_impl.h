@@ -2,6 +2,9 @@
 
 #include "eui/dsl_app.h"
 #include "eui/network.h"
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+#include "core/debug/devtools_host.h"
+#endif
 
 #include "3rd/stb_image.h"
 #include "core/dsl_runtime.h"
@@ -277,6 +280,15 @@ bool initialize(core::window::Handle window) {
     const DslAppConfig& config = dslAppConfig();
     core::TextPrimitive::setDefaultFontFiles(config.textFontFileValue, config.iconFontFileValue);
     detail::dslRuntime().setKeyEventHandler(config.keyEventHandler);
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+    detail::dslRuntime().setInputFilter([](std::vector<core::PointerEvent>& pointerEvents,
+                                            core::ScrollEvent& scrollEvent) {
+        core::debug::devtoolsHost().filterInput(pointerEvents, scrollEvent);
+    });
+    detail::dslRuntime().setOverlayRenderer([](int width, int height, float dpiScale, const core::Rect* dirtyRect) {
+        core::debug::devtoolsHost().render(width, height, dpiScale, dirtyRect);
+    });
+#endif
 
     detail::DslAppState& state = detail::dslAppState();
     if (!state.iconApplied) {
@@ -304,7 +316,16 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
     const DslAppConfig& config = dslAppConfig();
     const float effectiveScale = dpiScale * uiScale();
     const float logicalWidth = static_cast<float>(windowWidth) / effectiveScale;
-    const float logicalHeight = static_cast<float>(windowHeight) / effectiveScale;
+    int contentHeight = windowHeight;
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+    core::debug::DevtoolsHost& devtools = core::debug::devtoolsHost();
+    if (devtools.beginFrame(window, windowWidth, windowHeight, effectiveScale, inputEnabled)) {
+        detail::dslRuntime().requestFullPaint();
+        updateRequested = true;
+    }
+    contentHeight = devtools.contentHeight();
+#endif
+    const float logicalHeight = static_cast<float>(contentHeight) / effectiveScale;
     detail::DslAppState& state = detail::dslAppState();
 
     const auto composeFrame = [&] {
@@ -340,6 +361,10 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
         changed = true;
     }
 
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+    devtools.update();
+#endif
+
     return changed;
 }
 
@@ -358,12 +383,18 @@ void render(int windowWidth, int windowHeight, float dpiScale) {
 }
 
 void releaseGraphicsResources() {
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+    core::debug::devtoolsHost().releaseGraphicsResources();
+#endif
     detail::dslRuntime().releaseGraphicsResources();
 }
 
 void shutdown() {
     core::async::shutdown();
     if (dslAppConfig().shutdownHandler) dslAppConfig().shutdownHandler();
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+    core::debug::devtoolsHost().shutdown();
+#endif
     detail::dslRuntime().shutdown();
     eui::network::shutdown();
 }

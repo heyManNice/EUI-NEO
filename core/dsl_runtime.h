@@ -38,6 +38,16 @@ public:
         keyEventHandler_ = std::move(handler);
     }
 
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+    void setInputFilter(std::function<void(std::vector<PointerEvent>&, ScrollEvent&)> filter) {
+        inputFilter_ = std::move(filter);
+    }
+
+    void setOverlayRenderer(std::function<void(int, int, float, const Rect*)> renderer) {
+        overlayRenderer_ = std::move(renderer);
+    }
+#endif
+
     template <typename ComposeFn>
     void compose(const std::string& pageId, float logicalWidth, float logicalHeight, ComposeFn&& composeFn);
 
@@ -54,6 +64,10 @@ public:
     void render(int windowWidth, int windowHeight, float dpiScale, const Color& clearColor);
 
     void render(int windowWidth, int windowHeight, float dpiScale);
+
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+    void renderDirectOverlay(int windowWidth, int windowHeight, float dpiScale, const Rect* dirtyRect = nullptr);
+#endif
 
     void shutdown(bool releaseCachedImageTextures = true);
 
@@ -288,6 +302,10 @@ private:
     std::string hoverTargetCacheId_;
     std::string focusedId_;
     std::function<void(const KeyEvent&)> keyEventHandler_;
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+    std::function<void(std::vector<PointerEvent>&, ScrollEvent&)> inputFilter_;
+    std::function<void(int, int, float, const Rect*)> overlayRenderer_;
+#endif
     RenderTransform focusedElementRenderTransform_;
     bool focusedElementRenderTransformValid_ = false;
     float logicalWidth_ = 0.0f;

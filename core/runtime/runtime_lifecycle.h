@@ -72,6 +72,11 @@ inline bool Runtime::update(core::window::Handle window, float deltaSeconds, flo
         textInputEvent = {};
         scrollEvent = {};
     }
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+    if (inputFilter_) {
+        inputFilter_(pointerEvents, scrollEvent);
+    }
+#endif
     animating_ = false;
     composeRequested_ = false;
     wantsHandCursor_ = false;
@@ -110,7 +115,9 @@ inline bool Runtime::update(core::window::Handle window, float deltaSeconds, flo
     }
     instances_.releaseUnseenTimers();
     updateImeCursorRect(window, dpiScale);
-    applyCursor(window);
+    if (window != nullptr) {
+        applyCursor(window);
+    }
 
     promoteBackdropBlurDirtyRegions(dpiScale);
     if (pruneInstancesRequested_) {
@@ -159,6 +166,11 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
     if (!hasRenderableContent) {
         ++stats.clearCalls;
         renderBackend->clear(clearColor);
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+        if (overlayRenderer_) {
+            overlayRenderer_(windowWidth, windowHeight, dpiScale, nullptr);
+        }
+#endif
         dirtyRects_.clear();
         fullPaintRequested_ = false;
         releasePrunedRetainedLayers();
@@ -172,6 +184,11 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
         ++stats.renderDirectPasses;
         RuntimeRenderer(ui_, instances_).renderDirect(
             *renderBackend, windowWidth, windowHeight, dpiScale);
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+        if (overlayRenderer_) {
+            overlayRenderer_(windowWidth, windowHeight, dpiScale, nullptr);
+        }
+#endif
         dirtyRects_.clear();
         fullPaintRequested_ = false;
         releasePrunedRetainedLayers();
@@ -218,6 +235,11 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
         ++stats.renderDirectPasses;
         RuntimeRenderer(ui_, instances_).renderDirect(
             *renderBackend, windowWidth, windowHeight, dpiScale);
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+        if (overlayRenderer_) {
+            overlayRenderer_(windowWidth, windowHeight, dpiScale, nullptr);
+        }
+#endif
     } else {
         for (const Rect& dirty : dirtyRects) {
             renderBackend->setScissor(true, dirty, windowHeight);
@@ -226,6 +248,11 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
             ++stats.renderDirectPasses;
             RuntimeRenderer(ui_, instances_).renderDirect(
                 *renderBackend, windowWidth, windowHeight, dpiScale, &dirty);
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+            if (overlayRenderer_) {
+                overlayRenderer_(windowWidth, windowHeight, dpiScale, &dirty);
+            }
+#endif
         }
         renderBackend->setScissor(false, {}, windowHeight);
     }
@@ -258,6 +285,17 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale) {
     instances_.releaseUnseenRetainedLayers();
 }
 
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+inline void Runtime::renderDirectOverlay(int windowWidth, int windowHeight, float dpiScale, const Rect* dirtyRect) {
+    core::render::RenderBackend* renderBackend = core::render::activeRenderBackend();
+    if (renderBackend == nullptr) {
+        return;
+    }
+    RuntimeRenderer(ui_, instances_).renderDirect(
+        *renderBackend, windowWidth, windowHeight, dpiScale, dirtyRect);
+}
+#endif
+
 inline void Runtime::shutdown(bool releaseCachedImageTextures) {
     releaseGraphicsResources(releaseCachedImageTextures);
     instances_.clear();
@@ -268,6 +306,10 @@ inline void Runtime::shutdown(bool releaseCachedImageTextures) {
     ui_.end();
     ui_.clearState();
     keyEventHandler_ = {};
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+    inputFilter_ = {};
+    overlayRenderer_ = {};
+#endif
 }
 
 inline void Runtime::releaseGraphicsResources(bool releaseCachedImageTextures) {
