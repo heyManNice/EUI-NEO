@@ -12,24 +12,75 @@ namespace {
 
 constexpr double kOutsidePointer = -1000000.0;
 constexpr float kResizeBoundaryHalfWidth = 4.0f;
+constexpr float kToolbarHeight = 31.0f;
+constexpr float kTabFontSize = 14.0f;
+constexpr float kTabHorizontalPadding = 14.0f;
 
-void composeToolbarIcon(core::dsl::Ui& ui, const std::string& id, float x, float y,
-                        const char* svg) {
-    ui.rect(id + ".background")
-        .position(x, y)
-        .size(28.0f, 28.0f)
-        .states({0.0f, 0.0f, 0.0f, 0.0f},
-                {0.25f, 0.31f, 0.39f, 1.0f},
-                {0.25f, 0.31f, 0.39f, 1.0f})
-        .instantStates()
-        .radius(5.0f)
+void composeToolbarIcon(core::dsl::Ui& ui, const std::string& id, const char* svg) {
+    ui.stack(id)
+        .size(24.0f, 24.0f)
+        .align(core::Align::CENTER, core::Align::CENTER)
+        .content([&] {
+            ui.rect(id + ".background")
+                .fill()
+                .ignoreLayout()
+                .states({0.0f, 0.0f, 0.0f, 0.0f},
+                        {0.25f, 0.31f, 0.39f, 1.0f},
+                        {0.25f, 0.31f, 0.39f, 1.0f})
+                .instantStates()
+                .radius(5.0f)
+                .build();
+            ui.svg(id + ".icon")
+                .size(16.0f, 16.0f)
+                .source(svg)
+                .tint("#C8D5E4")
+                .contain()
+                .build();
+        })
         .build();
-    ui.svg(id + ".icon")
-        .position(x + 5.0f, y + 5.0f)
-        .size(18.0f, 18.0f)
-        .source(svg)
-        .tint("#C8D5E4")
-        .contain()
+}
+
+void composeToolbarTab(core::dsl::Ui& ui, const std::string& id, const std::string& label,
+                       bool selected) {
+    ui.stack(id)
+        .width(core::SizeValue::wrapContent())
+        .height(kToolbarHeight)
+        .content([&] {
+            ui.rect(id + ".background")
+                .fill()
+                .ignoreLayout()
+                .states({0.0f, 0.0f, 0.0f, 0.0f},
+                        {0.23f, 0.28f, 0.34f, 1.0f},
+                        {0.23f, 0.28f, 0.34f, 1.0f})
+                .instantStates()
+                .build();
+            ui.row(id + ".content")
+                .width(core::SizeValue::wrapContent())
+                .height(kToolbarHeight)
+                .padding(kTabHorizontalPadding, 0.0f)
+                .content([&] {
+                    ui.text(id + ".label")
+                        .width(core::SizeValue::wrapContent())
+                        .height(kToolbarHeight)
+                        .text(label)
+                        .fontSize(kTabFontSize)
+                        .color(selected ? "#DCE7F5" : "#9CA9B8")
+                        .horizontalAlign(core::HorizontalAlign::Center)
+                        .verticalAlign(core::VerticalAlign::Center)
+                        .build();
+                })
+                .build();
+            if (selected) {
+                ui.rect(id + ".indicator")
+                    .width(core::SizeValue::fill())
+                    .height(2.0f)
+                    .margin(4.0f, 0.0f, 4.0f, 0.0f)
+                    .y(kToolbarHeight - 2.0f)
+                    .ignoreLayout()
+                    .color("#66A9F7")
+                    .build();
+            }
+        })
         .build();
 }
 
@@ -178,62 +229,92 @@ bool DevtoolsHost::update() {
             ui.stack("root")
                 .size(width, height)
                 .content([&] {
-                    ui.rect("panel")
+                    ui.column("panel")
                         .position(0.0f, panelTop)
                         .size(width, panelSize)
-                        .color("#20252D")
-                        .build();
-                    ui.rect("border")
-                        .position(0.0f, panelTop)
-                        .size(width, 1.0f)
-                        .color("#596574")
-                        .build();
-                    ui.rect("toolbar")
-                        .position(0.0f, panelTop + 1.0f)
-                        .size(width, 39.0f)
-                        .color("#292F38")
-                        .build();
-                    composeToolbarIcon(ui, "selectElement", 8.0f, panelTop + 6.0f,
-                                       icons::kSelectElementSvg);
-                    composeToolbarIcon(ui, "deviceViewport", 42.0f, panelTop + 6.0f,
-                                       icons::kDeviceViewportSvg);
-                    ui.text("elements.tab")
-                        .position(90.0f, panelTop + 9.0f)
-                        .size(92.0f, 25.0f)
-                        .text("Elements")
-                        .fontSize(14.0f)
-                        .color("#DCE7F5")
-                        .build();
-                    ui.rect("elements.indicator")
-                        .position(86.0f, panelTop + 37.0f)
-                        .size(88.0f, 2.0f)
-                        .color("#66A9F7")
-                        .build();
-                    if (width >= 310.0f) {
-                        composeToolbarIcon(ui, "settings", width - 104.0f, panelTop + 6.0f,
-                                           icons::kSettingsSvg);
-                    }
-                    if (width >= 276.0f) {
-                        composeToolbarIcon(ui, "more", width - 70.0f, panelTop + 6.0f,
-                                           icons::kMoreSvg);
-                    }
-                    if (width >= 242.0f) {
-                        composeToolbarIcon(ui, "close", width - 36.0f, panelTop + 6.0f,
-                                           icons::kCloseSvg);
-                    }
-                    ui.text("empty.title")
-                        .position(24.0f, panelTop + 68.0f)
-                        .size(std::max(0.0f, width - 48.0f), 28.0f)
-                        .text("EUI DevTools")
-                        .fontSize(19.0f)
-                        .color("#ECF3FA")
-                        .build();
-                    ui.text("empty.description")
-                        .position(24.0f, panelTop + 106.0f)
-                        .size(std::max(0.0f, width - 48.0f), 24.0f)
-                        .text("Element inspection is the next milestone.")
-                        .fontSize(13.0f)
-                        .color("#9CA9B8")
+                        .content([&] {
+                            ui.rect("panel.background")
+                                .fill()
+                                .ignoreLayout()
+                                .color("#20252D")
+                                .build();
+                            ui.rect("panel.border")
+                                .width(core::SizeValue::fill())
+                                .height(1.0f)
+                                .color("#596574")
+                                .build();
+                            ui.stack("toolbar")
+                                .width(core::SizeValue::fill())
+                                .height(kToolbarHeight)
+                                .content([&] {
+                                    ui.rect("toolbar.background")
+                                        .fill()
+                                        .ignoreLayout()
+                                        .color("#292F38")
+                                        .build();
+                                    ui.row("toolbar.items")
+                                        .fill()
+                                        .padding(8.0f, 0.0f)
+                                        .alignItems(core::Align::CENTER)
+                                        .content([&] {
+                                            ui.row("toolbar.leading")
+                                                .width(core::SizeValue::wrapContent())
+                                                .height(24.0f)
+                                                .gap(4.0f)
+                                                .content([&] {
+                                                    composeToolbarIcon(ui, "selectElement", icons::kSelectElementSvg);
+                                                    composeToolbarIcon(ui, "deviceViewport", icons::kDeviceViewportSvg);
+                                                })
+                                                .build();
+                                            ui.row("toolbar.tabs")
+                                                .width(core::SizeValue::wrapContent())
+                                                .height(kToolbarHeight)
+                                                .margin(8.0f, 0.0f, 0.0f, 0.0f)
+                                                .content([&] {
+                                                    composeToolbarTab(ui, "elements.tab", "Elements", true);
+                                                })
+                                                .build();
+                                            ui.stack("toolbar.spacer")
+                                                .width(core::SizeValue::fill())
+                                                .height(1.0f)
+                                                .build();
+                                            ui.row("toolbar.trailing")
+                                                .width(core::SizeValue::wrapContent())
+                                                .height(24.0f)
+                                                .gap(4.0f)
+                                                .content([&] {
+                                                    composeToolbarIcon(ui, "settings", icons::kSettingsSvg);
+                                                    composeToolbarIcon(ui, "more", icons::kMoreSvg);
+                                                    composeToolbarIcon(ui, "close", icons::kCloseSvg);
+                                                })
+                                                .build();
+                                        })
+                                        .build();
+                                })
+                                .build();
+                            ui.column("panel.content")
+                                .width(core::SizeValue::fill())
+                                .height(core::SizeValue::fill())
+                                .padding(24.0f, 28.0f, 24.0f, 0.0f)
+                                .gap(10.0f)
+                                .content([&] {
+                                    ui.text("empty.title")
+                                        .width(core::SizeValue::fill())
+                                        .height(28.0f)
+                                        .text("EUI DevTools")
+                                        .fontSize(19.0f)
+                                        .color("#ECF3FA")
+                                        .build();
+                                    ui.text("empty.description")
+                                        .width(core::SizeValue::fill())
+                                        .height(24.0f)
+                                        .text("Element inspection is the next milestone.")
+                                        .fontSize(13.0f)
+                                        .color("#9CA9B8")
+                                        .build();
+                                })
+                                .build();
+                        })
                         .build();
                 })
                 .build();
