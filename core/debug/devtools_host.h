@@ -41,6 +41,7 @@ private:
     core::window::CursorHandle handCursor_ = nullptr;
     core::window::Handle cursorWindow_ = nullptr;
     bool visible_ = false;
+    bool moreMenuOpen_ = false;
     bool composeRequested_ = true;
 };
 

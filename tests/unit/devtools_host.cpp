@@ -135,6 +135,28 @@ int main() {
     assert(host.visible());
 
     assert(host.update());
+    core::PointerEvent morePress;
+    morePress.x = 752.0;
+    morePress.y = static_cast<double>(host.contentHeight() + 16);
+    morePress.action = core::PointerAction::Press;
+    morePress.button = core::PointerButton::Left;
+    morePress.buttons.set(core::PointerButton::Left, true);
+    std::vector<core::PointerEvent> moreEvents{morePress};
+    core::ScrollEvent moreScroll;
+    host.filterInput(moreEvents, moreScroll);
+    assert(moreEvents.front().x < 0.0);
+    host.update();
+
+    core::PointerEvent moreRelease = morePress;
+    moreRelease.action = core::PointerAction::Release;
+    moreRelease.buttons.set(core::PointerButton::Left, false);
+    moreEvents = {moreRelease};
+    host.filterInput(moreEvents, moreScroll);
+    assert(host.update());
+    assert(host.visible());
+    assert(host.contentHeight() < 600);
+    assert(!host.update());
+
     core::PointerEvent closePress;
     closePress.x = 780.0;
     closePress.y = static_cast<double>(host.contentHeight() + 16);

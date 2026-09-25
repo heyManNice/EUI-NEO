@@ -16,6 +16,9 @@ constexpr float kResizeBoundaryHalfWidth = 4.0f;
 constexpr float kToolbarHeight = 31.0f;
 constexpr float kTabFontSize = 14.0f;
 constexpr float kTabHorizontalPadding = 14.0f;
+constexpr float kMoreMenuWidth = 136.0f;
+constexpr float kMoreMenuRowHeight = 22.67f;
+constexpr float kMoreMenuPadding = 2.0f;
 
 void composeToolbarIcon(core::dsl::Ui& ui, const std::string& id, const char* svg,
                         const std::function<void()>& onClick = {}) {
@@ -101,6 +104,81 @@ void composeToolbarTab(core::dsl::Ui& ui, const std::string& id, const std::stri
         .build();
 }
 
+void composeDockOption(core::dsl::Ui& ui, const std::string& id, const char* svg,
+                       const std::string& label, bool selected) {
+    ui.stack(id)
+        .width(core::SizeValue::fill())
+        .height(kMoreMenuRowHeight)
+        .content([&] {
+            ui.rect(id + ".background")
+                .fill()
+                .ignoreLayout()
+                .states(selected ? core::Color{0.20f, 0.34f, 0.52f, 1.0f}
+                                 : core::Color{0.0f, 0.0f, 0.0f, 0.0f},
+                        {0.27f, 0.35f, 0.45f, 1.0f},
+                        {0.27f, 0.35f, 0.45f, 1.0f})
+                .radius(5.0f)
+                .instantStates()
+                .interactive()
+                .build();
+            ui.row(id + ".content")
+                .fill()
+                .padding(5.0f, 0.0f)
+                .gap(3.0f)
+                .alignItems(core::Align::CENTER)
+                .content([&] {
+                    ui.svg(id + ".icon")
+                        .size(17.0f, 17.0f)
+                        .source(svg)
+                        .tint(selected ? "#91C1FF" : "#C8D5E4")
+                        .contain()
+                        .build();
+                    ui.text(id + ".label")
+                        .width(core::SizeValue::fill())
+                        .height(kMoreMenuRowHeight)
+                        .text(label)
+                        .fontSize(13.0f)
+                        .color(selected ? "#DCEBFF" : "#DCE7F5")
+                        .verticalAlign(core::VerticalAlign::Center)
+                        .build();
+                })
+                .build();
+        })
+        .build();
+}
+
+void composeMoreMenu(core::dsl::Ui& ui, float x, float y) {
+    ui.stack("more.menu")
+        .position(x, y)
+        .width(kMoreMenuWidth)
+        .height(core::SizeValue::wrapContent())
+        .content([&] {
+            ui.rect("more.menu.background")
+                .fill()
+                .ignoreLayout()
+                .color("#303741")
+                .radius(7.0f)
+                .shadow(14.0f, 0.0f, 5.0f, core::Color{0.0f, 0.0f, 0.0f, 0.30f})
+                .build();
+            ui.column("more.menu.rows")
+                .width(core::SizeValue::fill())
+                .height(core::SizeValue::wrapContent())
+                .padding(kMoreMenuPadding)
+                .content([&] {
+                    composeDockOption(ui, "more.menu.dock.floating", icons::kDockFloatingSvg,
+                                      "Separate Window", false);
+                    composeDockOption(ui, "more.menu.dock.left", icons::kDockLeftSvg,
+                                      "Dock to Left", false);
+                    composeDockOption(ui, "more.menu.dock.bottom", icons::kDockBottomSvg,
+                                      "Dock to Bottom", true);
+                    composeDockOption(ui, "more.menu.dock.right", icons::kDockRightSvg,
+                                      "Dock to Right", false);
+                })
+                .build();
+        })
+        .build();
+}
+
 } // namespace
 
 DevtoolsHost& devtoolsHost() {
@@ -138,6 +216,7 @@ bool DevtoolsHost::beginFrame(core::window::Handle window,
             visible_ = !visible_;
             composeRequested_ = true;
             if (!visible_) {
+                moreMenuOpen_ = false;
                 resizing_ = false;
                 resizeCursorActive_ = false;
                 resetCursor();
@@ -234,7 +313,7 @@ bool DevtoolsHost::update() {
         return false;
     }
 
-    if (composeRequested_) {
+    const auto composePanel = [&] {
         const float width = static_cast<float>(framebufferWidth_) / dpiScale_;
         const float height = static_cast<float>(framebufferHeight_) / dpiScale_;
         const float panelTop = static_cast<float>(contentHeight()) / dpiScale_;
@@ -298,9 +377,13 @@ bool DevtoolsHost::update() {
                                                 .gap(4.0f)
                                                 .content([&] {
                                                     composeToolbarIcon(ui, "settings", icons::kSettingsSvg);
-                                                    composeToolbarIcon(ui, "more", icons::kMoreSvg);
+                                                    composeToolbarIcon(ui, "more", icons::kMoreSvg, [this] {
+                                                        moreMenuOpen_ = !moreMenuOpen_;
+                                                        composeRequested_ = true;
+                                                    });
                                                     composeToolbarIcon(ui, "close", icons::kCloseSvg, [this] {
                                                         visible_ = false;
+                                                        moreMenuOpen_ = false;
                                                         composeRequested_ = true;
                                                         resizing_ = false;
                                                         resizeCursorActive_ = false;
@@ -336,14 +419,26 @@ bool DevtoolsHost::update() {
                                 .build();
                         })
                         .build();
+                    if (moreMenuOpen_) {
+                        composeMoreMenu(ui, std::max(8.0f, width - kMoreMenuWidth - 36.0f),
+                                        panelTop + kToolbarHeight + 6.0f);
+                    }
                 })
                 .build();
         });
         composeRequested_ = false;
+    };
+    if (composeRequested_) {
+        composePanel();
     }
     const bool wasVisible = visible_;
     const bool repainted = runtime_.update(nullptr, 0.0f, 1.0f, dpiScale_);
-    return repainted || wasVisible != visible_;
+    const bool menuChanged = visible_ && composeRequested_;
+    if (menuChanged) {
+        composePanel();
+        runtime_.update(nullptr, 0.0f, 1.0f, dpiScale_);
+    }
+    return repainted || wasVisible != visible_ || menuChanged;
 }
 
 void DevtoolsHost::updateCursor(core::window::Handle window) {
@@ -384,6 +479,7 @@ void DevtoolsHost::shutdown() {
     }
     runtime_.shutdown(false);
     visible_ = false;
+    moreMenuOpen_ = false;
     resizing_ = false;
     resizeCursorActive_ = false;
     panelHeightLogical_ = 0.0f;
