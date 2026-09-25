@@ -42,6 +42,54 @@ int main() {
     assert(host.update());
     assert(!host.update());
 
+    const int initialContentHeight = host.contentHeight();
+    core::PointerEvent resizePress;
+    resizePress.x = 120.0;
+    resizePress.y = static_cast<double>(initialContentHeight + 2);
+    resizePress.action = core::PointerAction::Press;
+    resizePress.button = core::PointerButton::Left;
+    resizePress.buttons.set(core::PointerButton::Left, true);
+    std::vector<core::PointerEvent> resizePressEvents{resizePress};
+    core::ScrollEvent resizeScroll;
+    host.filterInput(resizePressEvents, resizeScroll);
+    assert(resizePressEvents.front().x < 0.0);
+
+    core::PointerEvent resizeMove = resizePress;
+    resizeMove.action = core::PointerAction::Move;
+    resizeMove.button = core::PointerButton::None;
+    resizeMove.y -= 100.0;
+    std::vector<core::PointerEvent> resizeMoveEvents{resizeMove};
+    host.filterInput(resizeMoveEvents, resizeScroll);
+    assert(host.contentHeight() == initialContentHeight - 100);
+    assert(resizeMoveEvents.front().x < 0.0);
+    assert(host.update());
+
+    core::PointerEvent resizeRelease = resizeMove;
+    resizeRelease.y = 0.0;
+    resizeRelease.action = core::PointerAction::Release;
+    resizeRelease.button = core::PointerButton::Left;
+    resizeRelease.buttons.set(core::PointerButton::Left, false);
+    std::vector<core::PointerEvent> resizeReleaseEvents{resizeRelease};
+    host.filterInput(resizeReleaseEvents, resizeScroll);
+    assert(host.contentHeight() == 120);
+    assert(resizeReleaseEvents.front().x < 0.0);
+    assert(host.update());
+
+    resizePress.y = static_cast<double>(host.contentHeight() + 2);
+    resizePressEvents = {resizePress};
+    host.filterInput(resizePressEvents, resizeScroll);
+    resizeMove.y = resizePress.y + 1000.0;
+    resizeMoveEvents = {resizeMove};
+    host.filterInput(resizeMoveEvents, resizeScroll);
+    assert(host.contentHeight() == 420);
+    resizeRelease = resizeMove;
+    resizeRelease.action = core::PointerAction::Release;
+    resizeRelease.button = core::PointerButton::Left;
+    resizeRelease.buttons.set(core::PointerButton::Left, false);
+    resizeReleaseEvents = {resizeRelease};
+    host.filterInput(resizeReleaseEvents, resizeScroll);
+    assert(resizeReleaseEvents.front().x < 0.0);
+
     core::queueKeyInput(window, {core::InputKey::F12, core::KeyAction::Repeat, {}, 0});
     core::queueKeyInput(window, {core::InputKey::F12, core::KeyAction::Release, {}, 0});
     core::queueKeyInput(window, {core::InputKey::A, core::KeyAction::Press, {}, 0});
