@@ -362,16 +362,16 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
     }
 
 #if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+    if (devtools.update()) {
+        detail::dslRuntime().requestFullPaint();
+        changed = true;
+    }
     if (contentHeight != devtools.contentHeight()) {
         contentHeight = devtools.contentHeight();
         logicalHeight = static_cast<float>(contentHeight) / effectiveScale;
         detail::dslRuntime().requestFullPaint();
         composeFrame();
         changed = detail::dslRuntime().update(window, 0.0f, pointerScale, effectiveScale, inputEnabled) || changed;
-        changed = true;
-    }
-    if (devtools.update()) {
-        detail::dslRuntime().requestFullPaint();
         changed = true;
     }
     devtools.updateCursor(window);

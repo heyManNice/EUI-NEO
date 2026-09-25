@@ -134,6 +134,30 @@ int main() {
     assert(!host.beginFrame(window, 800, 600, 1.0f, true));
     assert(host.visible());
 
+    assert(host.update());
+    core::PointerEvent closePress;
+    closePress.x = 780.0;
+    closePress.y = static_cast<double>(host.contentHeight() + 16);
+    closePress.action = core::PointerAction::Press;
+    closePress.button = core::PointerButton::Left;
+    closePress.buttons.set(core::PointerButton::Left, true);
+    std::vector<core::PointerEvent> closePressEvents{closePress};
+    core::ScrollEvent closeScroll;
+    host.filterInput(closePressEvents, closeScroll);
+    assert(closePressEvents.front().x < 0.0);
+    host.update();
+    assert(host.visible());
+
+    core::PointerEvent closeRelease = closePress;
+    closeRelease.action = core::PointerAction::Release;
+    closeRelease.buttons.set(core::PointerButton::Left, false);
+    std::vector<core::PointerEvent> closeReleaseEvents{closeRelease};
+    host.filterInput(closeReleaseEvents, closeScroll);
+    assert(closeReleaseEvents.front().x < 0.0);
+    assert(host.update());
+    assert(!host.visible());
+    assert(host.contentHeight() == 600);
+
     host.shutdown();
     core::detail::inputQueues().erase(window);
     core::detail::pointerStates().erase(window);

@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 
 namespace core::debug {
 
@@ -16,20 +17,24 @@ constexpr float kToolbarHeight = 31.0f;
 constexpr float kTabFontSize = 14.0f;
 constexpr float kTabHorizontalPadding = 14.0f;
 
-void composeToolbarIcon(core::dsl::Ui& ui, const std::string& id, const char* svg) {
+void composeToolbarIcon(core::dsl::Ui& ui, const std::string& id, const char* svg,
+                        const std::function<void()>& onClick = {}) {
     ui.stack(id)
         .size(24.0f, 24.0f)
         .align(core::Align::CENTER, core::Align::CENTER)
         .content([&] {
-            ui.rect(id + ".background")
-                .fill()
+            auto background = ui.rect(id + ".background");
+            background.fill()
                 .ignoreLayout()
                 .states({0.0f, 0.0f, 0.0f, 0.0f},
                         {0.25f, 0.31f, 0.39f, 1.0f},
                         {0.25f, 0.31f, 0.39f, 1.0f})
                 .instantStates()
-                .radius(5.0f)
-                .build();
+                .radius(5.0f);
+            if (onClick) {
+                background.onClick(onClick);
+            }
+            background.build();
             ui.svg(id + ".icon")
                 .size(16.0f, 16.0f)
                 .source(svg)
@@ -38,6 +43,18 @@ void composeToolbarIcon(core::dsl::Ui& ui, const std::string& id, const char* sv
                 .build();
         })
         .build();
+}
+
+void queueDevtoolsPointer(const PointerEvent& event, bool inside) {
+    const double x = inside ? event.x : kOutsidePointer;
+    const double y = inside ? event.y : kOutsidePointer;
+    if (event.action == PointerAction::Press || event.action == PointerAction::Release) {
+        core::queuePointerButton(nullptr, x, y, event.button, event.action, event.modifiers);
+    } else if (event.action == PointerAction::Cancel) {
+        core::cancelPointerInput(nullptr);
+    } else {
+        core::queuePointerMotion(nullptr, x, y, event.buttons, event.modifiers);
+    }
 }
 
 void composeToolbarTab(core::dsl::Ui& ui, const std::string& id, const std::string& label,
@@ -193,10 +210,7 @@ void DevtoolsHost::filterInput(std::vector<PointerEvent>& pointerEvents, ScrollE
         const int panelTop = contentHeight();
         const bool inside = event.y >= panelTop && event.y < framebufferHeight_ &&
                             event.x >= 0.0 && event.x < framebufferWidth_;
-        core::queuePointerMotion(nullptr,
-                                 inside && !resizeCursorActive_ ? event.x : kOutsidePointer,
-                                 inside && !resizeCursorActive_ ? event.y : kOutsidePointer,
-                                 {}, event.modifiers);
+        queueDevtoolsPointer(event, inside && !resizeCursorActive_);
         if (!inside && !overBoundary && !captured) {
             pointerInPanel = false;
             continue;
@@ -285,7 +299,13 @@ bool DevtoolsHost::update() {
                                                 .content([&] {
                                                     composeToolbarIcon(ui, "settings", icons::kSettingsSvg);
                                                     composeToolbarIcon(ui, "more", icons::kMoreSvg);
-                                                    composeToolbarIcon(ui, "close", icons::kCloseSvg);
+                                                    composeToolbarIcon(ui, "close", icons::kCloseSvg, [this] {
+                                                        visible_ = false;
+                                                        composeRequested_ = true;
+                                                        resizing_ = false;
+                                                        resizeCursorActive_ = false;
+                                                        resetCursor();
+                                                    });
                                                 })
                                                 .build();
                                         })
@@ -321,7 +341,9 @@ bool DevtoolsHost::update() {
         });
         composeRequested_ = false;
     }
-    return runtime_.update(nullptr, 0.0f, 1.0f, dpiScale_);
+    const bool wasVisible = visible_;
+    const bool repainted = runtime_.update(nullptr, 0.0f, 1.0f, dpiScale_);
+    return repainted || wasVisible != visible_;
 }
 
 void DevtoolsHost::updateCursor(core::window::Handle window) {
