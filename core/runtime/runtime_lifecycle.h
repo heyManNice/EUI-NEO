@@ -13,13 +13,23 @@ inline bool Runtime::initialize(core::window::Handle window) {
 
 template <typename ComposeFn>
 inline void Runtime::compose(const std::string& pageId, float logicalWidth, float logicalHeight, ComposeFn&& composeFn) {
+    composeViewport(pageId, {0.0f, 0.0f, logicalWidth, logicalHeight}, false, std::forward<ComposeFn>(composeFn));
+}
+
+template <typename ComposeFn>
+inline void Runtime::compose(const std::string& pageId, const Rect& viewport, ComposeFn&& composeFn) {
+    composeViewport(pageId, viewport, true, std::forward<ComposeFn>(composeFn));
+}
+
+template <typename ComposeFn>
+inline void Runtime::composeViewport(const std::string& pageId, const Rect& viewport, bool clipViewport, ComposeFn&& composeFn) {
     const std::vector<runtime::ElementSnapshot> previousStructure = elementStructure_;
-    const Screen screen{logicalWidth, logicalHeight};
+    const Screen screen{viewport.width, viewport.height};
     ui_.begin(pageId);
     ui_.setFocusedId(focusedId_);
     composeFn(ui_, screen);
     ui_.end();
-    ui_.layout(screen);
+    ui_.layout(screen.width, screen.height, viewport.x, viewport.y);
     elementStructure_ = collectElementStructure();
     syncScrollStateBindings();
     for (const std::string& scope : ui_.consumeReleasedStateScopes()) {
@@ -39,13 +49,13 @@ inline void Runtime::compose(const std::string& pageId, float logicalWidth, floa
         pruneInstancesRequested_ = true;
     }
 
-    if (logicalWidth_ != logicalWidth || logicalHeight_ != logicalHeight) {
+    if (viewport_.x != viewport.x || viewport_.y != viewport.y || viewport_.width != viewport.width || viewport_.height != viewport.height || clipViewport_ != clipViewport) {
         paintRequested_ = true;
         fullPaintRequested_ = true;
     }
     fullTreeUpdateRequested_ = true;
-    logicalWidth_ = logicalWidth;
-    logicalHeight_ = logicalHeight;
+    viewport_ = viewport;
+    clipViewport_ = clipViewport;
 }
 
 inline bool Runtime::update(core::window::Handle window, float deltaSeconds, float pointerScale, float dpiScale, bool inputEnabled) {
@@ -158,6 +168,8 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
     core::render::beginRenderFrameStats(windowWidth, windowHeight);
     ImagePrimitive::beginRenderFrame();
     core::render::RenderFrameStats& stats = core::render::currentRenderFrameStats();
+    const Rect viewportPixels = toPixelRect(viewport_, dpiScale);
+    const Rect* viewportClip = clipViewport_ ? &viewportPixels : nullptr;
 
     const bool hasRenderableContent = !ui_.roots().empty();
     const auto releasePrunedRetainedLayers = [&] {
@@ -182,8 +194,7 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
         ++stats.clearCalls;
         renderBackend->clear(clearColor);
         ++stats.renderDirectPasses;
-        RuntimeRenderer(ui_, instances_).renderDirect(
-            *renderBackend, windowWidth, windowHeight, dpiScale);
+        RuntimeRenderer(ui_, instances_, viewportClip).renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale);
 #if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
         if (overlayRenderer_) {
             overlayRenderer_(windowWidth, windowHeight, dpiScale, nullptr);
@@ -233,8 +244,7 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
         ++stats.clearCalls;
         renderBackend->clear(clearColor);
         ++stats.renderDirectPasses;
-        RuntimeRenderer(ui_, instances_).renderDirect(
-            *renderBackend, windowWidth, windowHeight, dpiScale);
+        RuntimeRenderer(ui_, instances_, viewportClip).renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale);
 #if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
         if (overlayRenderer_) {
             overlayRenderer_(windowWidth, windowHeight, dpiScale, nullptr);
@@ -246,8 +256,7 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
             ++stats.clearCalls;
             renderBackend->clear(clearColor);
             ++stats.renderDirectPasses;
-            RuntimeRenderer(ui_, instances_).renderDirect(
-                *renderBackend, windowWidth, windowHeight, dpiScale, &dirty);
+            RuntimeRenderer(ui_, instances_, viewportClip).renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale, &dirty);
 #if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
             if (overlayRenderer_) {
                 overlayRenderer_(windowWidth, windowHeight, dpiScale, &dirty);
@@ -280,8 +289,8 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale) {
 
     ImagePrimitive::beginRenderFrame();
 
-    RuntimeRenderer(ui_, instances_).renderDirect(
-        *renderBackend, windowWidth, windowHeight, dpiScale);
+    const Rect viewportPixels = toPixelRect(viewport_, dpiScale);
+    RuntimeRenderer(ui_, instances_, clipViewport_ ? &viewportPixels : nullptr).renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale);
     instances_.releaseUnseenRetainedLayers();
 }
 
@@ -291,8 +300,8 @@ inline void Runtime::renderDirectOverlay(int windowWidth, int windowHeight, floa
     if (renderBackend == nullptr) {
         return;
     }
-    RuntimeRenderer(ui_, instances_).renderDirect(
-        *renderBackend, windowWidth, windowHeight, dpiScale, dirtyRect);
+    const Rect viewportPixels = toPixelRect(viewport_, dpiScale);
+    RuntimeRenderer(ui_, instances_, clipViewport_ ? &viewportPixels : nullptr).renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale, dirtyRect);
 }
 #endif
 

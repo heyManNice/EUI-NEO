@@ -370,28 +370,17 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
     detail::DslAppState& state = detail::dslAppState();
 
     const auto composeFrame = [&] {
-        detail::dslRuntime().compose(config.pageIdValue, logicalWidth, logicalHeight, [&](core::dsl::Ui& ui, const core::dsl::Screen& screen) {
-            const auto composeContent = [&] {
-                compose(ui, screen);
-                if (showDebugOverlay()) {
-                    config.debugOverlayCompose(ui, screen);
-                }
-            };
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
-            if (contentX > 0) {
-                ui.stack("eui.devtools.content")
-                    .position(static_cast<float>(contentX) / effectiveScale, 0.0f)
-                    .size(logicalWidth, logicalHeight)
-                    .clip()
-                    .content(composeContent)
-                    .build();
-            } else {
-                composeContent();
+        const auto composeContent = [&](core::dsl::Ui& ui, const core::dsl::Screen& screen) {
+            compose(ui, screen);
+            if (showDebugOverlay()) {
+                config.debugOverlayCompose(ui, screen);
             }
+        };
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+        detail::dslRuntime().compose(config.pageIdValue, core::Rect{static_cast<float>(contentX) / effectiveScale, 0.0f, logicalWidth, logicalHeight}, composeContent);
 #else
-            composeContent();
+        detail::dslRuntime().compose(config.pageIdValue, logicalWidth, logicalHeight, composeContent);
 #endif
-        });
         state.composed = true;
         state.logicalWidth = logicalWidth;
         state.logicalHeight = logicalHeight;

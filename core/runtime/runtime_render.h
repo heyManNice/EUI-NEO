@@ -10,8 +10,8 @@ constexpr int kRetainedLayerResizeStableFrames = 16;
 
 class RuntimeRenderer {
 public:
-    RuntimeRenderer(Ui& ui, runtime::InstanceStore& instances)
-        : ui_(ui), instances_(instances) {}
+    RuntimeRenderer(Ui& ui, runtime::InstanceStore& instances, const Rect* viewport = nullptr)
+        : ui_(ui), instances_(instances), viewport_(viewport) {}
 
     void renderDirect(core::render::RenderBackend& renderBackend,
                       int windowWidth,
@@ -156,6 +156,7 @@ private:
 
     Ui& ui_;
     runtime::InstanceStore& instances_;
+    const Rect* viewport_ = nullptr;
     bool retainedLayerRenderDisabled_ = false;
 };
 
@@ -177,8 +178,16 @@ inline std::vector<Vec2> scaledPolygonPoints(const std::vector<Vec2>& points, fl
 
 inline void RuntimeRenderer::renderDirect(core::render::RenderBackend& renderBackend, int windowWidth, int windowHeight, float dpiScale, const Rect* dirtyRect) {
     const RenderTransform identity;
-    const bool hasScissor = dirtyRect != nullptr;
-    const Rect scissor = dirtyRect ? *dirtyRect : Rect{};
+    const bool hasScissor = dirtyRect != nullptr || viewport_ != nullptr;
+    Rect scissor = dirtyRect ? *dirtyRect : Rect{};
+    if (viewport_ != nullptr) {
+        if (dirtyRect != nullptr && !intersectRect(scissor, *viewport_, scissor)) {
+            return;
+        }
+        if (dirtyRect == nullptr) {
+            scissor = *viewport_;
+        }
+    }
     const std::vector<const Element*>& roots = ui_.orderedRoots();
     for (const Element* root : roots) {
         prepareTextElement(*root, windowWidth, windowHeight, dpiScale, identity, dirtyRect, hasScissor, scissor);

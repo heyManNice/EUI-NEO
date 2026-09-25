@@ -51,6 +51,9 @@ public:
     template <typename ComposeFn>
     void compose(const std::string& pageId, float logicalWidth, float logicalHeight, ComposeFn&& composeFn);
 
+    template <typename ComposeFn>
+    void compose(const std::string& pageId, const Rect& viewport, ComposeFn&& composeFn);
+
     bool update(core::window::Handle window, float deltaSeconds, float pointerScale, float dpiScale, bool inputEnabled = true);
 
     bool isAnimating() const;
@@ -74,6 +77,9 @@ public:
     void releaseGraphicsResources(bool releaseCachedImageTextures = true);
 
 private:
+    template <typename ComposeFn>
+    void composeViewport(const std::string& pageId, const Rect& viewport, bool clipViewport, ComposeFn&& composeFn);
+
     template <typename Fn>
     void forEachElement(Fn&& fn) const;
 
@@ -308,8 +314,8 @@ private:
 #endif
     RenderTransform focusedElementRenderTransform_;
     bool focusedElementRenderTransformValid_ = false;
-    float logicalWidth_ = 0.0f;
-    float logicalHeight_ = 0.0f;
+    Rect viewport_;
+    bool clipViewport_ = false;
     std::uint64_t updateFrameToken_ = 0;
     core::window::CursorHandle arrowCursor_ = nullptr;
     core::window::CursorHandle handCursor_ = nullptr;

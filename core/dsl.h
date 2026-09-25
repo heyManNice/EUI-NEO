@@ -1438,11 +1438,15 @@ public:
     }
 
     void layout(float width, float height) {
+        layout(width, height, 0.0f, 0.0f);
+    }
+
+    void layout(float width, float height, float originX, float originY) {
         for (const auto& root : roots_) {
             std::vector<std::pair<Element*, Node*>> links;
             std::unique_ptr<Node> layoutRoot = buildLayoutNode(*root, links);
             layoutRoot->measure(width, height);
-            layoutRoot->layout(root->hasX ? root->x : 0.0f, root->hasY ? root->y : 0.0f);
+            layoutRoot->layout(originX + (root->hasX ? root->x : 0.0f), originY + (root->hasY ? root->y : 0.0f));
             for (const auto& link : links) {
                 link.first->frame = link.second->frame();
             }

@@ -53,6 +53,9 @@ inline std::string Runtime::hitTestInteractive(const PointerEvent& event, float 
 }
 
 inline std::string Runtime::hitTestFocusable(const PointerEvent& event, float dpiScale) const {
+    if (clipViewport_ && !toPixelRect(viewport_, dpiScale).contains(event.x, event.y)) {
+        return {};
+    }
     std::string targetId;
     const RenderTransform identity;
     const std::vector<const Element*>& roots = ui_.orderedRoots();
@@ -109,6 +112,9 @@ inline bool Runtime::canReuseHoverTarget(const PointerEvent& event, float dpiSca
 
 template <typename Predicate>
 inline std::string Runtime::hitTest(const PointerEvent& event, float dpiScale, Predicate&& predicate) const {
+    if (clipViewport_ && !toPixelRect(viewport_, dpiScale).contains(event.x, event.y)) {
+        return {};
+    }
     std::string targetId;
     const RenderTransform identity;
     const std::vector<const Element*>& roots = ui_.orderedRoots();
