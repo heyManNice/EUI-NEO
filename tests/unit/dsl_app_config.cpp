@@ -6,11 +6,12 @@
 int main() {
     const app::DslAppConfig defaults;
     assert(defaults.debugTitleIntervalValue == 1.0);
-    assert(!defaults.showDebugStatsInTitleValue);
     assert(!defaults.shutdownHandler);
 #if defined(EUI_DEBUG_BUILD)
+    assert(defaults.showDebugStatsInTitleValue);
     assert(defaults.showDebugOverlayValue);
 #else
+    assert(!defaults.showDebugStatsInTitleValue);
     assert(!defaults.showDebugOverlayValue);
 #endif
 

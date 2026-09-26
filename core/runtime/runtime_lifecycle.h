@@ -64,33 +64,25 @@ inline bool Runtime::update(core::window::Handle window, float deltaSeconds, flo
         ++updateFrameToken_;
     }
     if (!inputEnabled) {
-        if (window != nullptr) {
-            cancelInput(window);
-        }
+        cancelInput(window);
 #if defined(EUI_DEBUG_BUILD)
-        else {
-            overlayPointerEvents_.clear();
-            overlayScrollEvent_ = {};
-        }
+        overlayPointerEvents_.clear();
+        overlayScrollEvent_ = {};
 #endif
     }
-    std::vector<PointerEvent> pointerEvents;
-    std::vector<KeyEvent> keyEvents;
-    TextInputEvent textInputEvent;
-    ScrollEvent scrollEvent;
-    if (window != nullptr) {
-        pointerEvents = consumePointerEvents(window, pointerScale);
-        keyEvents = consumeKeyEvents(window);
-        textInputEvent = consumeTextInput(window);
-        scrollEvent = consumeScrollInput(window);
-    }
+    std::vector<PointerEvent> pointerEvents = consumePointerEvents(window, pointerScale);
+    std::vector<KeyEvent> keyEvents = consumeKeyEvents(window);
+    TextInputEvent textInputEvent = consumeTextInput(window);
+    ScrollEvent scrollEvent = consumeScrollInput(window);
 #if defined(EUI_DEBUG_BUILD)
-    else {
-        // Host driven overlay runtimes read the input the host pushed instead of
-        // a window input queue.
-        pointerEvents = std::move(overlayPointerEvents_);
+    if (window == nullptr) {
+        // A host driven overlay runtime has no window of its own. It consumes the
+        // input its host pushed on top of the input the null window queue holds.
+        pointerEvents.insert(pointerEvents.end(), overlayPointerEvents_.begin(), overlayPointerEvents_.end());
         overlayPointerEvents_.clear();
-        scrollEvent = overlayScrollEvent_;
+        if (overlayScrollEvent_.active()) {
+            scrollEvent = overlayScrollEvent_;
+        }
         overlayScrollEvent_ = {};
     }
 #endif
