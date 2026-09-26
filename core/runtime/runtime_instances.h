@@ -509,6 +509,7 @@ public:
         debugOverlayPrimitive.reset();
         debugOverlayPrimitiveInitialized = false;
         hoveredMark = {};
+        debugOverrides.clear();
         composeGeneration = 0;
 #endif
     }
@@ -540,6 +541,11 @@ public:
     // that element; the compose generation invalidates it.
     InspectionMark hoveredMark;
     std::uint64_t composeGeneration = 0;
+
+    // Values a debug session wrote on top of elements, keyed by element id. A
+    // compose throws element values away, so the runtime applies these again to
+    // every freshly composed tree (see composeViewport).
+    std::unordered_map<std::string, DebugElementOverride> debugOverrides;
 #endif
 };
 

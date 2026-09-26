@@ -152,6 +152,191 @@ inline InspectionBand inspectionBand(const Rect& outer, const Rect& inner) {
     return band;
 }
 
+// A property a debug tool may edit on a live element. The runtime knows how to read
+// and write every one of them; which of them a tool shows, in what order and with
+// which editor is the tool's business (see modules/devtools).
+enum class DebugPropertyId {
+    Color,
+    Opacity,
+    Radius,
+    BorderWidth,
+    BorderColor,
+    Blur,
+    ShadowEnabled,
+    ShadowColor,
+    ShadowBlur,
+    ShadowOffsetY,
+    TextColor
+};
+
+// How a property is written, which also tells an editor what to put in the row for
+// it: a number field, a colour or a switch.
+enum class DebugPropertyType { Number, Color, Flag };
+
+inline constexpr int kDebugPropertyCount = static_cast<int>(DebugPropertyId::TextColor) + 1;
+
+inline std::uint32_t debugPropertyBit(DebugPropertyId property) {
+    return 1u << static_cast<std::uint32_t>(property);
+}
+
+inline constexpr DebugPropertyType debugPropertyType(DebugPropertyId property) {
+    switch (property) {
+    case DebugPropertyId::Color:
+    case DebugPropertyId::BorderColor:
+    case DebugPropertyId::ShadowColor:
+    case DebugPropertyId::TextColor:
+        return DebugPropertyType::Color;
+    case DebugPropertyId::ShadowEnabled:
+        return DebugPropertyType::Flag;
+    default:
+        return DebugPropertyType::Number;
+    }
+}
+
+// What one element looks like right now, read on demand for the single element a
+// tool inspects. `overridden` marks the properties a debug session replaced, so the
+// tool can flag them and offer to put them back.
+struct DebugElementProperties {
+    bool active = false;
+    std::string id;
+    ElementKind kind = ElementKind::Stack;
+    Rect frame;
+    EdgeInsets margin;
+    EdgeInsets padding;
+    float borderWidth = 0.0f;
+    int zIndex = 0;
+    bool clip = false;
+    bool interactive = false;
+    bool disabled = false;
+    std::string text;
+    Color color = {1.0f, 1.0f, 1.0f, 1.0f};
+    float opacity = 1.0f;
+    float radius = 0.0f;
+    Color borderColor = {1.0f, 1.0f, 1.0f, 1.0f};
+    float blur = 0.0f;
+    Shadow shadow;
+    Color textColor = {1.0f, 1.0f, 1.0f, 1.0f};
+    std::uint32_t overridden = 0;
+};
+
+// The values a debug session wrote on top of an element. A compose rebuilds every
+// element from the app's own code, so the store is applied again to the freshly
+// composed tree before layout runs; the mask is what a tool reads back.
+struct DebugElementOverride {
+    std::uint32_t mask = 0;
+    Color color = {1.0f, 1.0f, 1.0f, 1.0f};
+    float opacity = 1.0f;
+    float radius = 0.0f;
+    float borderWidth = 0.0f;
+    Color borderColor = {1.0f, 1.0f, 1.0f, 1.0f};
+    float blur = 0.0f;
+    bool shadowEnabled = false;
+    Color shadowColor = {0.0f, 0.0f, 0.0f, 1.0f};
+    float shadowBlur = 0.0f;
+    float shadowOffsetY = 0.0f;
+    Color textColor = {1.0f, 1.0f, 1.0f, 1.0f};
+};
+
+// Editing one shadow field of an element whose shadow is switched off would show
+// nothing, so any shadow override also switches the shadow on and records that: the
+// switch in the tool then tells the truth and can be put back.
+inline void markDebugShadowEnabled(DebugElementOverride& override) {
+    override.mask |= debugPropertyBit(DebugPropertyId::ShadowEnabled);
+    override.shadowEnabled = true;
+}
+
+inline bool setDebugOverrideFloat(DebugElementOverride& override, DebugPropertyId property, float value) {
+    float* target = nullptr;
+    switch (property) {
+    case DebugPropertyId::Opacity: target = &override.opacity; break;
+    case DebugPropertyId::Radius: target = &override.radius; break;
+    case DebugPropertyId::BorderWidth: target = &override.borderWidth; break;
+    case DebugPropertyId::Blur: target = &override.blur; break;
+    case DebugPropertyId::ShadowBlur: target = &override.shadowBlur; break;
+    case DebugPropertyId::ShadowOffsetY: target = &override.shadowOffsetY; break;
+    default: return false;
+    }
+    const bool changed = (override.mask & debugPropertyBit(property)) == 0 || *target != value;
+    *target = value;
+    override.mask |= debugPropertyBit(property);
+    if (property == DebugPropertyId::ShadowBlur || property == DebugPropertyId::ShadowOffsetY) {
+        markDebugShadowEnabled(override);
+    }
+    return changed;
+}
+
+inline bool setDebugOverrideColor(DebugElementOverride& override, DebugPropertyId property, const Color& value) {
+    Color* target = nullptr;
+    switch (property) {
+    case DebugPropertyId::Color: target = &override.color; break;
+    case DebugPropertyId::BorderColor: target = &override.borderColor; break;
+    case DebugPropertyId::ShadowColor: target = &override.shadowColor; break;
+    case DebugPropertyId::TextColor: target = &override.textColor; break;
+    default: return false;
+    }
+    const bool changed = (override.mask & debugPropertyBit(property)) == 0 || !closeEnough(*target, value);
+    *target = value;
+    override.mask |= debugPropertyBit(property);
+    if (property == DebugPropertyId::ShadowColor) {
+        markDebugShadowEnabled(override);
+    }
+    return changed;
+}
+
+inline bool setDebugOverrideFlag(DebugElementOverride& override, DebugPropertyId property, bool value) {
+    if (property != DebugPropertyId::ShadowEnabled) {
+        return false;
+    }
+    const bool changed = (override.mask & debugPropertyBit(property)) == 0 || override.shadowEnabled != value;
+    override.shadowEnabled = value;
+    override.mask |= debugPropertyBit(property);
+    return changed;
+}
+
+// Writes an override onto a composed element. Everything downstream (layout, the
+// element tree snapshot, the render instances, hit testing) then sees it, which is
+// why the runtime applies the store right after composing instead of teaching every
+// property how to read from two places.
+inline void applyDebugOverride(Element& element, const DebugElementOverride& override) {
+    const std::uint32_t mask = override.mask;
+    if (mask == 0) {
+        return;
+    }
+    if (mask & debugPropertyBit(DebugPropertyId::Color)) {
+        element.color = override.color;
+    }
+    if (mask & debugPropertyBit(DebugPropertyId::Opacity)) {
+        element.opacity = override.opacity;
+    }
+    if (mask & debugPropertyBit(DebugPropertyId::Radius)) {
+        element.radius = override.radius;
+    }
+    if (mask & debugPropertyBit(DebugPropertyId::BorderWidth)) {
+        element.border.width = override.borderWidth;
+    }
+    if (mask & debugPropertyBit(DebugPropertyId::BorderColor)) {
+        element.border.color = override.borderColor;
+    }
+    if (mask & debugPropertyBit(DebugPropertyId::Blur)) {
+        element.blur = override.blur;
+    }
+    if (mask & debugPropertyBit(DebugPropertyId::ShadowEnabled)) {
+        element.shadow.enabled = override.shadowEnabled;
+    }
+    if (mask & debugPropertyBit(DebugPropertyId::ShadowColor)) {
+        element.shadow.color = override.shadowColor;
+    }
+    if (mask & debugPropertyBit(DebugPropertyId::ShadowBlur)) {
+        element.shadow.blur = override.shadowBlur;
+    }
+    if (mask & debugPropertyBit(DebugPropertyId::ShadowOffsetY)) {
+        element.shadow.offset.y = override.shadowOffsetY;
+    }
+    if (mask & debugPropertyBit(DebugPropertyId::TextColor)) {
+        element.textColor = override.textColor;
+    }
+}
+
 struct InstanceStore;
 
 #if defined(EUI_DEBUG_BUILD)

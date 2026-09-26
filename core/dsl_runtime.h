@@ -112,6 +112,24 @@ public:
     // Geometry of the preview overlay for the current frame; the renderer draws
     // exactly this, and tests read it without a renderer.
     runtime::DebugInspection debugHoverInspection(float dpiScale);
+
+    // Properties of one element, read on demand for the element a debug tool shows.
+    // Reading a single element instead of copying every node keeps the element tree
+    // snapshot cheap for big pages.
+    runtime::DebugElementProperties debugElementProperties(const std::string& id);
+
+    // Writes a property on top of an element, for a debug session that edits the
+    // page it is inspecting. The value survives recomposes, because the runtime
+    // applies its overrides again to every freshly composed tree, and it is never
+    // written back into app state: clearing the override is enough to get the
+    // element's own value back.
+    void setDebugElementOverride(const std::string& id, runtime::DebugPropertyId property, float value);
+    void setDebugElementOverride(const std::string& id, runtime::DebugPropertyId property, const Color& value);
+    void setDebugElementOverride(const std::string& id, runtime::DebugPropertyId property, bool value);
+    void clearDebugElementOverride(const std::string& id, runtime::DebugPropertyId property);
+    void clearDebugElementOverrides(const std::string& id);
+    void clearAllDebugElementOverrides();
+    std::size_t debugElementOverrideCount() const { return instances_.debugOverrides.size(); }
 #endif
 
     void shutdown(bool releaseCachedImageTextures = true);

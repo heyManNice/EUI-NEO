@@ -11,6 +11,26 @@ inline bool Runtime::initialize(core::window::Handle window) {
     return true;
 }
 
+#if defined(EUI_DEBUG_BUILD)
+namespace runtime {
+
+// Values a debug session wrote have to go back on a freshly composed tree before it
+// is laid out, so layout, the element tree snapshot, the render instances and hit
+// testing all read one value instead of asking whether a debug tool replaced it.
+inline void applyDebugElementOverrides(Ui& ui, InstanceStore& instances) {
+    if (instances.debugOverrides.empty()) {
+        return;
+    }
+    for (const auto& entry : instances.debugOverrides) {
+        if (Element* element = ui.debugFindElement(entry.first)) {
+            applyDebugOverride(*element, entry.second);
+        }
+    }
+}
+
+} // namespace runtime
+#endif
+
 template <typename ComposeFn>
 inline void Runtime::compose(const std::string& pageId, float logicalWidth, float logicalHeight, ComposeFn&& composeFn) {
     composeViewport(pageId, {0.0f, 0.0f, logicalWidth, logicalHeight}, false, std::forward<ComposeFn>(composeFn));
@@ -36,6 +56,12 @@ inline void Runtime::composeViewport(const std::string& pageId, const Rect& view
     ui_.setFocusedId(focusedId_);
     composeFn(ui_, screen);
     ui_.end();
+#if defined(EUI_DEBUG_BUILD)
+    // Debug tools edit properties of composed elements, so their values go back on
+    // the fresh tree before it is laid out: everything downstream then reads one
+    // value instead of asking whether a debug session replaced it.
+    runtime::applyDebugElementOverrides(ui_, instances_);
+#endif
     ui_.layout(screen.width, screen.height, viewport.x, viewport.y);
     elementStructure_ = collectElementStructure();
     syncScrollStateBindings();

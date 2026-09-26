@@ -1476,6 +1476,29 @@ public:
         return orderedRoots_;
     }
 
+#if defined(EUI_DEBUG_BUILD)
+    // Debug tools write properties onto live elements. The pointer stays valid until
+    // the next compose, which rebuilds the tree.
+    Element* debugFindElement(const std::string& id) {
+        std::vector<Element*> pending;
+        pending.reserve(roots_.size());
+        for (const auto& root : roots_) {
+            pending.push_back(root.get());
+        }
+        while (!pending.empty()) {
+            Element* element = pending.back();
+            pending.pop_back();
+            if (element->id == id) {
+                return element;
+            }
+            for (const auto& child : element->children) {
+                pending.push_back(child.get());
+            }
+        }
+        return nullptr;
+    }
+#endif
+
     bool hasDependentVisuals() const {
         return hasDependentVisuals_;
     }
@@ -1683,8 +1706,7 @@ private:
 
     static void rebuildOrderedChildren(Element& element) {
         element.orderedChildren.clear();
-        element.orderedChildren.reserve(element.children.size());
-        element.subtreeNeedsUpdate = elementNeedsUpdate(element);
+        element.orderedChildren.reserve(element.children.size());        element.subtreeNeedsUpdate = elementNeedsUpdate(element);
         element.subtreeHasDependentVisuals = elementHasDependentVisuals(element);
         element.subtreeHasBackdropBlur = elementHasBackdropBlur(element);
         element.subtreeBlocksRetainedLayer = elementBlocksRetainedLayer(element);

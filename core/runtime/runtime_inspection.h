@@ -15,6 +15,49 @@ namespace core::dsl {
 
 namespace runtime {
 
+// Looks an element up by the id a tool holds. The walk uses `children`, not
+// `orderedChildren`, so it also works between a compose and the next layout pass.
+inline const Element* findDebugElement(const Ui& ui, const std::string& id) {
+    std::vector<const Element*> pending;
+    const std::vector<const Element*>& roots = ui.orderedRoots();
+    pending.reserve(roots.size());
+    for (const Element* root : roots) {
+        pending.push_back(root);
+    }
+    while (!pending.empty()) {
+        const Element* element = pending.back();
+        pending.pop_back();
+        if (element->id == id) {
+            return element;
+        }
+        for (const auto& child : element->children) {
+            pending.push_back(child.get());
+        }
+    }
+    return nullptr;
+}
+
+// Puts a freshly written override on the live tree and asks for the frame that
+// shows it. The per-frame capture walks the tree every frame, but it may skip a
+// static subtree, so one full tree update is requested as well.
+inline void commitDebugElementOverride(Ui& ui, InstanceStore& instances, const std::string& id, bool changed,
+                                        bool& fullTreeUpdateRequested, bool& paintRequested,
+                                        bool& fullPaintRequested) {
+    if (!changed) {
+        return;
+    }
+    const auto entry = instances.debugOverrides.find(id);
+    if (entry == instances.debugOverrides.end()) {
+        return;
+    }
+    if (Element* element = ui.debugFindElement(id)) {
+        applyDebugOverride(*element, entry->second);
+    }
+    fullTreeUpdateRequested = true;
+    paintRequested = true;
+    fullPaintRequested = true;
+}
+
 inline bool findInspectionPath(Ui& ui, InstanceStore& instances, InspectionMark& mark, const Element& element) {
     mark.path.push_back(&element);
     if (element.id == mark.id) {
@@ -107,6 +150,101 @@ inline void Runtime::setHoveredElement(const std::string& id) {
 
 inline runtime::DebugInspection Runtime::debugHoverInspection(float dpiScale) {
     return runtime::computeInspection(ui_, instances_, instances_.hoveredMark, dpiScale);
+}
+
+inline runtime::DebugElementProperties Runtime::debugElementProperties(const std::string& id) {
+    runtime::DebugElementProperties properties;
+    if (id.empty()) {
+        return properties;
+    }
+    const Element* element = runtime::findDebugElement(ui_, id);
+    if (element == nullptr) {
+        return properties;
+    }
+
+    properties.active = true;
+    properties.id = element->id;
+    properties.kind = element->kind;
+    properties.frame = {element->frame.x, element->frame.y, element->frame.width, element->frame.height};
+    properties.margin = element->margin;
+    properties.padding = element->padding;
+    properties.borderWidth = element->border.width;
+    properties.zIndex = element->zIndex;
+    properties.clip = element->clip;
+    properties.interactive = element->interactive;
+    properties.disabled = element->disabled;
+    properties.text = runtime::truncateElementText(element->text, runtime::kElementTreeTextLimit);
+    properties.color = element->color;
+    properties.opacity = element->opacity;
+    properties.radius = element->radius;
+    properties.borderColor = element->border.color;
+    properties.blur = element->blur;
+    properties.shadow = element->shadow;
+    properties.textColor = element->textColor;
+
+    const auto override = instances_.debugOverrides.find(id);
+    if (override != instances_.debugOverrides.end()) {
+        properties.overridden = override->second.mask;
+    }
+    return properties;
+}
+
+inline void Runtime::setDebugElementOverride(const std::string& id, runtime::DebugPropertyId property, float value) {
+    if (id.empty()) {
+        return;
+    }
+    runtime::DebugElementOverride& override = instances_.debugOverrides[id];
+    const bool changed = runtime::setDebugOverrideFloat(override, property, value);
+    runtime::commitDebugElementOverride(ui_, instances_, id, changed, fullTreeUpdateRequested_, paintRequested_,
+                                        fullPaintRequested_);
+}
+
+inline void Runtime::setDebugElementOverride(const std::string& id, runtime::DebugPropertyId property,
+                                             const Color& value) {
+    if (id.empty()) {
+        return;
+    }
+    runtime::DebugElementOverride& override = instances_.debugOverrides[id];
+    const bool changed = runtime::setDebugOverrideColor(override, property, value);
+    runtime::commitDebugElementOverride(ui_, instances_, id, changed, fullTreeUpdateRequested_, paintRequested_,
+                                        fullPaintRequested_);
+}
+
+inline void Runtime::setDebugElementOverride(const std::string& id, runtime::DebugPropertyId property, bool value) {
+    if (id.empty()) {
+        return;
+    }
+    runtime::DebugElementOverride& override = instances_.debugOverrides[id];
+    const bool changed = runtime::setDebugOverrideFlag(override, property, value);
+    runtime::commitDebugElementOverride(ui_, instances_, id, changed, fullTreeUpdateRequested_, paintRequested_,
+                                        fullPaintRequested_);
+}
+
+inline void Runtime::clearDebugElementOverride(const std::string& id, runtime::DebugPropertyId property) {
+    const auto found = instances_.debugOverrides.find(id);
+    if (found == instances_.debugOverrides.end()) {
+        return;
+    }
+    found->second.mask &= ~runtime::debugPropertyBit(property);
+    if (found->second.mask == 0) {
+        instances_.debugOverrides.erase(found);
+    }
+}
+
+inline void Runtime::clearDebugElementOverrides(const std::string& id) {
+    instances_.debugOverrides.erase(id);
+}
+
+inline void Runtime::clearAllDebugElementOverrides() {
+    if (instances_.debugOverrides.empty()) {
+        return;
+    }
+    instances_.debugOverrides.clear();
+    // The elements keep the values they were composed with until the app composes
+    // again, which is also what clears an override: nothing else has to be undone.
+    fullTreeUpdateRequested_ = true;
+    paintRequested_ = true;
+    fullPaintRequested_ = true;
 }
 
 #endif
