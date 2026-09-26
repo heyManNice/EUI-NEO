@@ -576,6 +576,52 @@ int main() {
         assert(host.selectedElement() == "page.root");
     }
 
+    // Every tab the panel names is reachable in a docked panel of the default size:
+    // the strip is what carries them, so a tab that is clipped out of it cannot be
+    // opened. Only Performance and Elements have content; the rest say what they will
+    // read once their panel exists, and the plan behind each name is in the module
+    // README.
+    {
+        const struct {
+            const char* id;
+            DevtoolsTab tab;
+        } tabs[] = {
+            {"performance.tab", DevtoolsTab::Performance},
+            {"elements.tab", DevtoolsTab::Elements},
+            {"state.tab", DevtoolsTab::State},
+            {"input.tab", DevtoolsTab::Input},
+            {"frames.tab", DevtoolsTab::Frames},
+            {"layout.tab", DevtoolsTab::Layout},
+            {"animations.tab", DevtoolsTab::Animations},
+            {"resources.tab", DevtoolsTab::Resources},
+            {"windows.tab", DevtoolsTab::Windows},
+            {"scale.tab", DevtoolsTab::Scale},
+        };
+        const core::Rect strip = panelElementFrame(host, "toolbar.tabs");
+        for (const auto& entry : tabs) {
+            const core::Rect tab = panelElementFrame(host, entry.id);
+            assert(tab.x >= strip.x);
+            assert(tab.x + tab.width <= strip.x + strip.width);
+            assert(tab.width > 0.0f);
+
+            clickPanel(tab.x + tab.width * 0.5, tab.y + tab.height * 0.5);
+            assert(host.activeTab() == entry.tab);
+            frame();
+            // Only the tabs with content show a page of their own.
+            if (entry.tab != DevtoolsTab::Performance && entry.tab != DevtoolsTab::Elements) {
+                assert(hasPanelElement(host, std::string(entry.id) + ".planned"));
+                assert(!hasPanelElement(host, "elements.list"));
+            }
+        }
+
+        // Back to the performance page for the tests that follow.
+        const core::Rect performanceTab = panelElementFrame(host, "performance.tab");
+        clickPanel(performanceTab.x + performanceTab.width * 0.5,
+                   performanceTab.y + performanceTab.height * 0.5);
+        assert(host.activeTab() == DevtoolsTab::Performance);
+        frame();
+    }
+
     // A floating panel leaves the whole window to the page and opens its window.
     chooseDock(0);
     assert(host.dockPosition() == DockPosition::Floating);

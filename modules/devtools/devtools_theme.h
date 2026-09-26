@@ -42,7 +42,8 @@ struct DevtoolsTheme {
     float iconRadius = 5.0f;
     float menuIconSize = 14.0f;
     float tabFontSize = 14.0f;
-    float tabHorizontalPadding = 14.0f;
+    // Ten tabs have to fit the strip of a docked panel, so the padding stays tight.
+    float tabHorizontalPadding = 6.0f;
     float tabIndicatorHeight = 2.0f;
     float menuWidth = 136.0f;
     float menuRowHeight = 23.0f;

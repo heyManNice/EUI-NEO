@@ -11,7 +11,22 @@
 namespace modules::devtools {
 
 enum class DockPosition { Floating, Left, Bottom, Right };
-enum class DevtoolsTab { Performance, Elements };
+
+// Tabs the panel shows. Performance and Elements have content; every other tab is a
+// name the panel reserves for the panel it promises, and says so while it has nothing
+// to show yet. What each planned panel will read is written down in the module README.
+enum class DevtoolsTab {
+    Performance,
+    Elements,
+    State,
+    Input,
+    Frames,
+    Layout,
+    Animations,
+    Resources,
+    Windows,
+    Scale
+};
 
 // Panel state lives in the overlay Runtime state store, so it follows the panel
 // Runtime lifetime instead of a process-wide object.

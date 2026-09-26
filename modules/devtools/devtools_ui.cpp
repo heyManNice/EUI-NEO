@@ -40,6 +40,46 @@ void composeToolbarIcon(core::dsl::Ui& ui, const std::string& id, unsigned int c
         .build();
 }
 
+// One row per tab: the toolbar builds every tab from this table, and a tab that has
+// no content yet uses its summary for the note it shows instead. Adding a planned
+// panel starts with a row here.
+struct TabEntry {
+    const char* id;
+    const char* label;
+    DevtoolsTab tab;
+    const char* summary;
+};
+
+constexpr TabEntry kTabs[] = {
+    {"performance.tab", "Performance", DevtoolsTab::Performance, nullptr},
+    {"elements.tab", "Elements", DevtoolsTab::Elements, nullptr},
+    {"state.tab", "State", DevtoolsTab::State, "runtime state and the per-id instances behind each element"},
+    {"input.tab", "Input", DevtoolsTab::Input, "the event stream and which element each event reached"},
+    {"frames.tab", "Frames", DevtoolsTab::Frames, "why each frame repainted and what it repainted"},
+    {"layout.tab", "Layout", DevtoolsTab::Layout,
+     "measured sizes against frames, overflows and clipped elements"},
+    {"animations.tab", "Animations", DevtoolsTab::Animations, "transitions, timers and what keeps animating"},
+    {"resources.tab", "Resources", DevtoolsTab::Resources, "fonts, images and the caches they live in"},
+    {"windows.tab", "Windows", DevtoolsTab::Windows, "the windows an app opened and the tray it may hide in"},
+    {"scale.tab", "Scale", DevtoolsTab::Scale, "the scales a frame is drawn with and the logical-to-pixel math"},
+};
+
+// The note a tab shows while it has no panel of its own. The id ends in ".planned", so
+// a test can tell a placeholder from the content of a tab that works.
+void composePlannedTab(core::dsl::Ui& ui, const TabEntry& entry, float width, float height) {
+    const DevtoolsTheme& theme = devtoolsTheme();
+    ui.text(std::string(entry.id) + ".planned")
+        .size(width, height)
+        .text(std::string(entry.label) + " is planned: " + entry.summary + ".")
+        .fontSize(theme.sectionFontSize)
+        .color(theme.mutedText)
+        .horizontalAlign(core::HorizontalAlign::Center)
+        .verticalAlign(core::VerticalAlign::Center)
+        // A note is a sentence, so it wraps instead of running off a narrow panel.
+        .wrap()
+        .build();
+}
+
 void composeToolbarTab(core::dsl::Ui& ui, const std::string& id, const std::string& label,
                        bool selected, const std::function<void()>& onClick) {
     const DevtoolsTheme& theme = devtoolsTheme();
@@ -197,24 +237,24 @@ void composeToolbar(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devto
                             })
                             .build();
                     }
+                    // The tab row takes whatever the leading and trailing controls leave
+                    // and clips what does not fit, so the buttons on the right always stay
+                    // reachable however many tabs the panel has.
                     ui.row("toolbar.tabs")
-                        .width(core::SizeValue::wrapContent())
+                        .width(core::SizeValue::fill())
                         .height(theme.toolbarHeight)
                         .margin(compact ? 0.0f : theme.toolbarPadding, 0.0f, 0.0f, 0.0f)
+                        .clip()
                         .content([&] {
                             const DevtoolsTab activeTab = state.panelState != nullptr
                                 ? state.panelState->activeTab : DevtoolsTab::Performance;
-                            composeToolbarTab(ui, "performance.tab", "Performance",
-                                              activeTab == DevtoolsTab::Performance,
-                                              [onSelect = actions.selectTab] { onSelect(DevtoolsTab::Performance); });
-                            composeToolbarTab(ui, "elements.tab", "Elements",
-                                              activeTab == DevtoolsTab::Elements,
-                                              [onSelect = actions.selectTab] { onSelect(DevtoolsTab::Elements); });
+                            for (const TabEntry& entry : kTabs) {
+                                composeToolbarTab(ui, entry.id, entry.label, activeTab == entry.tab,
+                                                  [onSelect = actions.selectTab, tab = entry.tab] {
+                                                      onSelect(tab);
+                                                  });
+                            }
                         })
-                        .build();
-                    ui.stack("toolbar.spacer")
-                        .width(core::SizeValue::fill())
-                        .height(1.0f)
                         .build();
                     ui.row("toolbar.trailing")
                         .width(core::SizeValue::wrapContent())
@@ -240,7 +280,20 @@ void composePanelContent(core::dsl::Ui& ui, const DevtoolsUiState& state, const 
         composePerformanceTab(ui, state, actions);
         return;
     }
-    composeElementsTab(ui, state, actions);
+    if (activeTab == DevtoolsTab::Elements) {
+        composeElementsTab(ui, state, actions);
+        return;
+    }
+    // Every other tab is only named so far. It says what it will read instead of
+    // leaving an empty page; the plan behind the name is in the module README.
+    const float contentHeight = std::max(
+        0.0f, state.panel.height - devtoolsTheme().toolbarHeight - (state.detached ? 0.0f : 1.0f));
+    for (const TabEntry& entry : kTabs) {
+        if (entry.tab == activeTab) {
+            composePlannedTab(ui, entry, state.panel.width, contentHeight);
+            return;
+        }
+    }
 }
 
 } // namespace

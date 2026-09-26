@@ -55,6 +55,28 @@ void compose(eui::Ui& ui, const eui::Screen& screen) {
 - 输入过滤、内容区预留、独立窗口由 `app::detail::OverlayHost` 这个框架接缝完成，面板不依赖业务组件和核心流程的特例。
 - 属性区的尺寸是主题度量（`devtools_theme.h` 的 `propertiesInitialFraction`、`propertiesMinimumHeight`、`propertiesMinimumTreeHeight`、`propertiesHandleHeight`），高度本身存在面板状态里，不写回应用。
 
+## 标签页与计划
+
+标签栏列出面板的全部标签：`Performance` 与 `Elements` 有内容，其余只是先占住名字，打开时会说明自己准备读什么。加一个计划中的面板，先在 `devtools_ui.cpp` 的标签表里加一行，再在这里补一条计划。
+
+计划中的标签页（按优先级）。「读什么」写的是数据来源，最后两列说明代价：多数页只加一个只读的 Debug 钩子，不改变运行时行为。
+
+| 标签页 | 读什么 | 用来回答 | 代价 |
+| --- | --- | --- | --- |
+| `State` | `InstanceStore` 的 15 张 id→instance 表（rects / layouts / scrollStates / sliderStates / timers / dirtyKeys / paintBounds / retainedLayers …） | 某个元素的滚动、滑块、计时器状态到底是什么；哪些实例已经 unseen 却没被回收 | 只读快照 |
+| `Input` | 事件流与命中结果（`hitTestFocusable`、`focusedId_`、`hoverTargetCache`、被捕获的交互） | 这个事件被谁接走了——交互子元素会吞掉父元素的处理，是 DSL 里最难靠猜的一类问题 | 路由上报 |
+| `Frames` | `requestUiUpdate` / `requestFrame` / 动画 / 惯性滚动，加上已有的 dirty rect 计数 | 为什么一直在重绘，这一帧为什么重绘 | 帧原因上报 |
+| `Layout` | `Element::frame` 与 `LayoutInstance` | 测量值与实际 frame 的差、溢出父容器、被祖先裁掉 | 无（数据已在元素树上） |
+| `Animations` | transition / easing / timer 实例与 `isAnimating()` | 是谁让这一帧动起来的，计时器为什么没触发 | 小 |
+| `Resources` | 字体（默认 / 图标 / 回退，缺字）、图片（stb / libpng / nanosvg、远程就绪）、shadertoy | assets 丢失、字体回退没生效、纹理与字体内存增长 | 中等，要接资源缓存 |
+| `Windows` | `DslWindowManager` 与 `AppRunner` | 多窗口与 modal 状态、tray 可用与被隐藏、每窗口 fps 与 dpi | 中等，面板目前只认识主窗口 |
+| `Scale` | `dpiScale` / `pointerScale` / `uiScale()` | 逻辑单位与像素的换算，为什么在高分屏上偏了 | 展示很便宜；“强制缩放”需要应用提供钩子 |
+
+另外两条计划：
+
+- **应用自定义标签页**：由应用注册自己的标签页（音频、网络、业务状态这类领域页），模块保持自成，也不必为每个领域往框架加钩子。
+- **标签栏放不下时**：标签行会裁掉超出部分（右侧按钮始终可点），窄停靠的紧凑模式下只能看到前几个标签。计划把它们收进 more 菜单，或让标签栏可横向滚动。
+
 ## 与框架文档的差异
 
 - 热键：面板先于 `DslAppConfig::onKeyEvent` 拿到按键（走 `OverlayHost::handleHotkey`），所以 F12 / Ctrl+Shift+I 被面板消费时应用收不到。这是“面板优先”的取舍，与 `docs/事件.md` 里“按键未消费才交给 `onKeyEvent`”的传递顺序不同。
