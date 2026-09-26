@@ -22,6 +22,7 @@ struct HasOverlayHooks<T, std::void_t<decltype(&T::setInputFilter),
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <vector>
 
 static_assert(HasOverlayHooks<core::dsl::Runtime>::value, "Debug Runtime hooks are required");
@@ -414,6 +415,18 @@ int main() {
         assert(host.properties().radius == 6.0f);
         assert(hasPanelElement(host, "elements.properties.footer.inner.text"));
         assert(!hasPanelElement(host, "elements.properties.footer.inner.reset"));
+
+        // The property list scrolls inside the whole area, so its scrollbar ends on
+        // the panel edge instead of a padding away from it, like the tree's. The rows
+        // keep the padding, so they stop short of the scrollbar.
+        {
+            const core::Rect scroll = panelElementFrame(host, "elements.properties.list.scroll");
+            const core::Rect area = panelElementFrame(host, "elements.properties.background");
+            assert(std::fabs((scroll.x + scroll.width) - (area.x + area.width)) < 0.5f);
+            for (const core::Rect& row : panelElementFrames(host, "elements.properties.list.slot.0.row")) {
+                assert(row.x + row.width <= scroll.x);
+            }
+        }
 
         // Every property the runtime can write has exactly one row the panel can show.
         {

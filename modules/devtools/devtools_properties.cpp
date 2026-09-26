@@ -588,24 +588,28 @@ void composeElementProperties(core::dsl::Ui& ui,
             const float scrollOffset =
                 state.panelState != nullptr ? state.panelState->propertiesScrollOffset : 0.0f;
 
+            // The list spans the whole area, so its scrollbar sits on the panel edge
+            // instead of a padding away from it. The rows keep the padding and their
+            // width, which is what the composition reserves for the scrollbar anyway.
+            //
             // Everything inside the area is placed relative to it, which is what a
             // positioned stack expects of its children.
             components::virtualList(ui, id + ".list")
-                .position(padding, 0.0f)
-                .size(contentWidth, listHeight)
+                .position(0.0f, 0.0f)
+                .size(area.width, listHeight)
                 .itemCount(static_cast<std::int64_t>(rows.size()))
                 .rowHeight(theme.elementRowHeight)
                 .offset(scrollOffset)
                 .onChange(actions.setPropertiesScrollOffset)
                 .row([&](core::dsl::Ui& rowUi, const std::string& rowId, std::int64_t index, float width,
                          float height) {
-                    (void)width;
                     (void)height;
                     if (index < 0 || index >= static_cast<std::int64_t>(rows.size())) {
                         return;
                     }
                     rowUi.row(rowId + ".row")
-                        .fill()
+                        .position(padding, 0.0f)
+                        .size(std::max(0.0f, width - padding * 2.0f), theme.elementRowHeight)
                         .gap(theme.propertyColumnGap)
                         .content([&] {
                             composePropertyRow(rowUi, rowId, rows[static_cast<std::size_t>(index)], elementId,
