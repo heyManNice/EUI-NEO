@@ -589,8 +589,6 @@ int eui_app_run() {
         const bool anyAnimating = windowState.anyAnimating(anyRenderableManagedWindowAnimating(childWindows));
         if (anyAnimating) {
             glfwPollEvents();
-        } else if (app::detail::performancePanelVisible()) {
-            glfwWaitEventsTimeout(app::debugTitleUpdateInterval());
         } else {
             glfwWaitEvents();
         }

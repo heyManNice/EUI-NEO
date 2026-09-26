@@ -197,7 +197,7 @@ struct AppRunner {
 
     template <typename SetTitleFn, typename PublishSnapshotFn>
     void updatePerformanceStats(double now, SetTitleFn&& setTitle, PublishSnapshotFn&& publishSnapshot) {
-#if !defined(EUI_DEBUG_BUILD) || !defined(EUI_DEVTOOLS_AVAILABLE)
+#if !defined(EUI_DEBUG_BUILD)
         if (!showDebugStatsInTitle()) {
             return;
         }

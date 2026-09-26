@@ -38,13 +38,27 @@ public:
         keyEventHandler_ = std::move(handler);
     }
 
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+#if defined(EUI_DEBUG_BUILD)
     void setInputFilter(std::function<void(std::vector<PointerEvent>&, ScrollEvent&)> filter) {
         inputFilter_ = std::move(filter);
     }
 
+    // Debug overlays draw into the same render cache as the page, so every blit
+    // carries a complete frame. The overlay is asked to repaint whenever the
+    // cache is rebuilt: on a full paint and on every dirty rect.
     void setOverlayRenderer(std::function<void(int, int, float, const Rect*)> renderer) {
         overlayRenderer_ = std::move(renderer);
+    }
+
+    // An overlay runtime is driven by its host instead of a window: it has no
+    // window input queue. The host pushes the pointer and scroll state that the
+    // next update() should consume, and update() is called without a window.
+    void pushPointerEvent(const PointerEvent& event) {
+        overlayPointerEvents_.push_back(event);
+    }
+
+    void pushScrollEvent(const ScrollEvent& event) {
+        overlayScrollEvent_ = event;
     }
 #endif
 
@@ -68,7 +82,9 @@ public:
 
     void render(int windowWidth, int windowHeight, float dpiScale);
 
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+#if defined(EUI_DEBUG_BUILD)
+    // Renders this runtime directly on top of the current frame, clipped to its
+    // viewport. Overlay runtimes draw outside the app Runtime render pass.
     void renderDirectOverlay(int windowWidth, int windowHeight, float dpiScale, const Rect* dirtyRect = nullptr);
 #endif
 
@@ -308,9 +324,11 @@ private:
     std::string hoverTargetCacheId_;
     std::string focusedId_;
     std::function<void(const KeyEvent&)> keyEventHandler_;
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+#if defined(EUI_DEBUG_BUILD)
     std::function<void(std::vector<PointerEvent>&, ScrollEvent&)> inputFilter_;
     std::function<void(int, int, float, const Rect*)> overlayRenderer_;
+    std::vector<PointerEvent> overlayPointerEvents_;
+    ScrollEvent overlayScrollEvent_;
 #endif
     RenderTransform focusedElementRenderTransform_;
     bool focusedElementRenderTransformValid_ = false;

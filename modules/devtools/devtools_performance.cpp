@@ -1,12 +1,13 @@
-#include "core/debug/devtools_performance.h"
+#include "modules/devtools/devtools_performance.h"
 
 #include "components/scrollview.h"
+#include "modules/devtools/devtools_theme.h"
 
 #include <algorithm>
 #include <cstdio>
 #include <string>
 
-namespace core::debug {
+namespace modules::devtools {
 
 namespace {
 
@@ -17,53 +18,57 @@ std::string metricValue(double value, int decimals = 1, const char* suffix = "")
 }
 
 void composeSection(core::dsl::Ui& ui, const std::string& id, const std::string& label) {
+    const DevtoolsTheme& theme = devtoolsTheme();
     ui.text(id)
         .width(core::SizeValue::fill())
-        .height(28.0f)
+        .height(theme.sectionHeight)
         .text(label)
-        .fontSize(15.0f)
-        .color("#91C1FF")
+        .fontSize(theme.sectionFontSize)
+        .color(theme.sectionLabel)
         .build();
 }
 
 void composeMetric(core::dsl::Ui& ui, const std::string& id, const std::string& label, const std::string& value) {
+    const DevtoolsTheme& theme = devtoolsTheme();
     ui.row(id)
         .width(core::SizeValue::fill())
-        .height(24.0f)
+        .height(theme.metricHeight)
         .alignItems(core::Align::CENTER)
         .content([&] {
             ui.text(id + ".label")
                 .width(core::SizeValue::fill())
-                .height(24.0f)
+                .height(theme.metricHeight)
                 .text(label)
-                .fontSize(14.0f)
-                .color("#AAB7C6")
+                .fontSize(theme.metricFontSize)
+                .color(theme.metricLabel)
                 .build();
             ui.text(id + ".value")
                 .width(core::SizeValue::wrapContent())
-                .height(24.0f)
+                .height(theme.metricHeight)
                 .text(value)
-                .fontSize(14.0f)
-                .color("#ECF3FA")
+                .fontSize(theme.metricFontSize)
+                .color(theme.metricValue)
                 .build();
         })
         .build();
 }
 
 void composePerformanceMetrics(core::dsl::Ui& ui, const app::PerformanceSnapshot& snapshot, float width) {
+    const DevtoolsTheme& theme = devtoolsTheme();
     ui.column("performance.metrics")
         .width(width)
         .height(core::SizeValue::wrapContent())
-        .padding(18.0f, 16.0f, 18.0f, 16.0f)
-        .gap(4.0f)
+        .padding(theme.metricPaddingHorizontal, theme.metricPaddingVertical,
+                 theme.metricPaddingHorizontal, theme.metricPaddingVertical)
+        .gap(theme.metricGap)
         .content([&] {
             if (snapshot.revision == 0) {
                 ui.text("performance.waiting")
                     .width(core::SizeValue::fill())
-                    .height(28.0f)
+                    .height(theme.sectionHeight)
                     .text("Waiting for the first sample...")
-                    .fontSize(15.0f)
-                    .color("#9CA9B8")
+                    .fontSize(theme.sectionFontSize)
+                    .color(theme.mutedText)
                     .build();
                 return;
             }
@@ -123,15 +128,19 @@ void composePerformanceMetrics(core::dsl::Ui& ui, const app::PerformanceSnapshot
 } // namespace
 
 void composePerformanceTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const DevtoolsUiActions& actions) {
-    const float contentHeight = std::max(0.0f, state.panel.height - kDevtoolsToolbarHeight - (state.detached ? 0.0f : 1.0f));
+    static const app::PerformanceSnapshot emptySnapshot;
+    const DevtoolsTheme& theme = devtoolsTheme();
+    const app::PerformanceSnapshot& snapshot = state.performance != nullptr ? *state.performance : emptySnapshot;
+    const float scrollOffset = state.panelState != nullptr ? state.panelState->performanceScrollOffset : 0.0f;
+    const float contentHeight = std::max(0.0f, state.panel.height - theme.toolbarHeight - (state.detached ? 0.0f : 1.0f));
     components::scrollView(ui, "performance.scroll")
         .size(state.panel.width, contentHeight)
-        .offset(state.performanceScrollOffset)
+        .offset(scrollOffset)
         .onChange(actions.setPerformanceScrollOffset)
         .content([&](core::dsl::Ui& contentUi, float contentWidth, float) {
-            composePerformanceMetrics(contentUi, state.performance, contentWidth);
+            composePerformanceMetrics(contentUi, snapshot, contentWidth);
         })
         .build();
 }
 
-} // namespace core::debug
+} // namespace modules::devtools

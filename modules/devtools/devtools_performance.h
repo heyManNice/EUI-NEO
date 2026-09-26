@@ -1,9 +1,9 @@
 #pragma once
 
-#include "core/debug/devtools_ui.h"
+#include "modules/devtools/devtools_ui.h"
 
-namespace core::debug {
+namespace modules::devtools {
 
 void composePerformanceTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const DevtoolsUiActions& actions);
 
-} // namespace core::debug
+} // namespace modules::devtools

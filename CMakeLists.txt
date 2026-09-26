@@ -23,6 +23,12 @@ option(EUI_ENABLE_MODULES "Build optional EUI-NEO modules when their directories
 option(EUI_VULKAN_LOW_LATENCY_PRESENT "Prefer low-latency Vulkan presentation when available." OFF)
 option(EUI_ENABLE_TRAY "Enable the system tray backend. On Linux, configuration fails when neither glib/gio (SNI) nor GTK3 + libappindicator is available; turn this OFF to build without tray support." ON)
 
+# Tests are enabled before any subdirectory that adds them, because CMake only
+# collects add_test() from directories configured after enable_testing().
+if(EUI_BUILD_TEST_FIXTURES)
+    enable_testing()
+endif()
+
 set(EUI_DEFAULT_WINDOW_BACKEND "glfw")
 set(EUI_DEFAULT_RENDER_BACKEND "opengl")
 get_filename_component(EUI_BUILD_DIR_NAME "${CMAKE_BINARY_DIR}" NAME)
@@ -350,7 +356,6 @@ endif()
 # the generated entry source in a global property because normal CMake
 # variables from this directory are not visible in the parent's call scope.
 set_property(GLOBAL PROPERTY EUI_NEO_APP_MAIN_SOURCE "${EUI_APP_MAIN_SOURCE}")
-set_property(GLOBAL PROPERTY EUI_NEO_DEBUG_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/core/debug/devtools_host.cpp;${CMAKE_CURRENT_SOURCE_DIR}/core/debug/devtools_ui.cpp;${CMAKE_CURRENT_SOURCE_DIR}/core/debug/devtools_performance.cpp")
 
 target_link_libraries(eui_neo PUBLIC Freetype::Freetype)
 
@@ -388,10 +393,6 @@ endif()
 if(TARGET md4c::md4c)
     target_link_libraries(eui_neo PUBLIC md4c::md4c)
     target_compile_definitions(eui_neo PUBLIC EUI_HAS_MD4C=1)
-endif()
-
-if(EUI_ENABLE_MODULES AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/modules/CMakeLists.txt")
-    add_subdirectory(modules)
 endif()
 
 # -----------------------------------------------------------------------------
@@ -472,17 +473,12 @@ endfunction()
 function(eui_neo_configure_app target_name)
     get_property(_eui_app_main_source GLOBAL PROPERTY EUI_NEO_APP_MAIN_SOURCE)
     get_property(_eui_app_icon_resource GLOBAL PROPERTY EUI_NEO_APP_ICON_RESOURCE)
-    get_property(_eui_debug_sources GLOBAL PROPERTY EUI_NEO_DEBUG_SOURCES)
     if(NOT _eui_app_main_source)
         message(FATAL_ERROR
             "EUI app entry source is unavailable. Ensure EUI-NEO is configured "
             "before calling eui_neo_configure_app().")
     endif()
     target_sources(${target_name} PRIVATE "${_eui_app_main_source}" ${_eui_app_icon_resource})
-    foreach(_eui_debug_source IN LISTS _eui_debug_sources)
-        target_sources(${target_name} PRIVATE "$<$<CONFIG:Debug>:${_eui_debug_source}>")
-    endforeach()
-    target_compile_definitions(${target_name} PRIVATE $<$<CONFIG:Debug>:EUI_DEVTOOLS_AVAILABLE=1>)
     target_link_libraries(${target_name} PRIVATE eui::neo)
     eui_apply_compile_options(${target_name})
     eui_apply_app_link_options(${target_name})
@@ -548,6 +544,12 @@ function(eui_neo_configure_named_app target_name)
         target_link_libraries(${target_name} PRIVATE ZLIB::ZLIB)
     endif()
 endfunction()
+
+# Modules build their own examples, fixtures and tests, so they are added once
+# the app helpers above exist.
+if(EUI_ENABLE_MODULES AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/modules/CMakeLists.txt")
+    add_subdirectory(modules)
+endif()
 
 # -----------------------------------------------------------------------------
 # Bundled examples and internal tests
@@ -631,8 +633,6 @@ if(EUI_BUILD_USER_APPS)
 endif()
 
 if(EUI_BUILD_TEST_FIXTURES)
-    enable_testing()
-
     file(GLOB TEST_FIXTURE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/*.cpp")
     foreach(fixture_source ${TEST_FIXTURE_SOURCES})
         get_filename_component(fixture_name "${fixture_source}" NAME_WE)
@@ -708,16 +708,6 @@ if(EUI_BUILD_TEST_FIXTURES)
     foreach(unit_source ${TEST_UNIT_SOURCES})
         get_filename_component(unit_name "${unit_source}" NAME_WE)
         add_executable(${unit_name} "${unit_source}")
-        if(unit_name STREQUAL "devtools_host")
-            get_property(_eui_debug_sources GLOBAL PROPERTY EUI_NEO_DEBUG_SOURCES)
-            foreach(_eui_debug_source IN LISTS _eui_debug_sources)
-                target_sources(${unit_name} PRIVATE "$<$<CONFIG:Debug>:${_eui_debug_source}>")
-            endforeach()
-            target_compile_definitions(${unit_name} PRIVATE $<$<CONFIG:Debug>:EUI_DEVTOOLS_AVAILABLE=1>)
-        endif()
-        if(unit_name STREQUAL "performance_snapshot")
-            target_compile_definitions(${unit_name} PRIVATE $<$<CONFIG:Debug>:EUI_DEVTOOLS_AVAILABLE=1>)
-        endif()
         target_link_libraries(${unit_name} PRIVATE eui::neo)
         eui_apply_compile_options(${unit_name})
         if(unit_name STREQUAL "shadertoy_packaged_assets")
@@ -795,7 +785,7 @@ if(EUI_ENABLE_INSTALL)
         FILES_MATCHING PATTERN "*.h"
         PATTERN "detail" EXCLUDE
     )
-    install(FILES include/eui/detail/dsl_app_impl.h
+    install(FILES include/eui/detail/dsl_app_impl.h include/eui/detail/overlay_host.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/eui/detail
     )
     set(EUI_NEO_INSTALL_HEADER_DIRS components core)
@@ -805,15 +795,6 @@ if(EUI_ENABLE_INSTALL)
     install(DIRECTORY ${EUI_NEO_INSTALL_HEADER_DIRS}
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/eui-neo
         FILES_MATCHING PATTERN "*.h"
-        PATTERN "debug" EXCLUDE
-    )
-    install(FILES core/debug/devtools_host.h core/debug/devtools_ui.h core/debug/devtools_performance.h core/debug/devtools_icons.h
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/eui-neo/core/debug
-        CONFIGURATIONS Debug
-    )
-    install(FILES core/debug/devtools_host.cpp core/debug/devtools_ui.cpp core/debug/devtools_performance.cpp
-        DESTINATION ${CMAKE_INSTALL_DATADIR}/eui-neo/app
-        CONFIGURATIONS Debug
     )
     if(EUI_OWNS_GLFW_TARGET AND TARGET glfw)
         install(DIRECTORY "${EUI_GLFW_DIR}/include/GLFW"
@@ -882,10 +863,8 @@ set(EUI_NEO_DEPS_MODE "@EUI_DEPS_MODE@")
 set(EUI_NEO_ENABLE_MARKDOWN @EUI_ENABLE_MARKDOWN@)
 set(EUI_NEO_ENABLE_MODULES @EUI_ENABLE_MODULES@)
 set(EUI_APP_MAIN_SOURCE "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/eui-neo/app/app_main.cpp")
-set(EUI_DEBUG_SOURCES "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/eui-neo/app/devtools_host.cpp;${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/eui-neo/app/devtools_ui.cpp;${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/eui-neo/app/devtools_performance.cpp")
 set(EUI_APP_ASSETS_DIR "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/eui-neo/assets")
 set_property(GLOBAL PROPERTY EUI_NEO_APP_MAIN_SOURCE "${EUI_APP_MAIN_SOURCE}")
-set_property(GLOBAL PROPERTY EUI_NEO_DEBUG_SOURCES "${EUI_DEBUG_SOURCES}")
 set_property(GLOBAL PROPERTY EUI_NEO_APP_ASSETS_DIR "${EUI_APP_ASSETS_DIR}")
 
 find_dependency(Threads)
@@ -929,20 +908,12 @@ endfunction()
 
 function(eui_neo_configure_app target_name)
     get_property(_eui_app_main_source GLOBAL PROPERTY EUI_NEO_APP_MAIN_SOURCE)
-    get_property(_eui_debug_sources GLOBAL PROPERTY EUI_NEO_DEBUG_SOURCES)
     if(NOT _eui_app_main_source)
         message(FATAL_ERROR
             "EUI app entry source is unavailable. Ensure EuiNeo is found "
             "before calling eui_neo_configure_app().")
     endif()
     target_sources(${target_name} PRIVATE "${_eui_app_main_source}")
-    list(GET _eui_debug_sources 0 _eui_debug_host_source)
-    if(EXISTS "${_eui_debug_host_source}")
-        foreach(_eui_debug_source IN LISTS _eui_debug_sources)
-            target_sources(${target_name} PRIVATE "$<$<CONFIG:Debug>:${_eui_debug_source}>")
-        endforeach()
-        target_compile_definitions(${target_name} PRIVATE $<$<CONFIG:Debug>:EUI_DEVTOOLS_AVAILABLE=1>)
-    endif()
     target_link_libraries(${target_name} PRIVATE eui::neo)
     if(MSVC)
         target_compile_options(${target_name} PRIVATE /utf-8)

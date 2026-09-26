@@ -64,12 +64,36 @@ inline bool Runtime::update(core::window::Handle window, float deltaSeconds, flo
         ++updateFrameToken_;
     }
     if (!inputEnabled) {
-        cancelInput(window);
+        if (window != nullptr) {
+            cancelInput(window);
+        }
+#if defined(EUI_DEBUG_BUILD)
+        else {
+            overlayPointerEvents_.clear();
+            overlayScrollEvent_ = {};
+        }
+#endif
     }
-    std::vector<PointerEvent> pointerEvents = consumePointerEvents(window, pointerScale);
-    std::vector<KeyEvent> keyEvents = consumeKeyEvents(window);
-    TextInputEvent textInputEvent = consumeTextInput(window);
-    ScrollEvent scrollEvent = consumeScrollInput(window);
+    std::vector<PointerEvent> pointerEvents;
+    std::vector<KeyEvent> keyEvents;
+    TextInputEvent textInputEvent;
+    ScrollEvent scrollEvent;
+    if (window != nullptr) {
+        pointerEvents = consumePointerEvents(window, pointerScale);
+        keyEvents = consumeKeyEvents(window);
+        textInputEvent = consumeTextInput(window);
+        scrollEvent = consumeScrollInput(window);
+    }
+#if defined(EUI_DEBUG_BUILD)
+    else {
+        // Host driven overlay runtimes read the input the host pushed instead of
+        // a window input queue.
+        pointerEvents = std::move(overlayPointerEvents_);
+        overlayPointerEvents_.clear();
+        scrollEvent = overlayScrollEvent_;
+        overlayScrollEvent_ = {};
+    }
+#endif
     if (!inputEnabled) {
         for (PointerEvent& event : pointerEvents) {
             event.x = -1000000.0;
@@ -82,7 +106,7 @@ inline bool Runtime::update(core::window::Handle window, float deltaSeconds, flo
         textInputEvent = {};
         scrollEvent = {};
     }
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+#if defined(EUI_DEBUG_BUILD)
     if (inputFilter_) {
         inputFilter_(pointerEvents, scrollEvent);
     }
@@ -126,6 +150,8 @@ inline bool Runtime::update(core::window::Handle window, float deltaSeconds, flo
     instances_.releaseUnseenTimers();
     updateImeCursorRect(window, dpiScale);
     if (window != nullptr) {
+        // A host driven overlay runtime has no window of its own; its host owns
+        // the cursor for the window it draws into.
         applyCursor(window);
     }
 
@@ -172,16 +198,24 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
     const Rect* viewportClip = clipViewport_ ? &viewportPixels : nullptr;
 
     const bool hasRenderableContent = !ui_.roots().empty();
+#if defined(EUI_DEBUG_BUILD)
+    // A debug overlay is part of the cached frame. The render cache is the window
+    // backing store, so content drawn outside it would be missing from the next
+    // cache blit; the overlay repaints wherever the cache is repainted.
+    const auto drawOverlay = [&](const Rect* dirty) {
+        if (overlayRenderer_) {
+            overlayRenderer_(windowWidth, windowHeight, dpiScale, dirty);
+        }
+    };
+#endif
     const auto releasePrunedRetainedLayers = [&] {
         instances_.releaseUnseenRetainedLayers();
     };
     if (!hasRenderableContent) {
         ++stats.clearCalls;
         renderBackend->clear(clearColor);
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
-        if (overlayRenderer_) {
-            overlayRenderer_(windowWidth, windowHeight, dpiScale, nullptr);
-        }
+#if defined(EUI_DEBUG_BUILD)
+        drawOverlay(nullptr);
 #endif
         dirtyRects_.clear();
         fullPaintRequested_ = false;
@@ -195,10 +229,8 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
         renderBackend->clear(clearColor);
         ++stats.renderDirectPasses;
         RuntimeRenderer(ui_, instances_, viewportClip).renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale);
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
-        if (overlayRenderer_) {
-            overlayRenderer_(windowWidth, windowHeight, dpiScale, nullptr);
-        }
+#if defined(EUI_DEBUG_BUILD)
+        drawOverlay(nullptr);
 #endif
         dirtyRects_.clear();
         fullPaintRequested_ = false;
@@ -245,10 +277,8 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
         renderBackend->clear(clearColor);
         ++stats.renderDirectPasses;
         RuntimeRenderer(ui_, instances_, viewportClip).renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale);
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
-        if (overlayRenderer_) {
-            overlayRenderer_(windowWidth, windowHeight, dpiScale, nullptr);
-        }
+#if defined(EUI_DEBUG_BUILD)
+        drawOverlay(nullptr);
 #endif
     } else {
         for (const Rect& dirty : dirtyRects) {
@@ -257,10 +287,8 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
             renderBackend->clear(clearColor);
             ++stats.renderDirectPasses;
             RuntimeRenderer(ui_, instances_, viewportClip).renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale, &dirty);
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
-            if (overlayRenderer_) {
-                overlayRenderer_(windowWidth, windowHeight, dpiScale, &dirty);
-            }
+#if defined(EUI_DEBUG_BUILD)
+            drawOverlay(&dirty);
 #endif
         }
         renderBackend->setScissor(false, {}, windowHeight);
@@ -294,14 +322,15 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale) {
     instances_.releaseUnseenRetainedLayers();
 }
 
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+#if defined(EUI_DEBUG_BUILD)
 inline void Runtime::renderDirectOverlay(int windowWidth, int windowHeight, float dpiScale, const Rect* dirtyRect) {
     core::render::RenderBackend* renderBackend = core::render::activeRenderBackend();
     if (renderBackend == nullptr) {
         return;
     }
     const Rect viewportPixels = toPixelRect(viewport_, dpiScale);
-    RuntimeRenderer(ui_, instances_, clipViewport_ ? &viewportPixels : nullptr).renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale, dirtyRect);
+    RuntimeRenderer(ui_, instances_, clipViewport_ ? &viewportPixels : nullptr)
+        .renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale, dirtyRect);
 }
 #endif
 
@@ -315,9 +344,10 @@ inline void Runtime::shutdown(bool releaseCachedImageTextures) {
     ui_.end();
     ui_.clearState();
     keyEventHandler_ = {};
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+#if defined(EUI_DEBUG_BUILD)
     inputFilter_ = {};
-    overlayRenderer_ = {};
+    overlayPointerEvents_.clear();
+    overlayScrollEvent_ = {};
 #endif
 }
 

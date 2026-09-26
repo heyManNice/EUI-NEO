@@ -43,7 +43,7 @@ int main() {
     assert(title.empty());
 
     runner.updatePerformanceStats(11.0, setTitle, publish);
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+#if defined(EUI_DEBUG_BUILD)
     assert(published == 1);
     assert(snapshot.revision == 1);
     assert(snapshot.framesPerSecond == 60.0);

@@ -1,10 +1,8 @@
 #pragma once
 
 #include "eui/dsl_app.h"
+#include "eui/detail/overlay_host.h"
 #include "eui/network.h"
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
-#include "core/debug/devtools_host.h"
-#endif
 
 #include "3rd/stb_image.h"
 #include "core/dsl_runtime.h"
@@ -36,19 +34,14 @@ namespace app {
 namespace detail {
 
 inline void publishPerformanceSnapshot(const PerformanceSnapshot& snapshot) {
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
-    core::debug::devtoolsHost().setPerformanceSnapshot(snapshot);
-#else
+#if defined(EUI_DEBUG_BUILD)
+    detail::OverlayHost* overlay = detail::overlayHost();
+    if (overlay != nullptr) {
+        overlay->setPerformanceSnapshot(snapshot);
+        return;
+    }
+#endif
     (void)snapshot;
-#endif
-}
-
-inline bool performancePanelVisible() {
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
-    return core::debug::devtoolsHost().performanceVisible();
-#else
-    return false;
-#endif
 }
 
 inline core::dsl::Runtime& dslRuntime() {
@@ -308,39 +301,61 @@ void requestFullPaint() {
 bool initialize(core::window::Handle window) {
     const DslAppConfig& config = dslAppConfig();
     core::TextPrimitive::setDefaultFontFiles(config.textFontFileValue, config.iconFontFileValue);
+#if defined(EUI_DEBUG_BUILD)
+    detail::OverlayHost* overlay = detail::overlayHost();
+    if (overlay != nullptr) {
+        detail::dslRuntime().setInputFilter([overlay](std::vector<core::PointerEvent>& pointerEvents,
+                                                      core::ScrollEvent& scrollEvent) {
+            overlay->filterInput(pointerEvents, scrollEvent);
+        });
+        detail::dslRuntime().setOverlayRenderer([overlay](int width, int height, float dpiScale,
+                                                          const core::Rect* dirtyRect) {
+            overlay->render(width, height, dpiScale, dirtyRect);
+        });
+        const std::function<void(const eui::KeyEvent&)> appKeyHandler = config.keyEventHandler;
+        detail::dslRuntime().setKeyEventHandler([appKeyHandler](const eui::KeyEvent& key) {
+            detail::OverlayHost* active = detail::overlayHost();
+            if (active != nullptr && active->handleHotkey(key)) {
+                return;
+            }
+            if (appKeyHandler) {
+                appKeyHandler(key);
+            }
+        });
+        // The overlay describes its own window, but the app layer owns window
+        // creation and closing.
+        const std::shared_ptr<DslWindowHandle> detachedHandle = std::make_shared<DslWindowHandle>();
+        const std::shared_ptr<unsigned int> detachedGeneration = std::make_shared<unsigned int>(0);
+        overlay->setDetachedWindowOpener([overlay, detachedHandle, detachedGeneration] {
+            detail::DetachedWindowOptions options;
+            overlay->describeDetachedWindow(options);
+            const unsigned int generation = ++*detachedGeneration;
+            *detachedHandle = openWindow(DslWindowConfig{}
+                    .title(options.title)
+                    .pageId("eui.overlay.detached")
+                    .clearColor(options.clearColor)
+                    .windowSize(options.width, options.height)
+                    .onKeyEvent([overlay](const eui::KeyEvent& key) {
+                        overlay->handleHotkey(key);
+                    })
+                    .onClosed([overlay, detachedGeneration, generation] {
+                        // A window from an earlier detach must not touch the overlay.
+                        if (*detachedGeneration == generation) {
+                            overlay->detachedWindowClosed();
+                        }
+                    }),
+                [overlay](eui::Ui& ui, const eui::Screen& screen) {
+                    overlay->composeDetached(ui, screen);
+                });
+        });
+        overlay->setDetachedWindowCloser([detachedHandle] {
+            detachedHandle->requestClose();
+        });
+    } else {
+        detail::dslRuntime().setKeyEventHandler(config.keyEventHandler);
+    }
+#else
     detail::dslRuntime().setKeyEventHandler(config.keyEventHandler);
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
-    detail::dslRuntime().setInputFilter([](std::vector<core::PointerEvent>& pointerEvents,
-                                            core::ScrollEvent& scrollEvent) {
-        core::debug::devtoolsHost().filterInput(pointerEvents, scrollEvent);
-    });
-    detail::dslRuntime().setOverlayRenderer([](int width, int height, float dpiScale, const core::Rect* dirtyRect) {
-        core::debug::devtoolsHost().render(width, height, dpiScale, dirtyRect);
-    });
-    auto detachedHandle = std::make_shared<DslWindowHandle>();
-    auto detachedGeneration = std::make_shared<unsigned int>(0);
-    core::debug::devtoolsHost().setDetachedWindowOpener([detachedHandle, detachedGeneration] {
-        const unsigned int generation = ++*detachedGeneration;
-        *detachedHandle = openWindow(DslWindowConfig{}
-            .title("EUI DevTools")
-            .pageId("eui.devtools.detached")
-            .clearColor({0.125f, 0.145f, 0.176f, 1.0f})
-            .windowSize(640, 420)
-            .onKeyEvent([](const eui::KeyEvent& key) {
-                core::debug::devtoolsHost().handleDetachedKey(key);
-            })
-            .onClosed([detachedGeneration, generation] {
-                if (*detachedGeneration == generation) {
-                    core::debug::devtoolsHost().detachedWindowClosed();
-                }
-            }),
-            [](eui::Ui& ui, const eui::Screen& screen) {
-                core::debug::devtoolsHost().composeDetached(ui, screen);
-            });
-    });
-    core::debug::devtoolsHost().setDetachedWindowCloser([detachedHandle] {
-        detachedHandle->requestClose();
-    });
 #endif
 
     detail::DslAppState& state = detail::dslAppState();
@@ -368,19 +383,17 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
 
     const DslAppConfig& config = dslAppConfig();
     const float effectiveScale = dpiScale * uiScale();
+    int contentX = 0;
     int contentWidth = windowWidth;
     int contentHeight = windowHeight;
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
-    int contentX = 0;
-    core::debug::DevtoolsHost& devtools = core::debug::devtoolsHost();
-    if (devtools.beginFrame(window, windowWidth, windowHeight, effectiveScale, inputEnabled)) {
-        detail::dslRuntime().requestFullPaint();
-        updateRequested = true;
+#if defined(EUI_DEBUG_BUILD)
+    detail::OverlayHost* overlay = detail::overlayHost();
+    if (overlay != nullptr) {
+        const core::Rect content = overlay->contentBounds();
+        contentX = static_cast<int>(content.x);
+        contentWidth = static_cast<int>(content.width);
+        contentHeight = static_cast<int>(content.height);
     }
-    const core::Rect content = devtools.contentBounds();
-    contentX = static_cast<int>(content.x);
-    contentWidth = static_cast<int>(content.width);
-    contentHeight = static_cast<int>(content.height);
 #endif
     float logicalWidth = static_cast<float>(contentWidth) / effectiveScale;
     float logicalHeight = static_cast<float>(contentHeight) / effectiveScale;
@@ -393,11 +406,16 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
                 config.debugOverlayCompose(ui, screen);
             }
         };
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
-        detail::dslRuntime().compose(config.pageIdValue, core::Rect{static_cast<float>(contentX) / effectiveScale, 0.0f, logicalWidth, logicalHeight}, composeContent);
-#else
-        detail::dslRuntime().compose(config.pageIdValue, logicalWidth, logicalHeight, composeContent);
-#endif
+        if (contentX != 0 || contentWidth != windowWidth || contentHeight != windowHeight) {
+            // An overlay reserved part of the window: the page is composed into
+            // the remaining area and clipped to it.
+            detail::dslRuntime().compose(config.pageIdValue,
+                                         core::Rect{static_cast<float>(contentX) / effectiveScale, 0.0f,
+                                                    logicalWidth, logicalHeight},
+                                         composeContent);
+        } else {
+            detail::dslRuntime().compose(config.pageIdValue, logicalWidth, logicalHeight, composeContent);
+        }
         state.composed = true;
         state.logicalWidth = logicalWidth;
         state.logicalHeight = logicalHeight;
@@ -423,26 +441,32 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
         changed = true;
     }
 
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
-    if (devtools.update()) {
-        detail::dslRuntime().requestFullPaint();
-        changed = true;
+#if defined(EUI_DEBUG_BUILD)
+    if (overlay != nullptr) {
+        // The overlay draws on top of the rendered app frame, so an overlay
+        // repaint never forces the app render cache to be rebuilt.
+        if (overlay->update(windowWidth, windowHeight, effectiveScale)) {
+            // The overlay draws inside the app render cache, so its repaint has
+            // to rebuild the cached frame it belongs to.
+            detail::dslRuntime().requestFullPaint();
+            changed = true;
+        }
+        const core::Rect updatedContent = overlay->contentBounds();
+        if (contentX != static_cast<int>(updatedContent.x) ||
+            contentWidth != static_cast<int>(updatedContent.width) ||
+            contentHeight != static_cast<int>(updatedContent.height)) {
+            contentX = static_cast<int>(updatedContent.x);
+            contentWidth = static_cast<int>(updatedContent.width);
+            contentHeight = static_cast<int>(updatedContent.height);
+            logicalWidth = static_cast<float>(contentWidth) / effectiveScale;
+            logicalHeight = static_cast<float>(contentHeight) / effectiveScale;
+            detail::dslRuntime().requestFullPaint();
+            composeFrame();
+            changed = detail::dslRuntime().update(window, 0.0f, pointerScale, effectiveScale, inputEnabled) || changed;
+            changed = true;
+        }
+        overlay->updateCursor(window);
     }
-    const core::Rect updatedContent = devtools.contentBounds();
-    if (contentX != static_cast<int>(updatedContent.x) ||
-        contentWidth != static_cast<int>(updatedContent.width) ||
-        contentHeight != static_cast<int>(updatedContent.height)) {
-        contentX = static_cast<int>(updatedContent.x);
-        contentWidth = static_cast<int>(updatedContent.width);
-        contentHeight = static_cast<int>(updatedContent.height);
-        logicalWidth = static_cast<float>(contentWidth) / effectiveScale;
-        logicalHeight = static_cast<float>(contentHeight) / effectiveScale;
-        detail::dslRuntime().requestFullPaint();
-        composeFrame();
-        changed = detail::dslRuntime().update(window, 0.0f, pointerScale, effectiveScale, inputEnabled) || changed;
-        changed = true;
-    }
-    devtools.updateCursor(window);
 #endif
 
     return changed;
@@ -463,8 +487,10 @@ void render(int windowWidth, int windowHeight, float dpiScale) {
 }
 
 void releaseGraphicsResources() {
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
-    core::debug::devtoolsHost().releaseGraphicsResources();
+#if defined(EUI_DEBUG_BUILD)
+    if (detail::OverlayHost* overlay = detail::overlayHost(); overlay != nullptr) {
+        overlay->releaseGraphicsResources();
+    }
 #endif
     detail::dslRuntime().releaseGraphicsResources();
 }
@@ -472,8 +498,10 @@ void releaseGraphicsResources() {
 void shutdown() {
     core::async::shutdown();
     if (dslAppConfig().shutdownHandler) dslAppConfig().shutdownHandler();
-#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
-    core::debug::devtoolsHost().shutdown();
+#if defined(EUI_DEBUG_BUILD)
+    if (detail::OverlayHost* overlay = detail::overlayHost(); overlay != nullptr) {
+        overlay->shutdown();
+    }
 #endif
     detail::dslRuntime().shutdown();
     eui::network::shutdown();

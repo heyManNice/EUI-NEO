@@ -4,6 +4,7 @@
 # This keeps downstream copies free to omit modules they do not ship.
 
 set(EUI_NEO_KNOWN_MODULES
+    devtools
     keyboard
     serial
 )
