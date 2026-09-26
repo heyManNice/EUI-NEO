@@ -538,9 +538,9 @@ function(eui_neo_configure_named_app target_name)
         target_link_libraries(${target_name} PRIVATE eui::module_keyboard)
     elseif(target_name STREQUAL "serial_tool")
         target_link_libraries(${target_name} PRIVATE eui::module_serial)
-    elseif(target_name STREQUAL "card_slider")
-        # This example shows the DevTools panel, which lives in an optional module,
-        # so it is registered only while that module is available (see the app
+    elseif(target_name STREQUAL "card_slider" OR target_name STREQUAL "clock")
+        # These examples show the DevTools panel, which lives in an optional module,
+        # so they are registered only while that module is available (see the app
         # registration below), like the keyboard and serial_tool examples.
         target_link_libraries(${target_name} PRIVATE eui::module_devtools)
     elseif(target_name STREQUAL "vcd_viewer")
@@ -621,8 +621,9 @@ if(EUI_BUILD_USER_APPS)
             message(STATUS "Skipping serial_tool app because the serial module is not available.")
             continue()
         endif()
-        if(app_name STREQUAL "card_slider" AND NOT TARGET eui::module_devtools)
-            message(STATUS "Skipping card_slider app because the devtools module is not available.")
+        if((app_name STREQUAL "card_slider" OR app_name STREQUAL "clock") AND
+           NOT TARGET eui::module_devtools)
+            message(STATUS "Skipping ${app_name} app because the devtools module is not available.")
             continue()
         endif()
         add_executable(${app_name} ${app_local_sources})
