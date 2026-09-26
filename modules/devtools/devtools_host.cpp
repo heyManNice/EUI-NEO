@@ -35,6 +35,13 @@ void detachDevtoolsHost() {
 }
 
 bool DevtoolsHost::handleHotkey(const core::KeyEvent& key) {
+    if (key.action == core::KeyAction::Press && key.key == core::InputKey::Escape &&
+        panelState_ != nullptr && panelState_->pickingElement) {
+        // Escape leaves the picker: the panel keeps the pointer to itself only while
+        // the user is picking an element.
+        setPickingElement(false);
+        return true;
+    }
     if (!isHotkey(key)) {
         return false;
     }
@@ -75,10 +82,61 @@ void DevtoolsHost::setElementTree(const core::dsl::runtime::ElementTreeSnapshot&
 
 const std::string& DevtoolsHost::hoveredElement() const {
     static const std::string empty;
-    if (!visible_ || panelState_ == nullptr || panelState_->activeTab != DevtoolsTab::Elements) {
+    if (!visible_ || panelState_ == nullptr) {
+        return empty;
+    }
+    // While the panel picks, the preview follows the pointer on the page; otherwise it
+    // is the tree row under the mouse.
+    if (panelState_->pickingElement) {
+        return elementUnderPointer_;
+    }
+    if (panelState_->activeTab != DevtoolsTab::Elements) {
         return empty;
     }
     return panelState_->hoveredElement;
+}
+
+bool DevtoolsHost::pickingElement() const {
+    return visible_ && panelState_ != nullptr && panelState_->pickingElement;
+}
+
+core::PointerEvent DevtoolsHost::pickedPointer() const {
+    return pickedPointer_;
+}
+
+void DevtoolsHost::setPickingElement(bool picking) {
+    pickCommitPending_ = false;
+    elementUnderPointer_.clear();
+    if (panelState_ == nullptr || panelState_->pickingElement == picking) {
+        return;
+    }
+    panelState_->pickingElement = picking;
+    if (picking && panelState_->activeTab != DevtoolsTab::Elements) {
+        // Picking is about the tree, so the panel shows the tab that will follow it.
+        panelState_->activeTab = DevtoolsTab::Elements;
+    }
+    panelState_->moreMenuOpen = false;
+    requestCompose();
+}
+
+void DevtoolsHost::setElementUnderPointer(const std::string& id) {
+    if (panelState_ == nullptr) {
+        return;
+    }
+    // A pick is committed by the answer that follows the click, so the selection is
+    // the element the user saw under the pointer when they pressed.
+    const bool commit = panelState_->pickingElement && pickCommitPending_ && !id.empty();
+    if (elementUnderPointer_ == id && !commit) {
+        return;
+    }
+    elementUnderPointer_ = id;
+    if (!commit) {
+        return;
+    }
+    panelState_->selectedElement = id;
+    panelState_->revealedSelection.clear();
+    // The picker turns itself off once it has picked, like the one in a browser.
+    setPickingElement(false);
 }
 
 const std::string& DevtoolsHost::propertiesElement() const {
@@ -172,6 +230,10 @@ void DevtoolsHost::selectTab(DevtoolsTab tab) {
         return;
     }
     panelState_->moreMenuOpen = false;
+    if (tab != DevtoolsTab::Elements) {
+        // Picking is about the tree, so leaving that tab leaves the picker as well.
+        setPickingElement(false);
+    }
     if (panelState_->activeTab == tab) {
         return;
     }
@@ -191,6 +253,7 @@ void DevtoolsHost::close() {
     visible_ = false;
     resizing_ = false;
     panelEdgeActive_ = false;
+    setPickingElement(false);
     if (panelState_ != nullptr) {
         panelState_->moreMenuOpen = false;
     }
@@ -350,6 +413,10 @@ void DevtoolsHost::filterInput(std::vector<core::PointerEvent>& pointerEvents, c
     if (!visible_ || panelSize() <= 0) {
         return;
     }
+    // While the panel picks, it owns the pointer wherever it is over the page: the
+    // events are what the app layer hit tests, and the click that picks never reaches
+    // the page, so picking an element does not also press it.
+    const bool picking = pickingElement();
     bool pointerInPanel = false;
     for (core::PointerEvent& event : pointerEvents) {
         const bool overBoundary = overResizeBoundary(event.x, event.y);
@@ -397,6 +464,16 @@ void DevtoolsHost::filterInput(std::vector<core::PointerEvent>& pointerEvents, c
         runtime_.pushPointerEvent(panelEvent);
 
         if (!inside && !overBoundary && !captured) {
+            if (picking) {
+                pickedPointer_ = event;
+                if (event.isRelease(core::PointerButton::Left)) {
+                    pickCommitPending_ = true;
+                }
+                event.x = kOutsidePointer;
+                event.y = kOutsidePointer;
+                event.deltaX = 0.0;
+                event.deltaY = 0.0;
+            }
             pointerInPanel = false;
             continue;
         }
@@ -421,14 +498,7 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
     panelState_ = &state;
     composeDevtoolsUi(ui, {width, height, panel, detached, dockPosition_, &state, &performanceSnapshot_, &elementTree_,
                            &properties_, propertyOverrideCount_}, {
-        [this, &state](DevtoolsTab tab) {
-            if (state.activeTab == tab) {
-                return;
-            }
-            state.activeTab = tab;
-            state.moreMenuOpen = false;
-            requestCompose();
-        },
+        [this](DevtoolsTab tab) { selectTab(tab); },
         [this](DockPosition position) { selectDockPosition(position); },
         [this, &state] {
             state.moreMenuOpen = !state.moreMenuOpen;
@@ -455,6 +525,7 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
                 return;
             }
             state.selectedElement = id;
+            state.revealedSelection.clear();
             requestCompose();
         },
         [&state](const std::string& id, bool hovered) {
@@ -468,6 +539,7 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
                 state.hoveredElement.clear();
             }
         },
+        [this] { setPickingElement(!pickingElement()); },
         [this, &state](const std::string& id) {
             const auto expanded = std::find(state.expandedElements.begin(), state.expandedElements.end(), id);
             if (expanded == state.expandedElements.end()) {
@@ -476,6 +548,12 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
                 state.expandedElements.erase(expanded);
             }
             requestCompose();
+        },
+        [this, &state](const std::string& id) {
+            // The tree has shown the selection; from now on it is the user's to move.
+            if (state.revealedSelection != id) {
+                state.revealedSelection = id;
+            }
         },
         [](const std::string& id) {
             core::window::setClipboardText(id);
@@ -642,6 +720,8 @@ void DevtoolsHost::shutdown() {
     detachedWindowCloser_ = {};
     resizing_ = false;
     panelEdgeActive_ = false;
+    pickCommitPending_ = false;
+    elementUnderPointer_.clear();
     panelHeightLogical_ = 0.0f;
     panelWidthLogical_ = 0.0f;
     composeRequested_ = true;

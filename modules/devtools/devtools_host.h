@@ -29,6 +29,9 @@ public:
     bool wantsElementTree() const override;
     void setElementTree(const core::dsl::runtime::ElementTreeSnapshot& tree) override;
     const std::string& hoveredElement() const override;
+    bool pickingElement() const override;
+    core::PointerEvent pickedPointer() const override;
+    void setElementUnderPointer(const std::string& id) override;
     const std::string& propertiesElement() const override;
     void setElementProperties(const core::dsl::runtime::DebugElementProperties& properties) override;
     bool takeElementPropertyEdit(ElementPropertyEdit& edit) override;
@@ -65,6 +68,7 @@ private:
     core::Rect panelBounds() const;
     void selectDockPosition(DockPosition position);
     void selectTab(DevtoolsTab tab);
+    void setPickingElement(bool picking);
     void dismissMoreMenu();
     void close();
     void openDetachedWindow();
@@ -88,6 +92,11 @@ private:
     // The panel edge owns the pointer: it is what takes a press that resizes the
     // panel away from the panel's own controls.
     bool panelEdgeActive_ = false;
+    // Picking: the pointer the panel wants answered, the element it landed on, and
+    // whether the next answer commits it as the selection.
+    core::PointerEvent pickedPointer_;
+    std::string elementUnderPointer_;
+    bool pickCommitPending_ = false;
     bool visible_ = false;
     DockPosition dockPosition_ = DockPosition::Bottom;
     app::PerformanceSnapshot performanceSnapshot_;

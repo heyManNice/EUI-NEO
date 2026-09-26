@@ -38,6 +38,13 @@ struct DevtoolsPanelState {
     std::string selectedElement;
     // The row the pointer is over, previewed in the page until it leaves.
     std::string hoveredElement;
+    // The panel picks elements on the page while this is set: the pointer belongs to
+    // the panel, and the element it lands on becomes the selection.
+    bool pickingElement = false;
+    // The selection the tree has already brought into view. A new one opens its
+    // ancestors and scrolls to its row once, so collapsing or scrolling by hand
+    // afterwards stays the user's choice.
+    std::string revealedSelection;
     float propertiesScrollOffset = 0.0f;
     // Height of the property area, in the logical units the panel composes in. The
     // host only seeds it from the theme's fraction; the divider on its top edge owns
@@ -86,7 +93,11 @@ struct DevtoolsUiActions {
     std::function<void(float)> setElementsScrollOffset;
     std::function<void(const std::string&)> selectElement;
     std::function<void(const std::string&, bool)> hoverElement;
+    // Turns picking on or off. While it is on the panel owns the pointer and the
+    // element it picks becomes the selection, which the tree then keeps in view.
+    std::function<void()> toggleElementPicker;
     std::function<void(const std::string&)> toggleElementCollapsed;
+    std::function<void(const std::string&)> setRevealedSelection;
     std::function<void(const std::string&)> copyElementId;
     std::function<void(float)> setPropertiesScrollOffset;
     std::function<void(float)> setPropertiesHeight;

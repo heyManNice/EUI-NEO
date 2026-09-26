@@ -576,6 +576,61 @@ int main() {
         assert(host.selectedElement() == "page.root");
     }
 
+    // The arrow in the toolbar picks elements on the page: the panel owns the pointer,
+    // the page is told the pointer left, the element under it is previewed while the
+    // picker is armed, and the click that picks hands the element to the tree, which
+    // opens to show it.
+    chooseDock(2);
+    assert(host.dockPosition() == DockPosition::Bottom);
+    {
+        const core::Rect arrow = panelElementFrame(host, "selectElement");
+        clickPanel(arrow.x + arrow.width * 0.5, arrow.y + arrow.height * 0.5);
+        assert(host.pickingElement());
+        assert(host.activeTab() == DevtoolsTab::Elements);
+
+        // The page never sees the pointer while the panel picks, so a pick does not
+        // also press what is under it. The point is above the docked panel.
+        core::PointerEvent press = pressAt(700.0, 60.0);
+        core::ScrollEvent pickScroll;
+        const core::PointerEvent routed = routePointer(press, pickScroll);
+        assert(routed.x < 0.0 && routed.y < 0.0);
+        assert(host.pickedPointer().x == 700.0);
+        frame();
+
+        // The app layer answers with the element under the pointer, which the page then
+        // previews.
+        host.setElementUnderPointer("page.title");
+        assert(host.hoveredElement() == "page.title");
+
+        core::PointerEvent release = press;
+        release.action = core::PointerAction::Release;
+        release.buttons.set(core::PointerButton::Left, false);
+        routePointer(release, pickScroll);
+        frame();
+        host.setElementUnderPointer("page.title");
+        frame();
+        frame();
+
+        // The pick landed: the picker turned itself off, the selection moved, the tree
+        // opened the ancestor that hid the row, and the row is there to be seen.
+        assert(!host.pickingElement());
+        assert(host.selectedElement() == "page.title");
+        assert(host.expandedElements().size() == 1);
+        assert(host.expandedElements()[0] == "page.root");
+        assert(countPanelRows(host) == 3);
+
+        // Escape leaves the picker without touching the selection.
+        const core::Rect arrowAgain = panelElementFrame(host, "selectElement");
+        clickPanel(arrowAgain.x + arrowAgain.width * 0.5, arrowAgain.y + arrowAgain.height * 0.5);
+        assert(host.pickingElement());
+        core::KeyEvent escape;
+        escape.key = core::InputKey::Escape;
+        escape.action = core::KeyAction::Press;
+        assert(host.handleHotkey(escape));
+        assert(!host.pickingElement());
+        assert(host.selectedElement() == "page.title");
+    }
+
     // Every tab the panel names is reachable in a docked panel of the default size:
     // the strip is what carries them, so a tab that is clipped out of it cannot be
     // opened. Only Performance and Elements have content; the rest say what they will

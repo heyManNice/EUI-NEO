@@ -50,15 +50,11 @@ unsigned int elementKindIcon(core::dsl::ElementKind kind) {
 
 // Nodes start collapsed: a row is only opened if the user expanded it, so a tree
 // of a whole page does not unfold itself the moment the tab is shown.
-bool isExpanded(const DevtoolsPanelState* panelState, const std::string& id) {
-    if (panelState == nullptr) {
-        return false;
-    }
-    const std::vector<std::string>& expanded = panelState->expandedElements;
+bool isExpanded(const std::vector<std::string>& expanded, const std::string& id) {
     return std::find(expanded.begin(), expanded.end(), id) != expanded.end();
 }
 
-std::vector<ElementRow> visibleElementRows(const ElementTreeSnapshot& tree, const DevtoolsPanelState* panelState) {
+std::vector<ElementRow> visibleElementRows(const ElementTreeSnapshot& tree, const std::vector<std::string>& expanded) {
     std::vector<ElementRow> rows;
     rows.reserve(tree.nodes.size());
     int hiddenDeeperThan = -1;
@@ -69,13 +65,81 @@ std::vector<ElementRow> visibleElementRows(const ElementTreeSnapshot& tree, cons
         }
         hiddenDeeperThan = -1;
         const bool hasChildren = index + 1 < tree.nodes.size() && tree.nodes[index + 1].depth > node.depth;
-        const bool collapsed = hasChildren && !isExpanded(panelState, node.id);
+        const bool collapsed = hasChildren && !isExpanded(expanded, node.id);
         rows.push_back({&node, hasChildren, collapsed});
         if (collapsed) {
             hiddenDeeperThan = node.depth;
         }
     }
     return rows;
+}
+
+// The selection can arrive from the page (a pick) instead of from the tree, so the
+// tree brings it into view once: the ancestors that hide it are opened, and the list
+// scrolls to its row. Both go through actions, so they land in the next composition,
+// and the marker stops the reveal from undoing what the user does by hand afterwards.
+void revealSelection(const ElementTreeSnapshot& tree,
+                     const DevtoolsUiState& state,
+                     const DevtoolsUiActions& actions,
+                     float listHeight) {
+    if (state.panelState == nullptr || state.panelState->selectedElement.empty() ||
+        state.panelState->revealedSelection == state.panelState->selectedElement) {
+        return;
+    }
+    const std::string& selected = state.panelState->selectedElement;
+    std::size_t index = tree.nodes.size();
+    for (std::size_t candidate = 0; candidate < tree.nodes.size(); ++candidate) {
+        if (tree.nodes[candidate].id == selected) {
+            index = candidate;
+            break;
+        }
+    }
+    if (index == tree.nodes.size()) {
+        // The element is gone, because the page recomposed without it. Nothing to show,
+        // and no marker either, so a later selection is revealed again.
+        return;
+    }
+
+    // The ancestors of a node are the nearest earlier nodes with a smaller depth.
+    std::vector<std::string> expanded = state.panelState->expandedElements;
+    for (int depth = tree.nodes[index].depth - 1; depth >= 0; --depth) {
+        for (std::size_t walk = index; walk > 0; --walk) {
+            const ElementTreeNode& candidate = tree.nodes[walk - 1];
+            if (candidate.depth != depth) {
+                continue;
+            }
+            if (!isExpanded(expanded, candidate.id)) {
+                if (actions.toggleElementCollapsed) {
+                    actions.toggleElementCollapsed(candidate.id);
+                }
+                expanded.push_back(candidate.id);
+            }
+            break;
+        }
+    }
+
+    // The row can only be off screen once the ancestors above it are open, so the
+    // offset is measured against the rows the tree will have when they are.
+    if (listHeight > 0.0f && actions.setElementsScrollOffset) {
+        const std::vector<ElementRow> rows = visibleElementRows(tree, expanded);
+        const float rowHeight = devtoolsTheme().elementRowHeight;
+        for (std::size_t row = 0; row < rows.size(); ++row) {
+            if (rows[row].node->id != selected) {
+                continue;
+            }
+            const float rowTop = static_cast<float>(row) * rowHeight;
+            const float offset = state.panelState->elementsScrollOffset;
+            if (rowTop < offset) {
+                actions.setElementsScrollOffset(rowTop);
+            } else if (rowTop + rowHeight > offset + listHeight) {
+                actions.setElementsScrollOffset(std::max(0.0f, rowTop + rowHeight - listHeight));
+            }
+            break;
+        }
+    }
+    if (actions.setRevealedSelection) {
+        actions.setRevealedSelection(selected);
+    }
 }
 
 void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRow& row, bool selected,
@@ -296,7 +360,13 @@ void composeElementsTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const D
                               tree == nullptr ? "Waiting for the app page..." : "The page has no elements.",
                               state.panel.width, listHeight);
     } else {
-        const std::vector<ElementRow> rows = visibleElementRows(*tree, state.panelState);
+        // A selection that came from the page is brought into view before the rows are
+        // composed, so the row the user picked is the one they see selected.
+        revealSelection(*tree, state, actions, listHeight);
+        static const std::vector<std::string> noExpansions;
+        const std::vector<std::string>& expanded =
+            state.panelState != nullptr ? state.panelState->expandedElements : noExpansions;
+        const std::vector<ElementRow> rows = visibleElementRows(*tree, expanded);
         const float scrollOffset = state.panelState != nullptr ? state.panelState->elementsScrollOffset : 0.0f;
         components::virtualList(ui, "elements.list")
             .position(state.panel.x, top)

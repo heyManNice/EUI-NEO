@@ -69,11 +69,18 @@ public:
     }
     void setElementPropertyOverrideCount(std::size_t count) override { overrideCount = count; }
 
+    bool pickingElement() const override { return picking; }
+    core::PointerEvent pickedPointer() const override { return pointer; }
+    void setElementUnderPointer(const std::string& id) override { underPointer = id; }
+
     std::string element;
     core::dsl::runtime::DebugElementProperties properties;
     std::vector<ElementPropertyEdit> pending;
     int publishCount = 0;
     std::size_t overrideCount = 0;
+    bool picking = false;
+    core::PointerEvent pointer;
+    std::string underPointer;
 };
 
 void composePage() {
@@ -167,6 +174,27 @@ int main() {
     assert(restored.color.r == 0.2f);
     assert(!restored.shadow.enabled);
     assert(restored.overridden == 0);
+
+    // A picking overlay owns the pointer: the page is asked what is under it, and the
+    // answer comes from the page's own hit test, so it is the element the frame drew
+    // there. The panel's element is not interactive, and it is still picked.
+    overlay.picking = true;
+    overlay.pointer.x = 40.0;
+    overlay.pointer.y = 20.0;
+    app::detail::publishPickedElement(overlay, 1.0f);
+    assert(overlay.underPointer == "page.panel");
+
+    // A point that hits nothing answers with nothing, and a panel that stopped picking
+    // clears the answer even while the pointer stays where it was.
+    overlay.pointer.x = 190.0;
+    overlay.pointer.y = 90.0;
+    app::detail::publishPickedElement(overlay, 1.0f);
+    assert(overlay.underPointer.empty());
+    overlay.pointer.x = 40.0;
+    overlay.pointer.y = 20.0;
+    overlay.picking = false;
+    app::detail::publishPickedElement(overlay, 1.0f);
+    assert(overlay.underPointer.empty());
 
     page.shutdown(false);
     return 0;

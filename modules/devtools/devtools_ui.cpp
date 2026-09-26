@@ -232,7 +232,11 @@ void composeToolbar(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devto
                             .height(theme.iconButtonSize)
                             .gap(theme.metricGap)
                             .content([&] {
-                                composeToolbarIcon(ui, "selectElement", theme.iconSelectElement, theme.icon, dismissMenu);
+                                const bool picking =
+                                    state.panelState != nullptr && state.panelState->pickingElement;
+                                composeToolbarIcon(ui, "selectElement", theme.iconSelectElement,
+                                                   picking ? theme.primaryText : theme.icon,
+                                                   actions.toggleElementPicker);
                                 composeToolbarIcon(ui, "deviceViewport", theme.iconDeviceViewport, theme.icon, dismissMenu);
                             })
                             .build();

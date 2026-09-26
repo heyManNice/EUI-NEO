@@ -80,6 +80,21 @@ public:
         return empty;
     }
 
+    // True while the overlay picks elements on the page instead of leaving the pointer
+    // to the app. A picking overlay owns the pointer: the app layer tells the page the
+    // pointer left, asks it which element is under `pickedPointer()`, and reports the
+    // answer through `setElementUnderPointer`. The page never sees the click that
+    // picks, so picking an element does not also press it.
+    virtual bool pickingElement() const { return false; }
+
+    // The pointer a picking overlay wants answered, in framebuffer pixels: the space
+    // the page's own input uses. Only read while `pickingElement()` is true.
+    virtual core::PointerEvent pickedPointer() const { return {}; }
+
+    // The element the pointer is over, or empty when it is over nothing. Sent on every
+    // frame of a pick, so leaving the picker clears it.
+    virtual void setElementUnderPointer(const std::string& id) { static_cast<void>(id); }
+
     // One property edit the overlay asks for. `clear` puts the element's own value
     // back instead of writing one, and an empty id clears every override on the page.
     struct ElementPropertyEdit {

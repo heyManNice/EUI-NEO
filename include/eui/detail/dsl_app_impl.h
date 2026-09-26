@@ -152,6 +152,19 @@ inline void applyElementPropertyEdits(OverlayHost& overlay) {
     }
     overlay.setElementPropertyOverrideCount(dslRuntime().debugElementOverrideCount());
 }
+
+// A picking overlay owns the pointer: the page is told the pointer left, and what is
+// under it comes back from the page's own hit test. Asking the page keeps the answer
+// in the same space as the frame the user is looking at: transforms, ancestor clips
+// and paint order are the ones that drew it.
+inline void publishPickedElement(OverlayHost& overlay, float dpiScale) {
+    if (!overlay.pickingElement()) {
+        overlay.setElementUnderPointer(std::string{});
+        return;
+    }
+    const core::PointerEvent pointer = overlay.pickedPointer();
+    overlay.setElementUnderPointer(dslRuntime().debugElementAt(pointer.x, pointer.y, dpiScale));
+}
 #endif
 
 inline std::string resolveIconPath(const std::string& iconPath) {
@@ -538,6 +551,10 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
         // of the element it shows, and the edits it made land on the page here.
         applyElementPropertyEdits(*overlay);
         publishElementProperties(*overlay);
+        // The overlay owns the pointer while it picks: the answer to "what is under it"
+        // is read before the preview, so the page marks what the picker is pointing at
+        // in the same frame it moves.
+        detail::publishPickedElement(*overlay, effectiveScale);
         // The overlay decides which element the page should preview, and the page
         // draws it with the same transform and clip as the element itself.
         detail::dslRuntime().setHoveredElement(overlay->hoveredElement());
