@@ -69,6 +69,7 @@ int main() {
     // A hidden panel leaves the whole window to the page.
     assert(!frame());
     assert(!host.visible());
+    assert(!host.wantsElementTree());
     assert(host.contentBounds().x == 0.0f);
     assert(host.contentBounds().width == static_cast<float>(kWindowWidth));
     assert(host.contentBounds().height == static_cast<float>(kWindowHeight));
@@ -257,6 +258,34 @@ int main() {
     chooseDock(2);
     assert(host.dockPosition() == DockPosition::Bottom);
     assert(host.contentBounds().height < static_cast<float>(kWindowHeight));
+
+    // The panel asks the app layer for the element tree only while it shows the tab
+    // that displays it. The toolbar tabs are hit where a user would click them.
+    {
+        const double tabY = static_cast<double>(host.contentBounds().height) + 16.0;
+        assert(!host.wantsElementTree());
+        clickPanel(120.0, tabY);
+        assert(host.activeTab() == DevtoolsTab::Performance);
+        assert(!host.wantsElementTree());
+
+        clickPanel(180.0, tabY);
+        assert(host.activeTab() == DevtoolsTab::Elements);
+        assert(host.wantsElementTree());
+
+        core::dsl::runtime::ElementTreeSnapshot tree;
+        tree.revision = 7;
+        tree.nodes.push_back({"page.root", core::dsl::ElementKind::Column, {}, 0, 0, false, false, false,
+                              {0.0f, 0.0f, 800.0f, 600.0f}});
+        host.setElementTree(tree);
+        assert(frame());                       // the new tree is worth a repaint
+        assert(host.elementTree().revision == 7);
+        assert(host.elementTree().nodes.size() == 1);
+        assert(host.elementTree().nodes[0].id == "page.root");
+
+        clickPanel(120.0, tabY);
+        assert(host.activeTab() == DevtoolsTab::Performance);
+        assert(!host.wantsElementTree());
+    }
 
     // A floating panel leaves the whole window to the page and opens its window.
     chooseDock(0);

@@ -59,12 +59,42 @@ struct DslAppState {
     bool iconApplied = false;
     float logicalWidth = 0.0f;
     float logicalHeight = 0.0f;
+#if defined(EUI_DEBUG_BUILD)
+    std::uint64_t elementTreeRevision = 0;
+    double elementTreeRefreshTime = 0.0;
+#endif
 };
 
 inline DslAppState& dslAppState() {
     static DslAppState state;
     return state;
 }
+
+#if defined(EUI_DEBUG_BUILD)
+// Frame-only changes (animation, scrolling, hover) refresh the published tree at
+// most this often. A structural change always refreshes immediately, so a viewer
+// reacts to the page it inspects without waiting.
+inline constexpr double kElementTreeRefreshSeconds = 0.25;
+
+// Copies the page element tree to the overlay that displays it. Walking the tree
+// costs time and memory proportional to the page, and the overlay only pays for it
+// while it asks for the tree.
+inline void publishElementTree(OverlayHost& overlay) {
+    if (!overlay.wantsElementTree()) {
+        return;
+    }
+    DslAppState& state = dslAppState();
+    const std::uint64_t revision = dslRuntime().elementStructureRevision();
+    const double now = core::window::timeSeconds();
+    if (revision == state.elementTreeRevision &&
+        now - state.elementTreeRefreshTime < kElementTreeRefreshSeconds) {
+        return;
+    }
+    state.elementTreeRevision = revision;
+    state.elementTreeRefreshTime = now;
+    overlay.setElementTree(dslRuntime().elementTree());
+}
+#endif
 
 inline std::string resolveIconPath(const std::string& iconPath) {
     if (iconPath.empty()) {
@@ -443,6 +473,9 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
 
 #if defined(EUI_DEBUG_BUILD)
     if (overlay != nullptr) {
+        // Publish before the overlay update so it composes with the tree of this
+        // frame; the overlay asks for the tree only while it displays it.
+        publishElementTree(*overlay);
         // The overlay draws on top of the rendered app frame, so an overlay
         // repaint never forces the app render cache to be rebuilt.
         if (overlay->update(windowWidth, windowHeight, effectiveScale, deltaSeconds)) {

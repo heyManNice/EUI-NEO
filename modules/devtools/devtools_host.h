@@ -26,6 +26,8 @@ public:
     void updateCursor(core::window::Handle window) override;
     void render(int windowWidth, int windowHeight, float dpiScale, const core::Rect* dirtyRect) override;
     void setPerformanceSnapshot(const app::PerformanceSnapshot& snapshot) override;
+    bool wantsElementTree() const override;
+    void setElementTree(const core::dsl::runtime::ElementTreeSnapshot& tree) override;
     void releaseGraphicsResources() override;
     void shutdown() override;
 
@@ -40,6 +42,7 @@ public:
     DevtoolsTab activeTab() const;
     int contentHeight() const;
     float performanceScrollOffset() const;
+    const core::dsl::runtime::ElementTreeSnapshot& elementTree() const;
 
 private:
     int panelSize() const;
@@ -76,6 +79,7 @@ private:
     bool visible_ = false;
     DockPosition dockPosition_ = DockPosition::Bottom;
     app::PerformanceSnapshot performanceSnapshot_;
+    core::dsl::runtime::ElementTreeSnapshot elementTree_;
     std::function<void()> detachedWindowOpener_;
     std::function<void()> detachedWindowCloser_;
     bool composeRequested_ = true;

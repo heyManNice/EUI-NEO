@@ -6,6 +6,7 @@
 #include "core/dsl.h"
 #include "core/input/input_types.h"
 #include "core/render/render_types.h"
+#include "core/runtime/runtime_inspector.h"
 #include "core/window/window_types.h"
 
 #include <functional>
@@ -66,6 +67,12 @@ public:
     // Diagnostics snapshot published by the app loop; overlays without a
     // performance view ignore it.
     virtual void setPerformanceSnapshot(const PerformanceSnapshot& snapshot) {}
+
+    // Element tree of the app page. The app layer only copies the tree while the
+    // overlay asks for it, so an overlay that does not show the tree never pays
+    // for the copy, and an overlay that does decides when its copy is stale.
+    virtual bool wantsElementTree() const { return false; }
+    virtual void setElementTree(const core::dsl::runtime::ElementTreeSnapshot& tree) {}
 
     virtual void releaseGraphicsResources() = 0;
 

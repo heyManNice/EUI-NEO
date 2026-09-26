@@ -15,6 +15,10 @@
 #include "core/runtime/runtime_state_bindings.h"
 #include "core/window/window_backend.h"
 
+#if defined(EUI_DEBUG_BUILD)
+#include "core/runtime/runtime_inspector.h"
+#endif
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -86,6 +90,16 @@ public:
     // Renders this runtime directly on top of the current frame, clipped to its
     // viewport. Overlay runtimes draw outside the app Runtime render pass.
     void renderDirectOverlay(int windowWidth, int windowHeight, float dpiScale, const Rect* dirtyRect = nullptr);
+
+    // Read-only copy of the current element tree in pre-order. It is built on
+    // demand by the debug tools that display it, so the runtime keeps no extra
+    // state for them, and it stops at `maximumNodes` to bound the copy.
+    runtime::ElementTreeSnapshot elementTree(
+        std::size_t maximumNodes = runtime::kElementTreeMaximumNodes) const;
+
+    // Bumped whenever the element structure changes, which lets a tree view tell
+    // "same tree, new frames" from "the tree itself changed" without diffing.
+    std::uint64_t elementStructureRevision() const { return elementStructureRevision_; }
 #endif
 
     void shutdown(bool releaseCachedImageTextures = true);
@@ -329,6 +343,7 @@ private:
     std::function<void(int, int, float, const Rect*)> overlayRenderer_;
     std::vector<PointerEvent> overlayPointerEvents_;
     ScrollEvent overlayScrollEvent_;
+    std::uint64_t elementStructureRevision_ = 0;
 #endif
     RenderTransform focusedElementRenderTransform_;
     bool focusedElementRenderTransformValid_ = false;

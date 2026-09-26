@@ -47,6 +47,11 @@ inline void Runtime::composeViewport(const std::string& pageId, const Rect& view
         paintRequested_ = true;
         fullPaintRequested_ = true;
         pruneInstancesRequested_ = true;
+#if defined(EUI_DEBUG_BUILD)
+        // The debug tools read the tree on demand; this tells them when the tree
+        // they copied is out of date without comparing snapshots themselves.
+        ++elementStructureRevision_;
+#endif
     }
 
     if (viewport_.x != viewport.x || viewport_.y != viewport.y || viewport_.width != viewport.width || viewport_.height != viewport.height || clipViewport_ != clipViewport) {

@@ -60,6 +60,23 @@ void DevtoolsHost::setPerformanceSnapshot(const app::PerformanceSnapshot& snapsh
     }
 }
 
+bool DevtoolsHost::wantsElementTree() const {
+    // The tree is only copied while the panel is visible and shows the tab that
+    // displays it.
+    return visible_ && panelState_ != nullptr && panelState_->activeTab == DevtoolsTab::Elements;
+}
+
+void DevtoolsHost::setElementTree(const core::dsl::runtime::ElementTreeSnapshot& tree) {
+    elementTree_ = tree;
+    if (visible_) {
+        requestCompose();
+    }
+}
+
+const core::dsl::runtime::ElementTreeSnapshot& DevtoolsHost::elementTree() const {
+    return elementTree_;
+}
+
 bool DevtoolsHost::visible() const {
     return visible_;
 }
@@ -74,9 +91,16 @@ DevtoolsTab DevtoolsHost::activeTab() const {
 
 void DevtoolsHost::requestCompose() {
     composeRequested_ = true;
-    // The panel only needs another frame. Requesting a UI update instead would be
-    // read by the app layer as "app state changed", which recomposes the host
-    // page and repaints the whole window behind the panel.
+    if (dockPosition_ == DockPosition::Floating) {
+        // A detached panel lives in a window the window manager composes, and that
+        // only happens for a frame the app layer reports as an update. A frame
+        // request alone would leave the detached window on its previous frame.
+        core::platform::requestUiUpdate();
+        return;
+    }
+    // The docked panel only needs another frame. Requesting a UI update instead
+    // would be read by the app layer as "app state changed", which recomposes the
+    // host page and repaints the whole window behind the panel.
     core::platform::requestFrame();
 }
 
@@ -157,6 +181,9 @@ void DevtoolsHost::openDetachedWindow() {
 }
 
 void DevtoolsHost::detachedWindowClosed() {
+    // The detached window and the panel Runtime it composed are gone, so the host
+    // must forget the state that lived inside them before anything reads it.
+    panelState_ = nullptr;
     if (dockPosition_ == DockPosition::Floating) {
         close();
     }
@@ -320,12 +347,10 @@ void DevtoolsHost::filterInput(std::vector<core::PointerEvent>& pointerEvents, c
 
 void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const core::Rect& panel, bool detached) {
     // Panel state lives in the panel Runtime, so it is torn down with it and the
-    // host never keeps a second copy of the same truth. The detached window owns
-    // its own copy and is only reachable through the actions it composes.
+    // host never keeps a second copy of the same truth. Only one of the two panel
+    // runtimes composes at a time, so the host tracks whichever one is active.
     DevtoolsPanelState& state = ui.state<DevtoolsPanelState>("devtools.panel");
-    if (!detached) {
-        panelState_ = &state;
-    }
+    panelState_ = &state;
     composeDevtoolsUi(ui, {width, height, panel, detached, dockPosition_, &state, &performanceSnapshot_}, {
         [this, &state](DevtoolsTab tab) {
             if (state.activeTab == tab) {
