@@ -350,7 +350,7 @@ endif()
 # the generated entry source in a global property because normal CMake
 # variables from this directory are not visible in the parent's call scope.
 set_property(GLOBAL PROPERTY EUI_NEO_APP_MAIN_SOURCE "${EUI_APP_MAIN_SOURCE}")
-set_property(GLOBAL PROPERTY EUI_NEO_DEBUG_HOST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/core/debug/devtools_host.cpp")
+set_property(GLOBAL PROPERTY EUI_NEO_DEBUG_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/core/debug/devtools_host.cpp;${CMAKE_CURRENT_SOURCE_DIR}/core/debug/devtools_ui.cpp")
 
 target_link_libraries(eui_neo PUBLIC Freetype::Freetype)
 
@@ -472,14 +472,16 @@ endfunction()
 function(eui_neo_configure_app target_name)
     get_property(_eui_app_main_source GLOBAL PROPERTY EUI_NEO_APP_MAIN_SOURCE)
     get_property(_eui_app_icon_resource GLOBAL PROPERTY EUI_NEO_APP_ICON_RESOURCE)
-    get_property(_eui_debug_host_source GLOBAL PROPERTY EUI_NEO_DEBUG_HOST_SOURCE)
+    get_property(_eui_debug_sources GLOBAL PROPERTY EUI_NEO_DEBUG_SOURCES)
     if(NOT _eui_app_main_source)
         message(FATAL_ERROR
             "EUI app entry source is unavailable. Ensure EUI-NEO is configured "
             "before calling eui_neo_configure_app().")
     endif()
     target_sources(${target_name} PRIVATE "${_eui_app_main_source}" ${_eui_app_icon_resource})
-    target_sources(${target_name} PRIVATE "$<$<CONFIG:Debug>:${_eui_debug_host_source}>")
+    foreach(_eui_debug_source IN LISTS _eui_debug_sources)
+        target_sources(${target_name} PRIVATE "$<$<CONFIG:Debug>:${_eui_debug_source}>")
+    endforeach()
     target_compile_definitions(${target_name} PRIVATE $<$<CONFIG:Debug>:EUI_DEVTOOLS_AVAILABLE=1>)
     target_link_libraries(${target_name} PRIVATE eui::neo)
     eui_apply_compile_options(${target_name})
@@ -707,8 +709,10 @@ if(EUI_BUILD_TEST_FIXTURES)
         get_filename_component(unit_name "${unit_source}" NAME_WE)
         add_executable(${unit_name} "${unit_source}")
         if(unit_name STREQUAL "devtools_host")
-            get_property(_eui_debug_host_source GLOBAL PROPERTY EUI_NEO_DEBUG_HOST_SOURCE)
-            target_sources(${unit_name} PRIVATE "$<$<CONFIG:Debug>:${_eui_debug_host_source}>")
+            get_property(_eui_debug_sources GLOBAL PROPERTY EUI_NEO_DEBUG_SOURCES)
+            foreach(_eui_debug_source IN LISTS _eui_debug_sources)
+                target_sources(${unit_name} PRIVATE "$<$<CONFIG:Debug>:${_eui_debug_source}>")
+            endforeach()
             target_compile_definitions(${unit_name} PRIVATE $<$<CONFIG:Debug>:EUI_DEVTOOLS_AVAILABLE=1>)
         endif()
         target_link_libraries(${unit_name} PRIVATE eui::neo)
@@ -800,11 +804,11 @@ if(EUI_ENABLE_INSTALL)
         FILES_MATCHING PATTERN "*.h"
         PATTERN "debug" EXCLUDE
     )
-    install(FILES core/debug/devtools_host.h core/debug/devtools_icons.h
+    install(FILES core/debug/devtools_host.h core/debug/devtools_ui.h core/debug/devtools_icons.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/eui-neo/core/debug
         CONFIGURATIONS Debug
     )
-    install(FILES core/debug/devtools_host.cpp
+    install(FILES core/debug/devtools_host.cpp core/debug/devtools_ui.cpp
         DESTINATION ${CMAKE_INSTALL_DATADIR}/eui-neo/app
         CONFIGURATIONS Debug
     )
@@ -875,10 +879,10 @@ set(EUI_NEO_DEPS_MODE "@EUI_DEPS_MODE@")
 set(EUI_NEO_ENABLE_MARKDOWN @EUI_ENABLE_MARKDOWN@)
 set(EUI_NEO_ENABLE_MODULES @EUI_ENABLE_MODULES@)
 set(EUI_APP_MAIN_SOURCE "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/eui-neo/app/app_main.cpp")
-set(EUI_DEBUG_HOST_SOURCE "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/eui-neo/app/devtools_host.cpp")
+set(EUI_DEBUG_SOURCES "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/eui-neo/app/devtools_host.cpp;${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/eui-neo/app/devtools_ui.cpp")
 set(EUI_APP_ASSETS_DIR "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/eui-neo/assets")
 set_property(GLOBAL PROPERTY EUI_NEO_APP_MAIN_SOURCE "${EUI_APP_MAIN_SOURCE}")
-set_property(GLOBAL PROPERTY EUI_NEO_DEBUG_HOST_SOURCE "${EUI_DEBUG_HOST_SOURCE}")
+set_property(GLOBAL PROPERTY EUI_NEO_DEBUG_SOURCES "${EUI_DEBUG_SOURCES}")
 set_property(GLOBAL PROPERTY EUI_NEO_APP_ASSETS_DIR "${EUI_APP_ASSETS_DIR}")
 
 find_dependency(Threads)
@@ -922,15 +926,18 @@ endfunction()
 
 function(eui_neo_configure_app target_name)
     get_property(_eui_app_main_source GLOBAL PROPERTY EUI_NEO_APP_MAIN_SOURCE)
-    get_property(_eui_debug_host_source GLOBAL PROPERTY EUI_NEO_DEBUG_HOST_SOURCE)
+    get_property(_eui_debug_sources GLOBAL PROPERTY EUI_NEO_DEBUG_SOURCES)
     if(NOT _eui_app_main_source)
         message(FATAL_ERROR
             "EUI app entry source is unavailable. Ensure EuiNeo is found "
             "before calling eui_neo_configure_app().")
     endif()
     target_sources(${target_name} PRIVATE "${_eui_app_main_source}")
+    list(GET _eui_debug_sources 0 _eui_debug_host_source)
     if(EXISTS "${_eui_debug_host_source}")
-        target_sources(${target_name} PRIVATE "$<$<CONFIG:Debug>:${_eui_debug_host_source}>")
+        foreach(_eui_debug_source IN LISTS _eui_debug_sources)
+            target_sources(${target_name} PRIVATE "$<$<CONFIG:Debug>:${_eui_debug_source}>")
+        endforeach()
         target_compile_definitions(${target_name} PRIVATE $<$<CONFIG:Debug>:EUI_DEVTOOLS_AVAILABLE=1>)
     endif()
     target_link_libraries(${target_name} PRIVATE eui::neo)

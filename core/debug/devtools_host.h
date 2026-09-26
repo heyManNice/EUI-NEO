@@ -1,12 +1,11 @@
 #pragma once
 
 #include "core/dsl_runtime.h"
+#include "core/debug/devtools_ui.h"
 
 #include <functional>
 
 namespace core::debug {
-
-enum class DockPosition { Floating, Left, Bottom, Right };
 
 class DevtoolsHost {
 public:

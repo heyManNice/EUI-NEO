@@ -1,5 +1,4 @@
 #include "core/debug/devtools_host.h"
-#include "core/debug/devtools_icons.h"
 
 #include "core/input/input_state.h"
 
@@ -13,40 +12,6 @@ namespace {
 
 constexpr double kOutsidePointer = -1000000.0;
 constexpr float kResizeBoundaryHalfWidth = 4.0f;
-constexpr float kToolbarHeight = 31.0f;
-constexpr float kTabFontSize = 14.0f;
-constexpr float kTabHorizontalPadding = 14.0f;
-constexpr float kMoreMenuWidth = 136.0f;
-constexpr float kMoreMenuRowHeight = 22.67f;
-constexpr float kMoreMenuPadding = 2.0f;
-
-void composeToolbarIcon(core::dsl::Ui& ui, const std::string& id, const char* svg,
-                        const std::function<void()>& onClick = {}) {
-    ui.stack(id)
-        .size(24.0f, 24.0f)
-        .align(core::Align::CENTER, core::Align::CENTER)
-        .content([&] {
-            auto background = ui.rect(id + ".background");
-            background.fill()
-                .ignoreLayout()
-                .states({0.0f, 0.0f, 0.0f, 0.0f},
-                        {0.25f, 0.31f, 0.39f, 1.0f},
-                        {0.25f, 0.31f, 0.39f, 1.0f})
-                .instantStates()
-                .radius(5.0f);
-            if (onClick) {
-                background.onClick(onClick);
-            }
-            background.build();
-            ui.svg(id + ".icon")
-                .size(16.0f, 16.0f)
-                .source(svg)
-                .tint("#C8D5E4")
-                .contain()
-                .build();
-        })
-        .build();
-}
 
 void queueDevtoolsPointer(const PointerEvent& event, bool inside) {
     const double x = inside ? event.x : kOutsidePointer;
@@ -58,128 +23,6 @@ void queueDevtoolsPointer(const PointerEvent& event, bool inside) {
     } else {
         core::queuePointerMotion(nullptr, x, y, event.buttons, event.modifiers);
     }
-}
-
-void composeToolbarTab(core::dsl::Ui& ui, const std::string& id, const std::string& label,
-                       bool selected) {
-    ui.stack(id)
-        .width(core::SizeValue::wrapContent())
-        .height(kToolbarHeight)
-        .content([&] {
-            ui.rect(id + ".background")
-                .fill()
-                .ignoreLayout()
-                .states({0.0f, 0.0f, 0.0f, 0.0f},
-                        {0.23f, 0.28f, 0.34f, 1.0f},
-                        {0.23f, 0.28f, 0.34f, 1.0f})
-                .instantStates()
-                .build();
-            ui.row(id + ".content")
-                .width(core::SizeValue::wrapContent())
-                .height(kToolbarHeight)
-                .padding(kTabHorizontalPadding, 0.0f)
-                .content([&] {
-                    ui.text(id + ".label")
-                        .width(core::SizeValue::wrapContent())
-                        .height(kToolbarHeight)
-                        .text(label)
-                        .fontSize(kTabFontSize)
-                        .color(selected ? "#DCE7F5" : "#9CA9B8")
-                        .horizontalAlign(core::HorizontalAlign::Center)
-                        .verticalAlign(core::VerticalAlign::Center)
-                        .build();
-                })
-                .build();
-            if (selected) {
-                ui.rect(id + ".indicator")
-                    .width(core::SizeValue::fill())
-                    .height(2.0f)
-                    .margin(4.0f, 0.0f, 4.0f, 0.0f)
-                    .y(kToolbarHeight - 2.0f)
-                    .ignoreLayout()
-                    .color("#66A9F7")
-                    .build();
-            }
-        })
-        .build();
-}
-
-void composeDockOption(core::dsl::Ui& ui, const std::string& id, const char* svg,
-                       const std::string& label, DockPosition position, DockPosition selectedPosition,
-                       const std::function<void(DockPosition)>& onSelect) {
-    const bool selected = position == selectedPosition;
-    ui.stack(id)
-        .width(core::SizeValue::fill())
-        .height(kMoreMenuRowHeight)
-        .content([&] {
-            ui.rect(id + ".background")
-                .fill()
-                .ignoreLayout()
-                .states(selected ? core::Color{0.20f, 0.34f, 0.52f, 1.0f}
-                                 : core::Color{0.0f, 0.0f, 0.0f, 0.0f},
-                        {0.27f, 0.35f, 0.45f, 1.0f},
-                        {0.27f, 0.35f, 0.45f, 1.0f})
-                .radius(5.0f)
-                .instantStates()
-                .onClick([onSelect, position] { onSelect(position); })
-                .build();
-            ui.row(id + ".content")
-                .fill()
-                .padding(5.0f, 0.0f)
-                .gap(3.0f)
-                .alignItems(core::Align::CENTER)
-                .content([&] {
-                    ui.svg(id + ".icon")
-                        .size(17.0f, 17.0f)
-                        .source(svg)
-                        .tint(selected ? "#91C1FF" : "#C8D5E4")
-                        .contain()
-                        .build();
-                    ui.text(id + ".label")
-                        .width(core::SizeValue::fill())
-                        .height(kMoreMenuRowHeight)
-                        .text(label)
-                        .fontSize(13.0f)
-                        .color(selected ? "#DCEBFF" : "#DCE7F5")
-                        .verticalAlign(core::VerticalAlign::Center)
-                        .build();
-                })
-                .build();
-        })
-        .build();
-}
-
-void composeMoreMenu(core::dsl::Ui& ui, float x, float y, DockPosition selectedPosition,
-                     const std::function<void(DockPosition)>& onSelect) {
-    ui.stack("more.menu")
-        .position(x, y)
-        .width(kMoreMenuWidth)
-        .height(core::SizeValue::wrapContent())
-        .content([&] {
-            ui.rect("more.menu.background")
-                .fill()
-                .ignoreLayout()
-                .color("#303741")
-                .radius(7.0f)
-                .shadow(14.0f, 0.0f, 5.0f, core::Color{0.0f, 0.0f, 0.0f, 0.30f})
-                .build();
-            ui.column("more.menu.rows")
-                .width(core::SizeValue::fill())
-                .height(core::SizeValue::wrapContent())
-                .padding(kMoreMenuPadding)
-                .content([&] {
-                    composeDockOption(ui, "more.menu.dock.floating", icons::kDockFloatingSvg,
-                                      "Separate Window", DockPosition::Floating, selectedPosition, onSelect);
-                    composeDockOption(ui, "more.menu.dock.left", icons::kDockLeftSvg,
-                                      "Dock to Left", DockPosition::Left, selectedPosition, onSelect);
-                    composeDockOption(ui, "more.menu.dock.bottom", icons::kDockBottomSvg,
-                                      "Dock to Bottom", DockPosition::Bottom, selectedPosition, onSelect);
-                    composeDockOption(ui, "more.menu.dock.right", icons::kDockRightSvg,
-                                      "Dock to Right", DockPosition::Right, selectedPosition, onSelect);
-                })
-                .build();
-        })
-        .build();
 }
 
 } // namespace
@@ -417,113 +260,15 @@ void DevtoolsHost::filterInput(std::vector<PointerEvent>& pointerEvents, ScrollE
     }
 }
 
-void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height,
-                             const Rect& panel, bool detached) {
-    ui.stack("root")
-        .size(width, height)
-        .content([&] {
-            ui.column("panel")
-                .position(panel.x, panel.y)
-                .size(panel.width, panel.height)
-                .content([&] {
-                    ui.rect("panel.background")
-                        .fill()
-                        .ignoreLayout()
-                        .color("#20252D")
-                        .build();
-                    if (!detached) {
-                        ui.rect("panel.border")
-                            .width(core::SizeValue::fill())
-                            .height(1.0f)
-                            .color("#596574")
-                            .build();
-                    }
-                    ui.stack("toolbar")
-                        .width(core::SizeValue::fill())
-                        .height(kToolbarHeight)
-                        .content([&] {
-                            ui.rect("toolbar.background")
-                                .fill()
-                                .ignoreLayout()
-                                .color("#292F38")
-                                .build();
-                            ui.row("toolbar.items")
-                                .fill()
-                                .padding(8.0f, 0.0f)
-                                .alignItems(core::Align::CENTER)
-                                .content([&] {
-                                    ui.row("toolbar.leading")
-                                        .width(core::SizeValue::wrapContent())
-                                        .height(24.0f)
-                                        .gap(4.0f)
-                                        .content([&] {
-                                            composeToolbarIcon(ui, "selectElement", icons::kSelectElementSvg);
-                                            composeToolbarIcon(ui, "deviceViewport", icons::kDeviceViewportSvg);
-                                        })
-                                        .build();
-                                    ui.row("toolbar.tabs")
-                                        .width(core::SizeValue::wrapContent())
-                                        .height(kToolbarHeight)
-                                        .margin(8.0f, 0.0f, 0.0f, 0.0f)
-                                        .content([&] {
-                                            composeToolbarTab(ui, "elements.tab", "Elements", true);
-                                        })
-                                        .build();
-                                    ui.stack("toolbar.spacer")
-                                        .width(core::SizeValue::fill())
-                                        .height(1.0f)
-                                        .build();
-                                    ui.row("toolbar.trailing")
-                                        .width(core::SizeValue::wrapContent())
-                                        .height(24.0f)
-                                        .gap(4.0f)
-                                        .content([&] {
-                                            composeToolbarIcon(ui, "settings", icons::kSettingsSvg);
-                                            composeToolbarIcon(ui, "more", icons::kMoreSvg, [this] {
-                                                moreMenuOpen_ = !moreMenuOpen_;
-                                                composeRequested_ = true;
-                                            });
-                                            composeToolbarIcon(ui, "close", icons::kCloseSvg, [this] {
-                                                close();
-                                            });
-                                        })
-                                        .build();
-                                })
-                                .build();
-                        })
-                        .build();
-                    ui.column("panel.content")
-                        .width(core::SizeValue::fill())
-                        .height(core::SizeValue::fill())
-                        .padding(24.0f, 28.0f, 24.0f, 0.0f)
-                        .gap(10.0f)
-                        .content([&] {
-                            ui.text("empty.title")
-                                .width(core::SizeValue::fill())
-                                .height(28.0f)
-                                .text("EUI DevTools")
-                                .fontSize(19.0f)
-                                .color("#ECF3FA")
-                                .build();
-                            ui.text("empty.description")
-                                .width(core::SizeValue::fill())
-                                .height(24.0f)
-                                .text("Element inspection is the next milestone.")
-                                .fontSize(13.0f)
-                                .color("#9CA9B8")
-                                .build();
-                        })
-                        .build();
-                })
-                .build();
-            if (moreMenuOpen_) {
-                composeMoreMenu(ui,
-                                std::max(panel.x + 8.0f, panel.x + panel.width - kMoreMenuWidth - 36.0f),
-                                panel.y + kToolbarHeight + 6.0f, dockPosition_,
-                                [this](DockPosition position) { selectDockPosition(position); });
-            }
-        })
-        .build();
+void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const Rect& panel, bool detached) {
+    composeDevtoolsUi(ui, {width, height, panel, detached, dockPosition_, moreMenuOpen_}, {
+        [this] {
+            moreMenuOpen_ = !moreMenuOpen_;
+            composeRequested_ = true;
+        },
+        [this] { close(); },
+        [this](DockPosition position) { selectDockPosition(position); }
+    });
 }
 
 void DevtoolsHost::composeDetached(core::dsl::Ui& ui, const core::dsl::Screen& screen) {
