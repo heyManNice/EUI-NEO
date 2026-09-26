@@ -1,5 +1,6 @@
 #include "modules/devtools/devtools_ui.h"
 
+#include "modules/devtools/devtools_elements.h"
 #include "modules/devtools/devtools_performance.h"
 #include "modules/devtools/devtools_theme.h"
 
@@ -234,26 +235,12 @@ void composeToolbar(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devto
 }
 
 void composePanelContent(core::dsl::Ui& ui, const DevtoolsUiState& state, const DevtoolsUiActions& actions) {
-    const DevtoolsTheme& theme = devtoolsTheme();
     const DevtoolsTab activeTab = state.panelState != nullptr ? state.panelState->activeTab : DevtoolsTab::Performance;
     if (activeTab == DevtoolsTab::Performance) {
         composePerformanceTab(ui, state, actions);
         return;
     }
-    ui.column("panel.content")
-        .width(core::SizeValue::fill())
-        .height(core::SizeValue::fill())
-        .padding(24.0f, 28.0f, 24.0f, 0.0f)
-        .content([&] {
-            ui.text("empty.description")
-                .width(core::SizeValue::fill())
-                .height(theme.sectionHeight)
-                .text("Element inspection is the next milestone.")
-                .fontSize(theme.sectionFontSize)
-                .color(theme.mutedText)
-                .build();
-        })
-        .build();
+    composeElementsTab(ui, state, actions);
 }
 
 } // namespace

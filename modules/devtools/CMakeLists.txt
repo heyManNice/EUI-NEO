@@ -12,6 +12,8 @@ add_library(eui_neo_module_devtools
     $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_host.h>
     $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_ui.cpp>
     $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_ui.h>
+    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_elements.cpp>
+    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_elements.h>
     $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_performance.cpp>
     $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_performance.h>
 )

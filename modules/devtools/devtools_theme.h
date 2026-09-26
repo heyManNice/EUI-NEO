@@ -27,6 +27,11 @@ struct DevtoolsTheme {
     core::Color menuRowSelected{0.200f, 0.340f, 0.520f, 1.0f};
     core::Color menuRowSelectedText{0.863f, 0.922f, 1.0f, 1.0f};
     core::Color menuShadow{0.0f, 0.0f, 0.0f, 0.30f};
+    core::Color elementRowHover{0.208f, 0.251f, 0.310f, 1.0f};
+    core::Color elementRowSelected{0.176f, 0.286f, 0.435f, 1.0f};
+    core::Color elementKindText{0.549f, 0.639f, 0.749f, 1.0f};
+    core::Color elementDisabledText{0.478f, 0.510f, 0.553f, 1.0f};
+    core::Color detailsBackground{0.141f, 0.165f, 0.196f, 1.0f};
 
     float toolbarHeight = 31.0f;
     float toolbarPadding = 8.0f;
@@ -55,6 +60,15 @@ struct DevtoolsTheme {
     float menuShadowRadius = 14.0f;
     float menuShadowOffsetY = 5.0f;
     float indicatorInset = 4.0f;
+    float elementRowHeight = 22.0f;
+    float elementRowFontSize = 13.0f;
+    float elementIndent = 12.0f;
+    float elementDisclosureSize = 16.0f;
+    float elementKindWidth = 22.0f;
+    float elementFontSize = 10.0f;
+    float elementDetailsHeight = 98.0f;
+    float elementDetailsPadding = 10.0f;
+    float elementDetailsLabelWidth = 56.0f;
 
     // Font Awesome 7 Free-Solid codepoints, the icon font EUI-NEO already ships.
     unsigned int iconSelectElement = 0xF245;
@@ -66,6 +80,14 @@ struct DevtoolsTheme {
     unsigned int iconDockLeft = 0xF060;
     unsigned int iconDockDown = 0xF063;
     unsigned int iconDockRight = 0xF061;
+    unsigned int iconElementExpanded = 0xF0D7;
+    unsigned int iconElementCollapsed = 0xF0DA;
+    unsigned int iconElementLayout = 0xF0C9;
+    unsigned int iconElementShape = 0xF0C8;
+    unsigned int iconElementText = 0xF031;
+    unsigned int iconElementImage = 0xF03E;
+    unsigned int iconElementSvg = 0xF1C5;
+    unsigned int iconElementShadertoy = 0xF085;
 };
 
 inline const DevtoolsTheme& devtoolsTheme() {

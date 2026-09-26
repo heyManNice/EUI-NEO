@@ -48,6 +48,35 @@ core::KeyEvent F12Key(core::KeyAction action) {
     return key;
 }
 
+// Sees what the panel composed without a renderer: the panel composes into its
+// own Runtime, so its element tree is the composed result.
+bool hasPanelElement(const modules::devtools::DevtoolsHost& host, const std::string& part) {
+    for (const core::dsl::runtime::ElementTreeNode& node : host.panelElementTree().nodes) {
+        if (node.id.find(part) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Row slots of the element tree list. A slot is named `...slot.<n>`; the row it
+// composes lives below it.
+int countPanelRows(const modules::devtools::DevtoolsHost& host) {
+    const std::string prefix = "elements.list.slot.";
+    int count = 0;
+    for (const core::dsl::runtime::ElementTreeNode& node : host.panelElementTree().nodes) {
+        const std::size_t at = node.id.find(prefix);
+        if (at == std::string::npos) {
+            continue;
+        }
+        const std::string tail = node.id.substr(at + prefix.size());
+        if (!tail.empty() && tail.find_first_not_of("0123456789") == std::string::npos) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 } // namespace
 
 int main() {
@@ -281,6 +310,35 @@ int main() {
         assert(host.elementTree().revision == 7);
         assert(host.elementTree().nodes.size() == 1);
         assert(host.elementTree().nodes[0].id == "page.root");
+
+        // The tab lists what the app published: one row per visible node.
+        assert(countPanelRows(host) == 1);
+        assert(!hasPanelElement(host, "elements.details"));
+
+        tree.revision = 8;
+        tree.nodes.push_back({"page.title", core::dsl::ElementKind::Text, "Hello", 1, 0, false, false, false,
+                              {0.0f, 0.0f, 120.0f, 20.0f}});
+        tree.nodes.push_back({"page.ok", core::dsl::ElementKind::Rect, {}, 1, 0, false, true, false,
+                              {0.0f, 20.0f, 64.0f, 32.0f}});
+        host.setElementTree(tree);
+        frame();
+        assert(countPanelRows(host) == 3);
+
+        // Clicking a row selects that element and shows its details. A panel state
+        // change lands on the frame after the click, so the frame is run first.
+        const double rowY = host.contentBounds().height + theme.toolbarHeight + 1.0 +
+                            theme.elementRowHeight * 0.5;
+        clickPanel(200.0, rowY);
+        assert(host.selectedElement() == "page.root");
+        frame();
+        assert(hasPanelElement(host, "elements.details"));
+
+        // The disclosure glyph of the first row collapses its subtree.
+        clickPanel(theme.elementDisclosureSize * 0.5, rowY);
+        assert(host.collapsedElements().size() == 1);
+        assert(host.collapsedElements()[0] == "page.root");
+        frame();
+        assert(countPanelRows(host) == 1);
 
         clickPanel(120.0, tabY);
         assert(host.activeTab() == DevtoolsTab::Performance);

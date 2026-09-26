@@ -77,6 +77,10 @@ const core::dsl::runtime::ElementTreeSnapshot& DevtoolsHost::elementTree() const
     return elementTree_;
 }
 
+core::dsl::runtime::ElementTreeSnapshot DevtoolsHost::panelElementTree() const {
+    return runtime_.elementTree();
+}
+
 bool DevtoolsHost::visible() const {
     return visible_;
 }
@@ -264,6 +268,16 @@ float DevtoolsHost::performanceScrollOffset() const {
     return panelState_ != nullptr ? panelState_->performanceScrollOffset : 0.0f;
 }
 
+const std::string& DevtoolsHost::selectedElement() const {
+    static const std::string empty;
+    return panelState_ != nullptr ? panelState_->selectedElement : empty;
+}
+
+const std::vector<std::string>& DevtoolsHost::collapsedElements() const {
+    static const std::vector<std::string> empty;
+    return panelState_ != nullptr ? panelState_->collapsedElements : empty;
+}
+
 bool DevtoolsHost::overResizeBoundary(double x, double y) const {
     const core::Rect panel = panelBounds();
     if (dockPosition_ == DockPosition::Bottom) {
@@ -351,7 +365,7 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
     // runtimes composes at a time, so the host tracks whichever one is active.
     DevtoolsPanelState& state = ui.state<DevtoolsPanelState>("devtools.panel");
     panelState_ = &state;
-    composeDevtoolsUi(ui, {width, height, panel, detached, dockPosition_, &state, &performanceSnapshot_}, {
+    composeDevtoolsUi(ui, {width, height, panel, detached, dockPosition_, &state, &performanceSnapshot_, &elementTree_}, {
         [this, &state](DevtoolsTab tab) {
             if (state.activeTab == tab) {
                 return;
@@ -376,6 +390,29 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
         [this, &state](float offset) {
             state.performanceScrollOffset = offset;
             requestCompose();
+        },
+        [this, &state](float offset) {
+            state.elementsScrollOffset = offset;
+            requestCompose();
+        },
+        [this, &state](const std::string& id) {
+            if (state.selectedElement == id) {
+                return;
+            }
+            state.selectedElement = id;
+            requestCompose();
+        },
+        [this, &state](const std::string& id) {
+            const auto collapsed = std::find(state.collapsedElements.begin(), state.collapsedElements.end(), id);
+            if (collapsed == state.collapsedElements.end()) {
+                state.collapsedElements.push_back(id);
+            } else {
+                state.collapsedElements.erase(collapsed);
+            }
+            requestCompose();
+        },
+        [this](const std::string& id) {
+            core::window::setClipboardText(id);
         }
     });
 }

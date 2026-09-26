@@ -42,7 +42,14 @@ public:
     DevtoolsTab activeTab() const;
     int contentHeight() const;
     float performanceScrollOffset() const;
+    const std::string& selectedElement() const;
+    const std::vector<std::string>& collapsedElements() const;
     const core::dsl::runtime::ElementTreeSnapshot& elementTree() const;
+
+    // The panel's own element tree. Tests use it to see what the panel composed
+    // without a renderer; it is also what a future "inspect the inspector" view
+    // would read.
+    core::dsl::runtime::ElementTreeSnapshot panelElementTree() const;
 
 private:
     int panelSize() const;
