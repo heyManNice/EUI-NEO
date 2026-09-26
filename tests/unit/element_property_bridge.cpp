@@ -12,6 +12,7 @@
 // directions live in the app layer, so this drives them with a recording overlay
 // instead of a panel, in a tiny application of its own: what a panel would do is
 // exactly what the overlay does here.
+//
 // The app layer is header-only and expects an application to provide these two entry
 // points, so this test is one: a page with a single element.
 namespace app {
