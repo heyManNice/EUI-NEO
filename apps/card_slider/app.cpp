@@ -1,10 +1,21 @@
 #include "eui_neo.h"
 
+#include "modules/devtools/devtools.h"
+
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <string>
 #include <vector>
+
+namespace {
+
+// Keeps the DevTools panel attached for the lifetime of the process, so the app
+// code itself does not have to know about it. The session has to outlive
+// app::shutdown(), which a file scope object does.
+const modules::devtools::Session cardSliderDevtoolsSession;
+
+} // namespace
 
 namespace app {
 
