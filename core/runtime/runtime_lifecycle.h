@@ -28,8 +28,6 @@ inline void Runtime::composeViewport(const std::string& pageId, const Rect& view
     // A compose rebuilds every element, so anything that remembered element
     // pointers (the inspection paths) has to forget them.
     ++instances_.composeGeneration;
-    instances_.inspectedMark.path.clear();
-    instances_.inspectedMark.pathId.clear();
     instances_.hoveredMark.path.clear();
     instances_.hoveredMark.pathId.clear();
 #endif

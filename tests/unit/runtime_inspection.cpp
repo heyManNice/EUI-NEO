@@ -39,6 +39,13 @@ void composePage(core::dsl::Runtime& runtime) {
                                     .height(60.0f)
                                     .padding(8.0f)
                                     .build();
+                                ui.rect("padded")
+                                    .width(120.0f)
+                                    .height(40.0f)
+                                    .margin(6.0f)
+                                    .padding(10.0f)
+                                    .border(2.0f, core::Color{0.6f, 0.6f, 0.6f, 1.0f})
+                                    .build();
                             })
                             .build();
                     })
@@ -59,16 +66,17 @@ int main() {
     composePage(runtime);
     settle(runtime);
 
-    // Nothing is inspected until a tool asks for an element.
-    assert(!runtime.debugInspection(1.0f).active);
-    assert(runtime.inspectedElement().empty());
-
     core::dsl::Runtime& pageRuntime = runtime;
-    pageRuntime.setInspectedElement("page.card");
-    assert(pageRuntime.inspectedElement() == "page.card");
+
+    // Nothing is previewed until a tool asks for an element.
+    assert(!pageRuntime.debugHoverInspection(1.0f).active);
+    assert(pageRuntime.hoveredElement().empty());
+
+    pageRuntime.setHoveredElement("page.card");
+    assert(pageRuntime.hoveredElement() == "page.card");
     settle(pageRuntime);
 
-    const core::dsl::runtime::DebugInspection card = pageRuntime.debugInspection(1.0f);
+    const core::dsl::runtime::DebugInspection card = pageRuntime.debugHoverInspection(1.0f);
     assert(card.active);
     // Layout frame: the card sits inside the list at its own layout position.
     assert(card.frame.x == 20.0f);
@@ -84,9 +92,24 @@ int main() {
     assert(card.scissor.width == 200.0f);
     assert(card.scissor.height == 100.0f);
 
-    // Inspecting does not touch the page: the tree and the structure revision stay.
+    // Margin and border come along as well, so the renderer can fill the whole box
+    // model without asking the layout for it a second time.
+    assert(card.margin.left == 0.0f && card.margin.top == 0.0f);
+    assert(card.borderWidth == 0.0f);
+
+    pageRuntime.setHoveredElement("page.padded");
+    settle(pageRuntime);
+    const core::dsl::runtime::DebugInspection padded = pageRuntime.debugHoverInspection(1.0f);
+    assert(padded.active);
+    assert(padded.margin.left == 6.0f && padded.margin.top == 6.0f);
+    assert(padded.padding.left == 10.0f && padded.padding.bottom == 10.0f);
+    assert(padded.borderWidth == 2.0f);
+    pageRuntime.setHoveredElement("page.card");
+    settle(pageRuntime);
+
+    // Previewing does not touch the page: the tree and the structure revision stay.
     const std::uint64_t revision = pageRuntime.elementStructureRevision();
-    pageRuntime.setInspectedElement("page.card");
+    pageRuntime.setHoveredElement("page.card");
     settle(pageRuntime);
     assert(pageRuntime.elementStructureRevision() == revision);
 
@@ -102,7 +125,7 @@ int main() {
             settle(pageRuntime);
         }
     }
-    const core::dsl::runtime::DebugInspection scrolled = pageRuntime.debugInspection(1.0f);
+    const core::dsl::runtime::DebugInspection scrolled = pageRuntime.debugHoverInspection(1.0f);
     assert(scrolled.active);
     assert(scrolled.frame.y == 30.0f);                              // layout is unchanged
     const float scrollShift = scrolled.transform.matrix.ty - card.transform.matrix.ty;
@@ -111,8 +134,8 @@ int main() {
     assert(scrollShift < -10.0f);
     assert(scrolled.scissor.height == 100.0f);                      // the clip stays at the container
 
-    // A hover preview is a second mark: both can be active at once and neither
-    // disturbs the other.
+    // Previewing another element replaces the mark instead of stacking overlays, so
+    // only one element is ever previewed at a time.
     pageRuntime.setHoveredElement("page.list");
     settle(pageRuntime);
     const core::dsl::runtime::DebugInspection hovered = pageRuntime.debugHoverInspection(1.0f);
@@ -120,31 +143,52 @@ int main() {
     assert(hovered.frame.x == 20.0f);
     assert(hovered.frame.width == 200.0f);
     assert(pageRuntime.hoveredElement() == "page.list");
-    assert(pageRuntime.inspectedElement() == "page.card");
-    assert(pageRuntime.debugInspection(1.0f).active);
+
+    // Leaving the row takes the preview back.
     pageRuntime.setHoveredElement("");
+    assert(pageRuntime.hoveredElement().empty());
     settle(pageRuntime);
     assert(!pageRuntime.debugHoverInspection(1.0f).active);
-    assert(pageRuntime.debugInspection(1.0f).active);   // the selection survives the preview
 
     // A page that no longer contains the element simply stops drawing the overlay.
-    pageRuntime.setInspectedElement("page.missing");
+    pageRuntime.setHoveredElement("page.missing");
     settle(pageRuntime);
-    assert(!pageRuntime.debugInspection(1.0f).active);
+    assert(!pageRuntime.debugHoverInspection(1.0f).active);
 
-    // Recomposing rebuilds every element; the inspection follows the new tree
-    // instead of remembering pointers into the old one.
-    pageRuntime.setInspectedElement("page.card");
+    // Recomposing rebuilds every element; the preview follows the new tree instead
+    // of remembering pointers into the old one.
+    pageRuntime.setHoveredElement("page.card");
     composePage(pageRuntime);
     settle(pageRuntime);
-    const core::dsl::runtime::DebugInspection recomposed = pageRuntime.debugInspection(1.0f);
+    const core::dsl::runtime::DebugInspection recomposed = pageRuntime.debugHoverInspection(1.0f);
     assert(recomposed.active);
     assert(recomposed.frame.width == 160.0f);
 
-    pageRuntime.setInspectedElement("");
-    assert(pageRuntime.inspectedElement().empty());
-    settle(pageRuntime);
-    assert(!pageRuntime.debugInspection(1.0f).active);
+    // The band between two boxes is split into rectangles that do not overlap, so
+    // translucent region colours cannot blend into a third colour. The side bands
+    // only cover the height the top and bottom bands leave.
+    {
+        const core::Rect outer{0.0f, 0.0f, 10.0f, 10.0f};
+        const core::Rect inner{2.0f, 3.0f, 6.0f, 4.0f};
+        const core::dsl::runtime::InspectionBand band =
+            core::dsl::runtime::inspectionBand(outer, inner);
+        assert(band.count == 4);
+        assert(band.rects[0].x == 0.0f && band.rects[0].y == 0.0f);
+        assert(band.rects[0].width == 10.0f && band.rects[0].height == 3.0f);
+        assert(band.rects[1].y == 7.0f && band.rects[1].height == 3.0f);
+        assert(band.rects[2].x == 0.0f && band.rects[2].y == 3.0f);
+        assert(band.rects[2].width == 2.0f && band.rects[2].height == 4.0f);
+        assert(band.rects[3].x == 8.0f && band.rects[3].width == 2.0f);
+        // Boxes that sit exactly on top of each other have no band at all.
+        assert(core::dsl::runtime::inspectionBand(outer, outer).count == 0);
+        // An inner box that reaches past the outer one leaves nothing to fill either.
+        assert(core::dsl::runtime::inspectionBand(outer, {-2.0f, -2.0f, 14.0f, 14.0f}).count == 0);
+        // An inner box that sticks out on one side produces no band on that side.
+        const core::dsl::runtime::InspectionBand offset =
+            core::dsl::runtime::inspectionBand(outer, {-3.0f, 2.0f, 6.0f, 6.0f});
+        assert(offset.count == 3);
+        assert(offset.rects[2].x == 3.0f && offset.rects[2].width == 7.0f);
+    }
 
     pageRuntime.shutdown(false);
     return 0;

@@ -101,22 +101,16 @@ public:
     // "same tree, new frames" from "the tree itself changed" without diffing.
     std::uint64_t elementStructureRevision() const { return elementStructureRevision_; }
 
-    // Marks one element as inspected. The renderer draws the inspection overlay
-    // for it using the same transform and clip the element itself is drawn with,
-    // after the page content, so the overlay is never covered by the page. An
-    // empty id clears the mark.
-    void setInspectedElement(const std::string& id);
-    const std::string& inspectedElement() const { return instances_.inspectedMark.id; }
-
-    // Marks the element the pointer is over in a tree view. It is a preview, so it
-    // draws a lighter overlay on top of the selection and a tool is expected to
-    // clear it again when the pointer leaves.
+    // Marks the element the pointer is over in a tree view. The renderer draws the
+    // preview overlay for it using the same transform and clip the element itself
+    // is drawn with, after the page content, so the overlay is never covered by
+    // the page. It is a preview: a tool clears it again when the pointer leaves.
+    // An empty id clears the mark.
     void setHoveredElement(const std::string& id);
     const std::string& hoveredElement() const { return instances_.hoveredMark.id; }
 
-    // Geometry of the inspection overlays for the current frame; the renderer draws
+    // Geometry of the preview overlay for the current frame; the renderer draws
     // exactly this, and tests read it without a renderer.
-    runtime::DebugInspection debugInspection(float dpiScale);
     runtime::DebugInspection debugHoverInspection(float dpiScale);
 #endif
 

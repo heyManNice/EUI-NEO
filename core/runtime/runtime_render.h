@@ -50,7 +50,8 @@ private:
                                const Rect& scissorRect);
 
 #if defined(EUI_DEBUG_BUILD)
-    // Draws the inspection overlay (frame box and content box) for one mark.
+    // Draws the box model overlay for one mark: one translucent fill per region
+    // (margin, border, padding, content) and no strokes.
     void renderInspection(core::render::RenderBackend& renderBackend,
                           runtime::InspectionMark& mark,
                           int windowWidth,
@@ -206,14 +207,9 @@ inline void RuntimeRenderer::renderDirect(core::render::RenderBackend& renderBac
         renderElement(renderBackend, *root, windowWidth, windowHeight, dpiScale, identity, dirtyRect, hasScissor, scissor);
     }
 #if defined(EUI_DEBUG_BUILD)
-    // The inspection overlays are drawn after the page, so page content (including
-    // siblings painted later) never covers them. Their geometry already carries the
-    // element's transform and the ancestor clips, so they stay where the element is.
-    // The hover preview goes on top of the selection: it is the transient one.
-    if (!instances_.inspectedMark.id.empty()) {
-        renderInspection(renderBackend, instances_.inspectedMark, windowWidth, windowHeight, dpiScale,
-                         runtime::kInspectionSelectionPalette);
-    }
+    // The hover preview overlay is drawn after the page, so page content (including
+    // siblings painted later) never covers it. Its geometry already carries the
+    // element's transform and the ancestor clips, so it stays where the element is.
     if (!instances_.hoveredMark.id.empty()) {
         renderInspection(renderBackend, instances_.hoveredMark, windowWidth, windowHeight, dpiScale,
                          runtime::kInspectionHoverPalette);
@@ -987,25 +983,46 @@ inline void RuntimeRenderer::renderInspection(core::render::RenderBackend& rende
         applyOptionalScissor(renderBackend, false, {}, windowHeight);
     }
 
-    const Rect frame = applyRenderTransform(toPixelRect(inspection.frame, dpiScale), inspection.transform);
-    const float paddingLeft = toPixels(inspection.padding.left, dpiScale);
-    const float paddingTop = toPixels(inspection.padding.top, dpiScale);
-    const float paddingRight = toPixels(inspection.padding.right, dpiScale);
-    const float paddingBottom = toPixels(inspection.padding.bottom, dpiScale);
-    const Rect content{frame.x + paddingLeft,
-                       frame.y + paddingTop,
-                       std::max(0.0f, frame.width - paddingLeft - paddingRight),
-                       std::max(0.0f, frame.height - paddingTop - paddingBottom)};
+    // The boxes stay in the element's own space, like a page rect: the primitive
+    // matrix carries the transform, so the overlay lands where the element is
+    // drawn even inside a scrolled or transformed ancestor.
+    const Rect frame = toPixelRect(inspection.frame, dpiScale);
+    const auto insetBox = [dpiScale](const Rect& rect, const EdgeInsets& insets) {
+        const float left = toPixels(insets.left, dpiScale);
+        const float top = toPixels(insets.top, dpiScale);
+        const float right = toPixels(insets.right, dpiScale);
+        const float bottom = toPixels(insets.bottom, dpiScale);
+        return Rect{rect.x + left,
+                    rect.y + top,
+                    std::max(0.0f, rect.width - left - right),
+                    std::max(0.0f, rect.height - top - bottom)};
+    };
+    const auto expandedBox = [dpiScale](const Rect& rect, const EdgeInsets& insets) {
+        const float left = toPixels(insets.left, dpiScale);
+        const float top = toPixels(insets.top, dpiScale);
+        const float right = toPixels(insets.right, dpiScale);
+        const float bottom = toPixels(insets.bottom, dpiScale);
+        return Rect{rect.x - left, rect.y - top, rect.width + left + right, rect.height + top + bottom};
+    };
 
-    // One pixel stroke in window pixels, so the overlay stays crisp at any scale.
-    const Border boxStroke{1.0f, {1.0f, 1.0f, 1.0f, 1.0f}};
-    const auto drawBox = [&](const Rect& box, const Color& boxFill, const Color& line) {
+    // The border is painted inside the box and padding is measured from the box
+    // edge, so the padding band reaches inward from whichever of the two is wider.
+    const EdgeInsets border = EdgeInsets::all(std::max(0.0f, toPixels(inspection.borderWidth, dpiScale)));
+    const EdgeInsets contentInset{
+        std::max(border.left, toPixels(inspection.padding.left, dpiScale)),
+        std::max(border.top, toPixels(inspection.padding.top, dpiScale)),
+        std::max(border.right, toPixels(inspection.padding.right, dpiScale)),
+        std::max(border.bottom, toPixels(inspection.padding.bottom, dpiScale))
+    };
+    const Rect borderBox = insetBox(frame, border);
+    const Rect contentBox = insetBox(frame, contentInset);
+
+    // No stroke anywhere: the browser look is translucent fills only.
+    const auto paint = [&](const Rect& box, const Color& boxFill) {
         store.debugOverlayPrimitive->setBounds(box.x, box.y, box.width, box.height);
         store.debugOverlayPrimitive->setColor(boxFill);
         store.debugOverlayPrimitive->setGradient({});
-        Border border = boxStroke;
-        border.color = line;
-        store.debugOverlayPrimitive->setBorder(border);
+        store.debugOverlayPrimitive->setBorder(Border{});
         store.debugOverlayPrimitive->setShadow({});
         store.debugOverlayPrimitive->setCornerRadius(0.0f);
         store.debugOverlayPrimitive->setBlur(0.0f);
@@ -1015,13 +1032,19 @@ inline void RuntimeRenderer::renderInspection(core::render::RenderBackend& rende
         ++core::render::currentRenderFrameStats().rectDraws;
         store.debugOverlayPrimitive->render(windowWidth, windowHeight);
     };
-
-    drawBox(frame, palette.frameFill, palette.frameStroke);
-    if (inspection.padding.left > 0.0f || inspection.padding.top > 0.0f ||
-        inspection.padding.right > 0.0f || inspection.padding.bottom > 0.0f) {
-        if (content.width > 0.0f && content.height > 0.0f) {
-            drawBox(content, palette.contentFill, palette.contentStroke);
+    const auto paintBand = [&](const Rect& outer, const Rect& inner, const Color& boxFill) {
+        const runtime::InspectionBand band = runtime::inspectionBand(outer, inner);
+        for (int index = 0; index < band.count; ++index) {
+            paint(band.rects[index], boxFill);
         }
+    };
+
+    // Outermost first. The regions are disjoint, so no colour ever blends twice.
+    paintBand(expandedBox(frame, inspection.margin), frame, palette.margin);
+    paintBand(frame, borderBox, palette.border);
+    paintBand(borderBox, contentBox, palette.padding);
+    if (contentBox.width > 0.0f && contentBox.height > 0.0f) {
+        paint(contentBox, palette.content);
     }
 
     // Leave the backend scissor to the caller's next draw, like the tree does.

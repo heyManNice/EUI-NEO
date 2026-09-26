@@ -85,25 +85,14 @@ inline DebugInspection computeInspection(Ui& ui, InstanceStore& instances, Inspe
     inspection.transform = transform;
     inspection.frame = target.frame;
     inspection.padding = target.padding;
+    inspection.margin = target.margin;
+    inspection.borderWidth = target.border.width;
     inspection.scissor = scissor;
     inspection.hasScissor = hasScissor;
     return inspection;
 }
 
 } // namespace runtime
-
-inline void Runtime::setInspectedElement(const std::string& id) {
-    if (instances_.inspectedMark.id == id) {
-        return;
-    }
-    instances_.inspectedMark.id = id;
-    instances_.inspectedMark.path.clear();
-    instances_.inspectedMark.pathId.clear();
-    // The previous overlay has to disappear and the new one has to appear, and
-    // overlays are drawn while the render cache is filled.
-    fullPaintRequested_ = true;
-    paintRequested_ = true;
-}
 
 inline void Runtime::setHoveredElement(const std::string& id) {
     if (instances_.hoveredMark.id == id) {
@@ -114,10 +103,6 @@ inline void Runtime::setHoveredElement(const std::string& id) {
     instances_.hoveredMark.pathId.clear();
     fullPaintRequested_ = true;
     paintRequested_ = true;
-}
-
-inline runtime::DebugInspection Runtime::debugInspection(float dpiScale) {
-    return runtime::computeInspection(ui_, instances_, instances_.inspectedMark, dpiScale);
 }
 
 inline runtime::DebugInspection Runtime::debugHoverInspection(float dpiScale) {

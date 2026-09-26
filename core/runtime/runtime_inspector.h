@@ -62,8 +62,10 @@ inline std::string truncateElementText(const std::string& text, std::size_t limi
 struct DebugInspection {
     bool active = false;
     RenderTransform transform;
-    LayoutRect frame;
-    EdgeInsets padding;
+    LayoutRect frame;               // the box itself: background and border live here
+    EdgeInsets padding;             // inset from the box edge to the content
+    EdgeInsets margin;              // layout spacing outside the box
+    float borderWidth = 0.0f;       // painted inside the box edge, the same on every side
     Rect scissor;
     bool hasScissor = false;
 };
@@ -71,8 +73,6 @@ struct DebugInspection {
 // One element a debug tool marks, plus the cached path that leads to it. Element
 // pointers only stay valid until the next compose, so the cache is keyed by the
 // compose generation instead of being pinned for the runtime's lifetime.
-// A tool keeps two of these: the selected element (persistent) and the element
-// the pointer is over in its tree view (transient preview).
 struct InspectionMark {
     std::string id;
     std::vector<const Element*> path;
@@ -80,30 +80,77 @@ struct InspectionMark {
     std::uint64_t pathGeneration = 0;
 };
 
-// The overlay palette follows components::LayoutDebugStyle (frame red, content
-// blue, low-alpha fills), kept here as values because core never depends on
-// components. Both boxes of a hover preview share one colour so a preview never
-// reads as a selection.
+// One translucent fill per box model region, never stroked. This is how browser
+// devtools draw an element: the regions do not overlap, so a previewed element
+// reads as a single light wash across its boxes instead of a frame drawn around a
+// frame. The hues are the ones the browsers use for these regions, the alphas sit
+// a little lower because a wash reads heavier over the dark pages EUI ships, and
+// the values are fixed instead of themed because the overlay has to read the same
+// over any page.
 struct InspectionPalette {
-    Color frameFill;
-    Color frameStroke;
-    Color contentFill;
-    Color contentStroke;
-};
-
-inline constexpr InspectionPalette kInspectionSelectionPalette{
-    {0.96f, 0.32f, 0.38f, 0.16f},
-    {0.96f, 0.32f, 0.38f, 0.95f},
-    {0.28f, 0.58f, 0.98f, 0.14f},
-    {0.28f, 0.58f, 0.98f, 0.95f}
+    Color margin;
+    Color border;
+    Color padding;
+    Color content;
 };
 
 inline constexpr InspectionPalette kInspectionHoverPalette{
-    {0.98f, 0.75f, 0.30f, 0.14f},
-    {0.98f, 0.75f, 0.30f, 0.95f},
-    {0.98f, 0.75f, 0.30f, 0.07f},
-    {0.98f, 0.75f, 0.30f, 0.55f}
+    {0.96f, 0.70f, 0.42f, 0.55f},   // margin
+    {1.00f, 0.90f, 0.60f, 0.55f},   // border
+    {0.58f, 0.77f, 0.49f, 0.45f},   // padding
+    {0.44f, 0.66f, 0.86f, 0.50f}    // content
 };
+
+// The area between two nested boxes as up to four rectangles. Filling the inner box
+// on top of the outer one would blend the two translucent colours into a third, so
+// the renderer fills the band that is left around the inner box instead. The bands
+// share their edges and the side bands never run under the top and bottom ones.
+struct InspectionBand {
+    Rect rects[4];
+    int count = 0;
+};
+
+inline InspectionBand inspectionBand(const Rect& outer, const Rect& inner) {
+    InspectionBand band;
+    const float outerRight = outer.x + outer.width;
+    const float outerBottom = outer.y + outer.height;
+    float top = inner.y - outer.y;
+    if (top < 0.0f) {
+        top = 0.0f;
+    } else if (top > outer.height) {
+        top = outer.height;
+    }
+    float bottom = outerBottom - (inner.y + inner.height);
+    if (bottom < 0.0f) {
+        bottom = 0.0f;
+    } else if (bottom > outer.height - top) {
+        bottom = outer.height - top;
+    }
+    const float middle = outer.height - top - bottom;
+    float left = inner.x - outer.x;
+    if (left < 0.0f) {
+        left = 0.0f;
+    }
+    float right = outerRight - (inner.x + inner.width);
+    if (right < 0.0f) {
+        right = 0.0f;
+    }
+    if (top > 0.0f) {
+        band.rects[band.count++] = {outer.x, outer.y, outer.width, top};
+    }
+    if (bottom > 0.0f) {
+        band.rects[band.count++] = {outer.x, outer.y + top + middle, outer.width, bottom};
+    }
+    if (middle > 0.0f) {
+        if (left > 0.0f) {
+            band.rects[band.count++] = {outer.x, outer.y + top, left, middle};
+        }
+        if (right > 0.0f) {
+            band.rects[band.count++] = {outerRight - right, outer.y + top, right, middle};
+        }
+    }
+    return band;
+}
 
 struct InstanceStore;
 

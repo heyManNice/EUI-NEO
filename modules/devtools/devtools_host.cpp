@@ -73,16 +73,6 @@ void DevtoolsHost::setElementTree(const core::dsl::runtime::ElementTreeSnapshot&
     }
 }
 
-const std::string& DevtoolsHost::inspectedElement() const {
-    // The mark belongs to the tab that shows the tree: hiding the panel or leaving
-    // the tab drops it, so a page is never marked while nobody looks at it.
-    static const std::string empty;
-    if (!visible_ || panelState_ == nullptr || panelState_->activeTab != DevtoolsTab::Elements) {
-        return empty;
-    }
-    return panelState_->selectedElement;
-}
-
 const std::string& DevtoolsHost::hoveredElement() const {
     static const std::string empty;
     if (!visible_ || panelState_ == nullptr || panelState_->activeTab != DevtoolsTab::Elements) {

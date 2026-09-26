@@ -476,9 +476,8 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
         // Publish before the overlay update so it composes with the tree of this
         // frame; the overlay asks for the tree only while it displays it.
         publishElementTree(*overlay);
-        // The overlay decides which element the page should mark, and the page
+        // The overlay decides which element the page should preview, and the page
         // draws it with the same transform and clip as the element itself.
-        detail::dslRuntime().setInspectedElement(overlay->inspectedElement());
         detail::dslRuntime().setHoveredElement(overlay->hoveredElement());
         // The overlay draws on top of the rendered app frame, so an overlay
         // repaint never forces the app render cache to be rebuilt.

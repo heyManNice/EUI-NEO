@@ -508,7 +508,6 @@ public:
 #if defined(EUI_DEBUG_BUILD)
         debugOverlayPrimitive.reset();
         debugOverlayPrimitiveInitialized = false;
-        inspectedMark = {};
         hoveredMark = {};
         composeGeneration = 0;
 #endif
@@ -536,10 +535,9 @@ public:
     std::unique_ptr<RoundedRectPrimitive> debugOverlayPrimitive;
     bool debugOverlayPrimitiveInitialized = false;
 
-    // The element a debug tool inspects (the one selected in its tree) and the one
-    // the pointer is over there (a transient preview). Each mark carries its own
-    // cached path; the compose generation invalidates both at once.
-    InspectionMark inspectedMark;
+    // The element a debug tool previews while the pointer is over it in its own
+    // view, empty when it previews nothing. The mark carries the cached path to
+    // that element; the compose generation invalidates it.
     InspectionMark hoveredMark;
     std::uint64_t composeGeneration = 0;
 #endif
