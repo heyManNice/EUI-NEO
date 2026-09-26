@@ -1,5 +1,9 @@
 #include "core/dsl_runtime.h"
 
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+#include <cassert>
 #include <type_traits>
 
 // The panel talks to the framework through Debug-only Runtime hooks; a Release

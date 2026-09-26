@@ -33,15 +33,3 @@ if(EUI_ENABLE_INSTALL)
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
 endif()
-
-if(EUI_BUILD_TEST_FIXTURES)
-    add_executable(devtools_viewer fixtures/devtools_viewer.cpp)
-    eui_neo_configure_app(devtools_viewer)
-    target_link_libraries(devtools_viewer PRIVATE eui::module_devtools)
-
-    add_executable(devtools_host tests/devtools_host.cpp)
-    target_link_libraries(devtools_host PRIVATE eui::module_devtools)
-    eui_apply_compile_options(devtools_host)
-    add_test(NAME devtools_host COMMAND devtools_host)
-    set_tests_properties(devtools_host PROPERTIES LABELS "unit")
-endif()

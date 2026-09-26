@@ -23,12 +23,6 @@ option(EUI_ENABLE_MODULES "Build optional EUI-NEO modules when their directories
 option(EUI_VULKAN_LOW_LATENCY_PRESENT "Prefer low-latency Vulkan presentation when available." OFF)
 option(EUI_ENABLE_TRAY "Enable the system tray backend. On Linux, configuration fails when neither glib/gio (SNI) nor GTK3 + libappindicator is available; turn this OFF to build without tray support." ON)
 
-# Tests are enabled before any subdirectory that adds them, because CMake only
-# collects add_test() from directories configured after enable_testing().
-if(EUI_BUILD_TEST_FIXTURES)
-    enable_testing()
-endif()
-
 set(EUI_DEFAULT_WINDOW_BACKEND "glfw")
 set(EUI_DEFAULT_RENDER_BACKEND "opengl")
 get_filename_component(EUI_BUILD_DIR_NAME "${CMAKE_BINARY_DIR}" NAME)
@@ -395,6 +389,10 @@ if(TARGET md4c::md4c)
     target_compile_definitions(eui_neo PUBLIC EUI_HAS_MD4C=1)
 endif()
 
+if(EUI_ENABLE_MODULES AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/modules/CMakeLists.txt")
+    add_subdirectory(modules)
+endif()
+
 # -----------------------------------------------------------------------------
 # App target helpers
 # -----------------------------------------------------------------------------
@@ -550,12 +548,6 @@ function(eui_neo_configure_named_app target_name)
     endif()
 endfunction()
 
-# Modules build their own examples, fixtures and tests, so they are added once
-# the app helpers above exist.
-if(EUI_ENABLE_MODULES AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/modules/CMakeLists.txt")
-    add_subdirectory(modules)
-endif()
-
 # -----------------------------------------------------------------------------
 # Bundled examples and internal tests
 # -----------------------------------------------------------------------------
@@ -642,11 +634,21 @@ if(EUI_BUILD_USER_APPS)
 endif()
 
 if(EUI_BUILD_TEST_FIXTURES)
+    enable_testing()
+
     file(GLOB TEST_FIXTURE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/*.cpp")
     foreach(fixture_source ${TEST_FIXTURE_SOURCES})
         get_filename_component(fixture_name "${fixture_source}" NAME_WE)
+        # A fixture that shows the DevTools panel lives here with the others, but only
+        # builds while the optional module that owns the panel is part of the build.
+        if(fixture_name STREQUAL "devtools_viewer" AND NOT TARGET eui::module_devtools)
+            continue()
+        endif()
         add_executable(${fixture_name} "${fixture_source}")
         eui_neo_configure_app(${fixture_name})
+        if(fixture_name STREQUAL "devtools_viewer")
+            target_link_libraries(${fixture_name} PRIVATE eui::module_devtools)
+        endif()
     endforeach()
 
     file(GLOB TEST_PROBE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/probes/*.cpp")
@@ -716,8 +718,16 @@ if(EUI_BUILD_TEST_FIXTURES)
     file(GLOB TEST_UNIT_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/*.cpp")
     foreach(unit_source ${TEST_UNIT_SOURCES})
         get_filename_component(unit_name "${unit_source}" NAME_WE)
+        # The panel is an optional module, so its tests only exist while the module
+        # does; the rest of the unit tests always build.
+        if(unit_name STREQUAL "devtools_host" AND NOT TARGET eui::module_devtools)
+            continue()
+        endif()
         add_executable(${unit_name} "${unit_source}")
         target_link_libraries(${unit_name} PRIVATE eui::neo)
+        if(unit_name STREQUAL "devtools_host")
+            target_link_libraries(${unit_name} PRIVATE eui::module_devtools)
+        endif()
         eui_apply_compile_options(${unit_name})
         if(unit_name STREQUAL "shadertoy_packaged_assets")
             eui_neo_copy_assets(${unit_name})
