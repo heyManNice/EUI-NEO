@@ -113,6 +113,14 @@ public:
     // exactly this, and tests read it without a renderer.
     runtime::DebugInspection debugHoverInspection(float dpiScale);
 
+    // The element the pointer is over, for a tool that picks elements on the page
+    // instead of interacting with them. Every element is a candidate, disabled and
+    // non-interactive ones included, because a picker inspects what is drawn rather
+    // than what takes input; the answer is the topmost element that draws at the
+    // point, inside its ancestors' clips. Coordinates are in framebuffer pixels,
+    // the space this runtime's own input uses. Empty when the point hits nothing.
+    std::string debugElementAt(double x, double y, float dpiScale) const;
+
     // Properties of one element, read on demand for the element a debug tool shows.
     // Reading a single element instead of copying every node keeps the element tree
     // snapshot cheap for big pages.
@@ -222,7 +230,8 @@ private:
     bool canReuseHoverTarget(const PointerEvent& event, float dpiScale) const;
 
     template <typename Predicate>
-    std::string hitTest(const PointerEvent& event, float dpiScale, Predicate&& predicate) const;
+    std::string hitTest(const PointerEvent& event, float dpiScale, Predicate&& predicate,
+                        bool includeDisabled = false) const;
 
     template <typename Predicate>
     bool hitTestElement(const Element& element,
@@ -230,6 +239,7 @@ private:
                         float dpiScale,
                         const RenderTransform& inheritedTransform,
                         Predicate& predicate,
+                        bool includeDisabled,
                         bool hasClip,
                         const Rect& clipRect,
                         bool ancestorDisabled,

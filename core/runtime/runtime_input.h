@@ -111,7 +111,8 @@ inline bool Runtime::canReuseHoverTarget(const PointerEvent& event, float dpiSca
 }
 
 template <typename Predicate>
-inline std::string Runtime::hitTest(const PointerEvent& event, float dpiScale, Predicate&& predicate) const {
+inline std::string Runtime::hitTest(const PointerEvent& event, float dpiScale, Predicate&& predicate,
+                                    bool includeDisabled) const {
     if (clipViewport_ && !toPixelRect(viewport_, dpiScale).contains(event.x, event.y)) {
         return {};
     }
@@ -119,7 +120,7 @@ inline std::string Runtime::hitTest(const PointerEvent& event, float dpiScale, P
     const RenderTransform identity;
     const std::vector<const Element*>& roots = ui_.orderedRoots();
     for (auto it = roots.rbegin(); it != roots.rend(); ++it) {
-        if (hitTestElement(**it, event, dpiScale, identity, predicate, false, {}, false, targetId)) {
+        if (hitTestElement(**it, event, dpiScale, identity, predicate, includeDisabled, false, {}, false, targetId)) {
             break;
         }
     }
@@ -133,6 +134,7 @@ inline bool Runtime::hitTestElement(
     float dpiScale,
     const RenderTransform& inheritedTransform,
     Predicate& predicate,
+    bool includeDisabled,
     bool hasClip,
     const Rect& clipRect,
     bool ancestorDisabled,
@@ -160,12 +162,14 @@ inline bool Runtime::hitTestElement(
 
     const std::vector<const Element*>& children = element.orderedChildren;
     for (auto it = children.rbegin(); it != children.rend(); ++it) {
-        if (hitTestElement(**it, event, dpiScale, renderTransform, predicate, effectiveHasClip, effectiveClip, disabledTree, targetId)) {
+        if (hitTestElement(**it, event, dpiScale, renderTransform, predicate, includeDisabled, effectiveHasClip,
+                           effectiveClip, disabledTree, targetId)) {
             return true;
         }
     }
 
-    if (!disabledTree && predicate(element) && hitContains(element, event, dpiScale, bounds, renderTransform)) {
+    if ((includeDisabled || !disabledTree) && predicate(element) &&
+        hitContains(element, event, dpiScale, bounds, renderTransform)) {
         targetId = element.id;
         return true;
     }

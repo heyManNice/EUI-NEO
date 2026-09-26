@@ -23,6 +23,14 @@ void composePage(core::dsl::Runtime& runtime) {
         ui.stack("root")
             .size(400.0f, 300.0f)
             .content([&] {
+                // A disabled element takes no input, but a picker still has to be able
+                // to inspect it. It sits outside the list, so the layout the other
+                // cases measure does not move.
+                ui.rect("blocked")
+                    .position(300.0f, 250.0f)
+                    .size(50.0f, 30.0f)
+                    .disabled(true)
+                    .build();
                 ui.stack("list")
                     .position(20.0f, 30.0f)
                     .size(200.0f, 100.0f)
@@ -71,6 +79,20 @@ int main() {
     // Nothing is previewed until a tool asks for an element.
     assert(!pageRuntime.debugHoverInspection(1.0f).active);
     assert(pageRuntime.hoveredElement().empty());
+
+    // Picking looks at what is drawn at the pointer instead of what would take input
+    // there: none of these elements are interactive, and one of them is disabled.
+    {
+        // The deepest element under the point wins.
+        assert(pageRuntime.debugElementAt(30.0, 40.0, 1.0f) == "page.card");
+        // A disabled element is still inspectable.
+        assert(pageRuntime.debugElementAt(310.0, 260.0, 1.0f) == "page.blocked");
+        // An ancestor's clip decides: below the clipped list, the point belongs to the
+        // page root rather than to anything the list hides.
+        assert(pageRuntime.debugElementAt(150.0, 200.0, 1.0f) == "page.root");
+        // Outside the page there is nothing to pick.
+        assert(pageRuntime.debugElementAt(450.0, 280.0, 1.0f).empty());
+    }
 
     pageRuntime.setHoveredElement("page.card");
     assert(pageRuntime.hoveredElement() == "page.card");

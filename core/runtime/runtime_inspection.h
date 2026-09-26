@@ -148,6 +148,15 @@ inline void Runtime::setHoveredElement(const std::string& id) {
     paintRequested_ = true;
 }
 
+inline std::string Runtime::debugElementAt(double x, double y, float dpiScale) const {
+    PointerEvent event;
+    event.x = x;
+    event.y = y;
+    // Every element is a candidate, disabled ones included: a picker asks what is
+    // drawn at the pointer, not what would take input there.
+    return hitTest(event, dpiScale, [](const Element&) { return true; }, true);
+}
+
 inline runtime::DebugInspection Runtime::debugHoverInspection(float dpiScale) {
     return runtime::computeInspection(ui_, instances_, instances_.hoveredMark, dpiScale);
 }
