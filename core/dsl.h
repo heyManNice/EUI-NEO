@@ -1706,7 +1706,8 @@ private:
 
     static void rebuildOrderedChildren(Element& element) {
         element.orderedChildren.clear();
-        element.orderedChildren.reserve(element.children.size());        element.subtreeNeedsUpdate = elementNeedsUpdate(element);
+        element.orderedChildren.reserve(element.children.size());
+        element.subtreeNeedsUpdate = elementNeedsUpdate(element);
         element.subtreeHasDependentVisuals = elementHasDependentVisuals(element);
         element.subtreeHasBackdropBlur = elementHasBackdropBlur(element);
         element.subtreeBlocksRetainedLayer = elementBlocksRetainedLayer(element);

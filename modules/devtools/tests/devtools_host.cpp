@@ -569,7 +569,8 @@ int main() {
         assert(host.hoveredElement().empty());
         // The property area only asks for values while it is on screen.
         assert(host.propertiesElement().empty());
-        assert(host.selectedElement() == "page.root");    }
+        assert(host.selectedElement() == "page.root");
+    }
 
     // A floating panel leaves the whole window to the page and opens its window.
     chooseDock(0);
