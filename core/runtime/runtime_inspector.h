@@ -152,6 +152,7 @@ inline InspectionBand inspectionBand(const Rect& outer, const Rect& inner) {
     return band;
 }
 
+#if defined(EUI_DEBUG_BUILD)
 // A property a debug tool may edit on a live element. The runtime knows how to read
 // and write every one of them; which of them a tool shows, in what order and with
 // which editor is the tool's business (see modules/devtools).
@@ -336,8 +337,9 @@ inline void applyDebugOverride(Element& element, const DebugElementOverride& ove
         element.textColor = override.textColor;
     }
 }
+#endif
 
-struct InstanceStore;
+class InstanceStore;
 
 #if defined(EUI_DEBUG_BUILD)
 // Geometry of the inspection overlay for one mark. Both the panel (through

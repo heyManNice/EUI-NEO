@@ -58,12 +58,6 @@ bool isExpanded(const DevtoolsPanelState* panelState, const std::string& id) {
     return std::find(expanded.begin(), expanded.end(), id) != expanded.end();
 }
 
-const ElementTreeNode* findNode(const ElementTreeSnapshot& tree, const std::string& id) {
-    const auto found = std::find_if(tree.nodes.begin(), tree.nodes.end(),
-                                    [&id](const ElementTreeNode& node) { return node.id == id; });
-    return found != tree.nodes.end() ? &*found : nullptr;
-}
-
 std::vector<ElementRow> visibleElementRows(const ElementTreeSnapshot& tree, const DevtoolsPanelState* panelState) {
     std::vector<ElementRow> rows;
     rows.reserve(tree.nodes.size());

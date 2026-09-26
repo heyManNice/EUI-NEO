@@ -275,26 +275,6 @@ std::vector<PropertyRow> buildPropertyRows(const DebugElementProperties& propert
     return rows;
 }
 
-// A row that shows a label and a value, used by the read-only summary.
-void composeSummaryRow(core::dsl::Ui& ui, const std::string& id, const PropertyRow& row, float labelWidth) {
-    const DevtoolsTheme& theme = devtoolsTheme();
-    ui.text(id + ".label")
-        .size(labelWidth, theme.elementRowHeight)
-        .text(row.label)
-        .fontSize(theme.elementRowFontSize)
-        .color(theme.metricLabel)
-        .verticalAlign(core::VerticalAlign::Center)
-        .build();
-    ui.text(id + ".value")
-        .width(core::SizeValue::fill())
-        .height(theme.elementRowHeight)
-        .text(row.value)
-        .fontSize(theme.elementRowFontSize)
-        .color(theme.metricValue)
-        .verticalAlign(core::VerticalAlign::Center)
-        .build();
-}
-
 // The way back to the element's own value. It only exists while the property is
 // overridden, so the row says what a debug session changed by itself.
 void composeRevertButton(core::dsl::Ui& ui, const std::string& id, const std::string& elementId,
