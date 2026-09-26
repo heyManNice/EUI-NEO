@@ -1,6 +1,7 @@
 #include "modules/devtools/devtools_elements.h"
 
 #include "components/virtuallist.h"
+#include "modules/devtools/devtools_properties.h"
 #include "modules/devtools/devtools_theme.h"
 
 #include <algorithm>
@@ -45,22 +46,6 @@ unsigned int elementKindIcon(core::dsl::ElementKind kind) {
         break;
     }
     return theme.iconElementShape;
-}
-
-const char* elementKindName(core::dsl::ElementKind kind) {
-    switch (kind) {
-    case core::dsl::ElementKind::Row: return "row";
-    case core::dsl::ElementKind::Column: return "column";
-    case core::dsl::ElementKind::Stack: return "stack";
-    case core::dsl::ElementKind::Flow: return "flow";
-    case core::dsl::ElementKind::Rect: return "rect";
-    case core::dsl::ElementKind::Polygon: return "polygon";
-    case core::dsl::ElementKind::Text: return "text";
-    case core::dsl::ElementKind::Image: return "image";
-    case core::dsl::ElementKind::Svg: return "svg";
-    case core::dsl::ElementKind::Shadertoy: return "shadertoy";
-    }
-    return "element";
 }
 
 // Nodes start collapsed: a row is only opened if the user expanded it, so a tree
@@ -195,82 +180,6 @@ void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRo
         .build();
 }
 
-void composeDetailsLine(core::dsl::Ui& ui, const std::string& id, const std::string& label,
-                        const std::string& value, const std::function<void()>& onClick = {}) {
-    const DevtoolsTheme& theme = devtoolsTheme();
-    ui.row(id)
-        .width(core::SizeValue::fill())
-        .height(theme.elementRowHeight)
-        .content([&] {
-            ui.text(id + ".label")
-                .width(theme.elementDetailsLabelWidth)
-                .height(theme.elementRowHeight)
-                .text(label)
-                .fontSize(theme.elementRowFontSize)
-                .color(theme.metricLabel)
-                .verticalAlign(core::VerticalAlign::Center)
-                .build();
-            ui.text(id + ".value")
-                .width(core::SizeValue::fill())
-                .height(theme.elementRowHeight)
-                .text(value)
-                .fontSize(theme.elementRowFontSize)
-                .color(onClick ? theme.accent : theme.metricValue)
-                .verticalAlign(core::VerticalAlign::Center)
-                .onClick(onClick)
-                .build();
-        })
-        .build();
-}
-
-void composeElementDetails(core::dsl::Ui& ui, const std::string& id, const ElementTreeNode& node,
-                           const DevtoolsUiActions& actions) {
-    const DevtoolsTheme& theme = devtoolsTheme();
-    char frameText[64];
-    std::snprintf(frameText, sizeof(frameText), "%.0f, %.0f  %.0f x %.0f", node.frame.x, node.frame.y,
-                  node.frame.width, node.frame.height);
-
-    std::string flags = elementKindName(node.kind);
-    if (node.clip) {
-        flags += " | clip";
-    }
-    if (node.interactive) {
-        flags += " | interactive";
-    }
-    if (node.disabled) {
-        flags += " | disabled";
-    }
-
-    ui.stack(id)
-        .width(core::SizeValue::fill())
-        .height(theme.elementDetailsHeight)
-        .content([&] {
-            ui.rect(id + ".background")
-                .fill()
-                .ignoreLayout()
-                .color(theme.detailsBackground)
-                .build();
-            ui.column(id + ".rows")
-                .fill()
-                .padding(theme.elementDetailsPadding, theme.elementDetailsPadding * 0.5f,
-                         theme.elementDetailsPadding, theme.elementDetailsPadding * 0.5f)
-                .content([&] {
-                    // The id is the one value worth copying out of the panel.
-                    composeDetailsLine(ui, id + ".id", "Id", node.id,
-                                       [copy = actions.copyElementId, nodeId = node.id] {
-                                           if (copy) {
-                                               copy(nodeId);
-                                           }
-                                       });
-                    composeDetailsLine(ui, id + ".frame", "Frame", frameText);
-                    composeDetailsLine(ui, id + ".flags", "Flags", flags);
-                    composeDetailsLine(ui, id + ".text", "Text", node.text);
-                })
-                .build();
-        })
-        .build();
-}
-
 void composeElementsNotice(core::dsl::Ui& ui, const std::string& id, const std::string& text, float width,
                            float height) {
     const DevtoolsTheme& theme = devtoolsTheme();
@@ -286,23 +195,38 @@ void composeElementsNotice(core::dsl::Ui& ui, const std::string& id, const std::
 
 } // namespace
 
+// The kind of an element as the tree row and the property area print it.
+const char* elementKindName(core::dsl::ElementKind kind) {
+    switch (kind) {
+    case core::dsl::ElementKind::Row: return "row";
+    case core::dsl::ElementKind::Column: return "column";
+    case core::dsl::ElementKind::Stack: return "stack";
+    case core::dsl::ElementKind::Flow: return "flow";
+    case core::dsl::ElementKind::Rect: return "rect";
+    case core::dsl::ElementKind::Polygon: return "polygon";
+    case core::dsl::ElementKind::Text: return "text";
+    case core::dsl::ElementKind::Image: return "image";
+    case core::dsl::ElementKind::Svg: return "svg";
+    case core::dsl::ElementKind::Shadertoy: return "shadertoy";
+    }
+    return "element";
+}
+
 void composeElementsTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const DevtoolsUiActions& actions) {
     const DevtoolsTheme& theme = devtoolsTheme();
     const ElementTreeSnapshot* tree = state.elementTree;
     const float top = state.panel.y + theme.toolbarHeight + (state.detached ? 0.0f : 1.0f);
     const float contentHeight =
         std::max(0.0f, state.panel.height - theme.toolbarHeight - (state.detached ? 0.0f : 1.0f));
-    const ElementTreeNode* selected =
-        tree != nullptr && state.panelState != nullptr && !state.panelState->selectedElement.empty()
-            ? findNode(*tree, state.panelState->selectedElement)
-            : nullptr;
-    // The details pane and the truncation notice only take space while they have
-    // something to say, so the list stays as tall as possible while browsing.
-    const float detailsHeight = selected != nullptr ? theme.elementDetailsHeight : 0.0f;
+    const bool hasTree = tree != nullptr && !tree->nodes.empty();
+    // The property area keeps the bottom of the tab and the tree keeps the rest, so
+    // selecting a row does not move anything around.
+    const float propertyHeight =
+        hasTree ? std::min(theme.propertiesHeight, contentHeight * 0.65f) : 0.0f;
     const float noticeHeight = tree != nullptr && tree->truncated ? theme.elementRowHeight : 0.0f;
-    const float listHeight = std::max(0.0f, contentHeight - detailsHeight - noticeHeight);
+    const float listHeight = std::max(0.0f, contentHeight - propertyHeight - noticeHeight);
 
-    if (tree == nullptr || tree->nodes.empty()) {
+    if (!hasTree) {
         composeElementsNotice(ui, "elements.empty",
                               tree == nullptr ? "Waiting for the app page..." : "The page has no elements.",
                               state.panel.width, listHeight);
@@ -329,8 +253,13 @@ void composeElementsTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const D
             .build();
     }
 
-    if (selected != nullptr) {
-        composeElementDetails(ui, "elements.details", *selected, actions);
+    if (hasTree && propertyHeight > 0.0f) {
+        ElementPropertiesState properties;
+        properties.properties = state.properties;
+        properties.overrideCount = state.propertyOverrideCount;
+        composeElementProperties(ui, "elements.properties",
+                                 {state.panel.x, top + listHeight, state.panel.width, propertyHeight}, properties,
+                                 state, actions);
     }
 
     if (tree != nullptr && tree->truncated) {

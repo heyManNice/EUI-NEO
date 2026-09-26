@@ -6,6 +6,7 @@
 #include "eui/detail/overlay_host.h"
 #include "modules/devtools/devtools_ui.h"
 
+#include <deque>
 #include <functional>
 
 namespace modules::devtools {
@@ -29,6 +30,10 @@ public:
     bool wantsElementTree() const override;
     void setElementTree(const core::dsl::runtime::ElementTreeSnapshot& tree) override;
     const std::string& hoveredElement() const override;
+    const std::string& propertiesElement() const override;
+    void setElementProperties(const core::dsl::runtime::DebugElementProperties& properties) override;
+    bool takeElementPropertyEdit(ElementPropertyEdit& edit) override;
+    void setElementPropertyOverrideCount(std::size_t count) override;
     void releaseGraphicsResources() override;
     void shutdown() override;
 
@@ -46,6 +51,8 @@ public:
     const std::string& selectedElement() const;
     const std::vector<std::string>& expandedElements() const;
     const core::dsl::runtime::ElementTreeSnapshot& elementTree() const;
+    const core::dsl::runtime::DebugElementProperties& properties() const;
+    std::size_t propertyOverrideCount() const;
 
     // The panel's own element tree. Tests use it to see what the panel composed
     // without a renderer; it is also what a future "inspect the inspector" view
@@ -65,6 +72,7 @@ private:
     void closeDetachedWindow();
     void composeUi(core::dsl::Ui& ui, float width, float height, const core::Rect& panel, bool detached);
     void requestCompose();
+    void queueElementPropertyEdit(const ElementPropertyEdit& edit);
     bool overResizeBoundary(double x, double y) const;
     void resetCursor();
 
@@ -88,6 +96,9 @@ private:
     DockPosition dockPosition_ = DockPosition::Bottom;
     app::PerformanceSnapshot performanceSnapshot_;
     core::dsl::runtime::ElementTreeSnapshot elementTree_;
+    core::dsl::runtime::DebugElementProperties properties_;
+    std::deque<ElementPropertyEdit> propertyEdits_;
+    std::size_t propertyOverrideCount_ = 0;
     std::function<void()> detachedWindowOpener_;
     std::function<void()> detachedWindowCloser_;
     bool composeRequested_ = true;

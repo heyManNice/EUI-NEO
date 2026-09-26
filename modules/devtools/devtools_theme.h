@@ -69,6 +69,17 @@ struct DevtoolsTheme {
     float elementDetailsHeight = 98.0f;
     float elementDetailsPadding = 10.0f;
     float elementDetailsLabelWidth = 56.0f;
+    float propertyLabelWidth = 78.0f;
+    float propertyValueWidth = 46.0f;
+    float propertyRevertWidth = 20.0f;
+    float propertySwatchWidth = 24.0f;
+    float propertySwatchSize = 14.0f;
+    float propertyResetWidth = 52.0f;
+    float propertySwitchWidth = 40.0f;
+    float propertySwitchTrackWidth = 32.0f;
+    float propertySwitchTrackHeight = 18.0f;
+    float propertyColumnGap = 6.0f;
+    float propertiesHeight = 196.0f;
 
     // Font Awesome 7 Free-Solid codepoints, the icon font EUI-NEO already ships.
     unsigned int iconSelectElement = 0xF245;
@@ -88,6 +99,7 @@ struct DevtoolsTheme {
     unsigned int iconElementImage = 0xF03E;
     unsigned int iconElementSvg = 0xF1C5;
     unsigned int iconElementShadertoy = 0xF085;
+    unsigned int iconRevert = 0xF2EA;
 };
 
 inline const DevtoolsTheme& devtoolsTheme() {

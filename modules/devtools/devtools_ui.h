@@ -23,6 +23,11 @@ struct DevtoolsPanelState {
     std::string selectedElement;
     // The row the pointer is over, previewed in the page until it leaves.
     std::string hoveredElement;
+    float propertiesScrollOffset = 0.0f;
+    // The colour whose channels are open under its row; one at a time keeps the
+    // property list flat and short.
+    bool colorEditorOpen = false;
+    core::dsl::runtime::DebugPropertyId colorEditorProperty = core::dsl::runtime::DebugPropertyId::Color;
     // Elements the user opened. The tree itself comes from the app, so the panel
     // only remembers what the user expanded inside it: every node with children
     // starts collapsed, which keeps a deep page readable from the first frame.
@@ -40,6 +45,9 @@ struct DevtoolsUiState {
     const DevtoolsPanelState* panelState = nullptr;
     const app::PerformanceSnapshot* performance = nullptr;
     const core::dsl::runtime::ElementTreeSnapshot* elementTree = nullptr;
+    // Values of the selected element, owned by the host and read once per refresh.
+    const core::dsl::runtime::DebugElementProperties* properties = nullptr;
+    std::size_t propertyOverrideCount = 0;
 };
 
 // Commands the panel can request. None of them own state or draw.
@@ -55,6 +63,13 @@ struct DevtoolsUiActions {
     std::function<void(const std::string&, bool)> hoverElement;
     std::function<void(const std::string&)> toggleElementCollapsed;
     std::function<void(const std::string&)> copyElementId;
+    std::function<void(float)> setPropertiesScrollOffset;
+    std::function<void(core::dsl::runtime::DebugPropertyId, bool)> togglePropertyColorEditor;
+    std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId, float)> setElementPropertyNumber;
+    std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId, const core::Color&)> setElementPropertyColor;
+    std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId, bool)> setElementPropertyFlag;
+    std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId)> clearElementProperty;
+    std::function<void()> clearElementProperties;
 };
 
 void composeDevtoolsUi(core::dsl::Ui& ui, const DevtoolsUiState& state, const DevtoolsUiActions& actions);

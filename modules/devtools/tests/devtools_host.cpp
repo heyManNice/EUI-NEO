@@ -17,8 +17,10 @@ struct HasOverlayHooks<T, std::void_t<decltype(&T::setInputFilter),
 
 #include "modules/devtools/devtools.h"
 #include "modules/devtools/devtools_host.h"
+#include "modules/devtools/devtools_properties.h"
 #include "modules/devtools/devtools_theme.h"
 
+#include <algorithm>
 #include <cassert>
 #include <vector>
 
@@ -75,6 +77,38 @@ int countPanelRows(const modules::devtools::DevtoolsHost& host) {
         }
     }
     return count;
+}
+
+// Frames of the composed panel elements whose id contains `part`, in composition
+// order. A test clicks where the panel put a control instead of recomputing the
+// layout the composition already did.
+std::vector<core::Rect> panelElementFrames(const modules::devtools::DevtoolsHost& host, const std::string& part) {
+    std::vector<core::Rect> frames;
+    for (const core::dsl::runtime::ElementTreeNode& node : host.panelElementTree().nodes) {
+        if (node.id.find(part) != std::string::npos) {
+            frames.push_back(node.frame);
+        }
+    }
+    return frames;
+}
+
+core::Rect panelElementFrame(const modules::devtools::DevtoolsHost& host, const std::string& part) {
+    const std::vector<core::Rect> frames = panelElementFrames(host, part);
+    assert(!frames.empty());
+    return frames.front();
+}
+
+// A drag queues one edit per pointer event that changed a value; the page ends up with
+// the last one, so that is what a test looks at.
+bool takeLastElementPropertyEdit(modules::devtools::DevtoolsHost& host,
+                                 modules::devtools::DevtoolsHost::ElementPropertyEdit& edit) {
+    bool any = false;
+    modules::devtools::DevtoolsHost::ElementPropertyEdit current;
+    while (host.takeElementPropertyEdit(current)) {
+        edit = current;
+        any = true;
+    }
+    return any;
 }
 
 } // namespace
@@ -173,6 +207,25 @@ int main() {
         std::vector<core::PointerEvent> events{event};
         host.filterInput(events, scroll);
         return events.front();
+    };
+    // Sliders report a value while the pointer is pressed and moved, so editing one
+    // is a drag rather than a single click.
+    const auto dragPanel = [&](double fromX, double fromY, double toX, double toY) {
+        core::ScrollEvent scroll;
+        core::PointerEvent press = pressAt(fromX, fromY);
+        routePointer(press, scroll);
+        frame();
+
+        press.action = core::PointerAction::Move;
+        press.x = toX;
+        press.y = toY;
+        routePointer(press, scroll);
+        frame();
+
+        press.action = core::PointerAction::Release;
+        press.buttons.set(core::PointerButton::Left, false);
+        routePointer(press, scroll);
+        frame();
     };
     const auto clickPanel = [&](double x, double y) {
         core::PointerEvent press = pressAt(x, y);
@@ -334,7 +387,85 @@ int main() {
         clickPanel(200.0, rowY);
         assert(host.selectedElement() == "page.root");
         frame();
-        assert(hasPanelElement(host, "elements.details"));
+
+        // The property area asks the app layer for the selected element, and the app
+        // layer hands the values back. Nothing is published before that.
+        assert(host.propertiesElement() == "page.root");
+        assert(!host.properties().active);
+        assert(!hasPanelElement(host, "elements.properties.footer.inner.text"));
+
+        core::dsl::runtime::DebugElementProperties values;
+        values.active = true;
+        values.id = "page.root";
+        values.kind = core::dsl::ElementKind::Column;
+        values.frame = {0.0f, 0.0f, 800.0f, 600.0f};
+        values.color = {0.2f, 0.4f, 0.6f, 1.0f};
+        values.opacity = 0.5f;
+        values.radius = 6.0f;
+        host.setElementProperties(values);
+        frame();
+        assert(host.properties().active);
+        assert(host.properties().radius == 6.0f);
+        assert(hasPanelElement(host, "elements.properties.footer.inner.text"));
+        assert(!hasPanelElement(host, "elements.properties.footer.inner.reset"));
+
+        // Every property the runtime can write has exactly one row the panel can show.
+        {
+            const std::vector<core::dsl::runtime::DebugPropertyId>& ids = elementPropertyIds();
+            assert(ids.size() == static_cast<std::size_t>(core::dsl::runtime::kDebugPropertyCount));
+            std::vector<core::dsl::runtime::DebugPropertyId> sorted = ids;
+            std::sort(sorted.begin(), sorted.end());
+            assert(std::adjacent_find(sorted.begin(), sorted.end()) == sorted.end());
+        }
+
+        // A drag on a number editor queues one edit for the app layer to write. The
+        // first slider row is the first number property the panel declares, opacity.
+        {
+            const std::vector<core::Rect> sliders = panelElementFrames(host, ".slider");
+            assert(!sliders.empty());
+            const core::Rect slider = sliders.front();
+            assert(slider.width > 0.0f && slider.height > 0.0f);
+            // Away from the value the row shows: a slider only reports a change.
+            dragPanel(slider.x + slider.width * 0.9, slider.y + slider.height * 0.5,
+                      slider.x + slider.width * 0.15, slider.y + slider.height * 0.5);
+            DevtoolsHost::ElementPropertyEdit edit;
+            assert(takeLastElementPropertyEdit(host, edit));
+            assert(edit.id == "page.root");
+            assert(edit.property == core::dsl::runtime::DebugPropertyId::Opacity);
+            assert(!edit.clear);
+            assert(edit.number >= 0.0f && edit.number <= 1.0f);
+        }
+
+        // A colour row opens its channels under itself, and dragging a channel queues a
+        // colour edit: the first slider row is the hue of the colour being edited.
+        {
+            const core::Rect swatch = panelElementFrame(host, ".swatch");
+            clickPanel(swatch.x + swatch.width * 0.5, swatch.y + swatch.height * 0.5);
+            frame();
+            const std::vector<core::Rect> channels = panelElementFrames(host, ".slider");
+            assert(!channels.empty());
+            const core::Rect hue = channels.front();
+            dragPanel(hue.x + hue.width * 0.9, hue.y + hue.height * 0.5, hue.x + hue.width * 0.15,
+                      hue.y + hue.height * 0.5);
+            DevtoolsHost::ElementPropertyEdit edit;
+            assert(takeLastElementPropertyEdit(host, edit));
+            assert(edit.id == "page.root");
+            assert(edit.property == core::dsl::runtime::DebugPropertyId::Color);
+            assert(!edit.clear);
+        }
+
+        // The footer counts what a debug session replaced and offers to put it all back.
+        host.setElementPropertyOverrideCount(2);
+        assert(host.propertyOverrideCount() == 2);
+        frame();
+        {
+            const core::Rect reset = panelElementFrame(host, "elements.properties.footer.inner.reset");
+            clickPanel(reset.x + reset.width * 0.5, reset.y + reset.height * 0.5);
+            DevtoolsHost::ElementPropertyEdit edit;
+            assert(takeLastElementPropertyEdit(host, edit));
+            assert(edit.clear);
+            assert(edit.id.empty());
+        }
 
         // Hovering a row previews that element in the page.
         {
@@ -375,6 +506,8 @@ int main() {
         // Leaving the tab drops the preview, so a page is never marked while nobody
         // looks at the tree, while the selection itself is remembered.
         assert(host.hoveredElement().empty());
+        // The property area only asks for values while it is on screen.
+        assert(host.propertiesElement().empty());
         assert(host.selectedElement() == "page.root");
     }
 

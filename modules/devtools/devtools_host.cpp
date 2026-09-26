@@ -81,6 +81,57 @@ const std::string& DevtoolsHost::hoveredElement() const {
     return panelState_->hoveredElement;
 }
 
+const std::string& DevtoolsHost::propertiesElement() const {
+    // The property area shows the element the user selected, and only while the tab
+    // that shows it is the one on screen: a hidden panel asks for nothing.
+    static const std::string empty;
+    if (!visible_ || panelState_ == nullptr || panelState_->activeTab != DevtoolsTab::Elements) {
+        return empty;
+    }
+    return panelState_->selectedElement;
+}
+
+void DevtoolsHost::setElementProperties(const core::dsl::runtime::DebugElementProperties& properties) {
+    properties_ = properties;
+    if (visible_) {
+        requestCompose();
+    }
+}
+
+bool DevtoolsHost::takeElementPropertyEdit(ElementPropertyEdit& edit) {
+    if (propertyEdits_.empty()) {
+        return false;
+    }
+    edit = propertyEdits_.front();
+    propertyEdits_.pop_front();
+    return true;
+}
+
+void DevtoolsHost::setElementPropertyOverrideCount(std::size_t count) {
+    if (propertyOverrideCount_ == count) {
+        return;
+    }
+    propertyOverrideCount_ = count;
+    if (visible_) {
+        requestCompose();
+    }
+}
+
+void DevtoolsHost::queueElementPropertyEdit(const ElementPropertyEdit& edit) {
+    propertyEdits_.push_back(edit);
+    // The app layer pulls the edits while it owns the page, so the panel only has to
+    // make sure another frame happens.
+    requestCompose();
+}
+
+const core::dsl::runtime::DebugElementProperties& DevtoolsHost::properties() const {
+    return properties_;
+}
+
+std::size_t DevtoolsHost::propertyOverrideCount() const {
+    return propertyOverrideCount_;
+}
+
 const core::dsl::runtime::ElementTreeSnapshot& DevtoolsHost::elementTree() const {
     return elementTree_;
 }
@@ -373,7 +424,8 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
     // runtimes composes at a time, so the host tracks whichever one is active.
     DevtoolsPanelState& state = ui.state<DevtoolsPanelState>("devtools.panel");
     panelState_ = &state;
-    composeDevtoolsUi(ui, {width, height, panel, detached, dockPosition_, &state, &performanceSnapshot_, &elementTree_}, {
+    composeDevtoolsUi(ui, {width, height, panel, detached, dockPosition_, &state, &performanceSnapshot_, &elementTree_,
+                           &properties_, propertyOverrideCount_}, {
         [this, &state](DevtoolsTab tab) {
             if (state.activeTab == tab) {
                 return;
@@ -432,6 +484,57 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
         },
         [this](const std::string& id) {
             core::window::setClipboardText(id);
+        },
+        [this, &state](float offset) {
+            state.propertiesScrollOffset = offset;
+            requestCompose();
+        },
+        [this, &state](core::dsl::runtime::DebugPropertyId property, bool open) {
+            if (state.colorEditorOpen && state.colorEditorProperty == property && open) {
+                return;
+            }
+            state.colorEditorOpen = open;
+            state.colorEditorProperty = property;
+            requestCompose();
+        },
+        [this](const std::string& id, core::dsl::runtime::DebugPropertyId property, float value) {
+            ElementPropertyEdit edit;
+            edit.id = id;
+            edit.property = property;
+            edit.number = value;
+            queueElementPropertyEdit(edit);
+        },
+        [this](const std::string& id, core::dsl::runtime::DebugPropertyId property, const core::Color& value) {
+            ElementPropertyEdit edit;
+            edit.id = id;
+            edit.property = property;
+            edit.color = value;
+            queueElementPropertyEdit(edit);
+        },
+        [this](const std::string& id, core::dsl::runtime::DebugPropertyId property, bool value) {
+            ElementPropertyEdit edit;
+            edit.id = id;
+            edit.property = property;
+            edit.flag = value;
+            queueElementPropertyEdit(edit);
+        },
+        [this](const std::string& id, core::dsl::runtime::DebugPropertyId property) {
+            ElementPropertyEdit edit;
+            edit.id = id;
+            edit.property = property;
+            edit.clear = true;
+            queueElementPropertyEdit(edit);
+            // Putting a value back means the element has to be built from the app's
+            // code again: the override was written onto the composed element.
+            core::platform::requestUiUpdate();
+        },
+        [this] {
+            // An empty id with `clear` puts every element on the page back, which is
+            // what the property footer offers once a debug session changed something.
+            ElementPropertyEdit edit;
+            edit.clear = true;
+            queueElementPropertyEdit(edit);
+            core::platform::requestUiUpdate();
         }
     });
 }
