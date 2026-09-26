@@ -82,6 +82,38 @@ public:
         return empty;
     }
 
+    // One property edit the overlay asks for. `clear` puts the element's own value
+    // back instead of writing one, and an empty id clears every override on the page.
+    struct ElementPropertyEdit {
+        std::string id;
+        core::dsl::runtime::DebugPropertyId property = core::dsl::runtime::DebugPropertyId::Color;
+        float number = 0.0f;
+        core::Color color = {1.0f, 1.0f, 1.0f, 1.0f};
+        bool flag = false;
+        bool clear = false;
+    };
+
+    // The element whose properties the overlay shows, empty when it shows none. The
+    // app layer reads them for that one element and hands them back through
+    // `setElementProperties`.
+    virtual const std::string& propertiesElement() const {
+        static const std::string empty;
+        return empty;
+    }
+    virtual void setElementProperties(const core::dsl::runtime::DebugElementProperties& properties) {}
+
+    // Pulls one edit the overlay made, in order, until it returns false. The app
+    // layer is the only writer: the panel asks for a change, the app layer applies
+    // it to the page, and the next property read shows the result.
+    virtual bool takeElementPropertyEdit(ElementPropertyEdit& edit) {
+        static_cast<void>(edit);
+        return false;
+    }
+
+    // How many properties the debug session replaced on the page, so the overlay
+    // can tell the user the page no longer matches its code.
+    virtual void setElementPropertyOverrideCount(std::size_t count) { static_cast<void>(count); }
+
     virtual void releaseGraphicsResources() = 0;
 
     virtual void shutdown() = 0;

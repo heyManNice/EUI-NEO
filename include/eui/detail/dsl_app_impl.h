@@ -62,6 +62,10 @@ struct DslAppState {
 #if defined(EUI_DEBUG_BUILD)
     std::uint64_t elementTreeRevision = 0;
     double elementTreeRefreshTime = 0.0;
+    std::string elementPropertiesId;
+    std::uint64_t elementPropertiesRevision = 0;
+    double elementPropertiesRefreshTime = 0.0;
+    bool elementPropertiesStale = true;
 #endif
 };
 
@@ -93,6 +97,60 @@ inline void publishElementTree(OverlayHost& overlay) {
     state.elementTreeRevision = revision;
     state.elementTreeRefreshTime = now;
     overlay.setElementTree(dslRuntime().elementTree());
+}
+
+// Properties are read for the single element the overlay shows, and only when it
+// asks. A tree walk per frame would cost as much as the page is big, so the read is
+// throttled like the tree and repeats immediately after an edit, when the panel has
+// to see what its own edit did.
+inline void publishElementProperties(OverlayHost& overlay) {
+    const std::string& id = overlay.propertiesElement();
+    if (id.empty()) {
+        return;
+    }
+    DslAppState& state = dslAppState();
+    const std::uint64_t revision = dslRuntime().elementStructureRevision();
+    const double now = core::window::timeSeconds();
+    const bool sameElement = id == state.elementPropertiesId;
+    const bool throttled = revision == state.elementPropertiesRevision &&
+                           now - state.elementPropertiesRefreshTime < kElementTreeRefreshSeconds;
+    if (sameElement && !state.elementPropertiesStale && throttled) {
+        return;
+    }
+    state.elementPropertiesId = id;
+    state.elementPropertiesRevision = revision;
+    state.elementPropertiesRefreshTime = now;
+    state.elementPropertiesStale = false;
+    overlay.setElementProperties(dslRuntime().debugElementProperties(id));
+    overlay.setElementPropertyOverrideCount(dslRuntime().debugElementOverrideCount());
+}
+
+// Applies the edits the overlay made to the page. This is the only direction that
+// writes: the runtime keeps them on top of the app's own values until they are
+// cleared, and the app state the page is built from is never touched.
+inline void applyElementPropertyEdits(OverlayHost& overlay) {
+    OverlayHost::ElementPropertyEdit edit;
+    while (overlay.takeElementPropertyEdit(edit)) {
+        if (edit.clear && edit.id.empty()) {
+            dslRuntime().clearAllDebugElementOverrides();
+        } else if (edit.clear) {
+            dslRuntime().clearDebugElementOverride(edit.id, edit.property);
+        } else {
+            switch (core::dsl::runtime::debugPropertyType(edit.property)) {
+            case core::dsl::runtime::DebugPropertyType::Number:
+                dslRuntime().setDebugElementOverride(edit.id, edit.property, edit.number);
+                break;
+            case core::dsl::runtime::DebugPropertyType::Color:
+                dslRuntime().setDebugElementOverride(edit.id, edit.property, edit.color);
+                break;
+            case core::dsl::runtime::DebugPropertyType::Flag:
+                dslRuntime().setDebugElementOverride(edit.id, edit.property, edit.flag);
+                break;
+            }
+        }
+        dslAppState().elementPropertiesStale = true;
+    }
+    overlay.setElementPropertyOverrideCount(dslRuntime().debugElementOverrideCount());
 }
 #endif
 
@@ -476,6 +534,10 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
         // Publish before the overlay update so it composes with the tree of this
         // frame; the overlay asks for the tree only while it displays it.
         publishElementTree(*overlay);
+        // The overlay edits the page through the app layer: it asks for the values
+        // of the element it shows, and the edits it made land on the page here.
+        applyElementPropertyEdits(*overlay);
+        publishElementProperties(*overlay);
         // The overlay decides which element the page should preview, and the page
         // draws it with the same transform and clip as the element itself.
         detail::dslRuntime().setHoveredElement(overlay->hoveredElement());
