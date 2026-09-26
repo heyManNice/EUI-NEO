@@ -563,7 +563,6 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
             changed = detail::dslRuntime().update(window, 0.0f, pointerScale, effectiveScale, inputEnabled) || changed;
             changed = true;
         }
-        overlay->updateCursor(window);
     }
 #endif
 

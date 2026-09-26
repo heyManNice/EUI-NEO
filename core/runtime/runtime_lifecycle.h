@@ -179,11 +179,7 @@ inline bool Runtime::update(core::window::Handle window, float deltaSeconds, flo
     }
     instances_.releaseUnseenTimers();
     updateImeCursorRect(window, dpiScale);
-    if (window != nullptr) {
-        // A host driven overlay runtime has no window of its own; its host owns
-        // the cursor for the window it draws into.
-        applyCursor(window);
-    }
+    applyCursor(window);
 
     promoteBackdropBlurDirtyRegions(dpiScale);
     if (pruneInstancesRequested_) {
@@ -389,6 +385,11 @@ inline void Runtime::releaseGraphicsResources(bool releaseCachedImageTextures) {
 }
 
 inline void Runtime::applyCursor(core::window::Handle window) {
+    if (window == nullptr) {
+        // A host driven overlay runtime has no window of its own, so there is
+        // nothing to apply a cursor to.
+        return;
+    }
     if (!arrowCursor_) {
         arrowCursor_ = core::window::createStandardCursor(core::window::CursorType::Arrow);
     }

@@ -8,9 +8,7 @@ using CursorHandle = void*;
 
 enum class CursorType {
     Arrow,
-    Hand,
-    ResizeHorizontal,
-    ResizeVertical
+    Hand
 };
 
 enum class RenderApi {

@@ -186,9 +186,7 @@ void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRo
 //
 // The strip that takes the pointer is the same element that shows the hover: a child
 // rectangle would be the topmost interactive element and swallow the press without
-// ever reaching a handler. It reports the hover instead of naming a cursor, because a
-// panel does not own its window: the host turns the hover into the vertical resize
-// cursor the window shows.
+// ever reaching a handler.
 void composeElementPropertyDivider(core::dsl::Ui& ui,
                                    const std::string& id,
                                    float x,
@@ -207,11 +205,6 @@ void composeElementPropertyDivider(core::dsl::Ui& ui,
         .size(width, height)
         .states(theme.transparent, theme.propertiesHandleHover, theme.propertiesHandleHover)
         .instantStates()
-        .onHover([hover = actions.hoverPropertiesDivider](bool over) {
-            if (hover) {
-                hover(over);
-            }
-        })
         .onPress([begin = actions.beginPropertiesResize, liveHeight = currentHeight,
                   composedWidth = width](const core::PointerEvent&, const core::Rect& bounds) {
             if (begin) {

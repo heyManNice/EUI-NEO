@@ -31,7 +31,7 @@ struct DetachedWindowOptions {
 //
 // Frame order between host and page Runtime:
 //
-//   filterInput -> page update -> update -> updateCursor -> render
+//   filterInput -> page update -> update -> render
 //
 // render() runs inside the page render pass, so the overlay becomes part of the
 // cached frame the window blits. A host stays registered until it is replaced or
@@ -56,8 +56,6 @@ public:
     // is the frame the page was updated with: animated overlay content only
     // advances while it is driven by the frame clock.
     virtual bool update(int framebufferWidth, int framebufferHeight, float dpiScale, float deltaSeconds) = 0;
-
-    virtual void updateCursor(core::window::Handle window) = 0;
 
     // Draws the overlay on top of the page content. It is called while the page
     // render cache is being filled: `dirtyRect` is null on a full paint and the

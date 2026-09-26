@@ -24,7 +24,6 @@ public:
     core::Rect contentBounds() const override;
     void filterInput(std::vector<core::PointerEvent>& pointerEvents, core::ScrollEvent& scrollEvent) override;
     bool update(int framebufferWidth, int framebufferHeight, float dpiScale, float deltaSeconds) override;
-    void updateCursor(core::window::Handle window) override;
     void render(int windowWidth, int windowHeight, float dpiScale, const core::Rect* dirtyRect) override;
     void setPerformanceSnapshot(const app::PerformanceSnapshot& snapshot) override;
     bool wantsElementTree() const override;
@@ -54,11 +53,6 @@ public:
     const core::dsl::runtime::DebugElementProperties& properties() const;
     std::size_t propertyOverrideCount() const;
 
-    // The cursor the panel asks the window for: the divider inside the panel resizes
-    // the property area, the panel edge resizes the panel itself. It is what
-    // `updateCursor` applies, and a test without a window can read it.
-    core::window::CursorType desiredCursor() const;
-
     // The panel's own element tree. Tests use it to see what the panel composed
     // without a renderer; it is also what a future "inspect the inspector" view
     // would read.
@@ -79,7 +73,6 @@ private:
     void requestCompose();
     void queueElementPropertyEdit(const ElementPropertyEdit& edit);
     bool overResizeBoundary(double x, double y) const;
-    void resetCursor();
 
     core::dsl::Runtime runtime_;
     DevtoolsPanelState* panelState_ = nullptr;
@@ -92,12 +85,9 @@ private:
     double dragStartY_ = 0.0;
     int dragStartSize_ = 0;
     bool resizing_ = false;
-    bool resizeCursorActive_ = false;
-    bool propertiesDividerHover_ = false;
-    bool resizeCursorApplied_ = false;
-    core::window::CursorHandle resizeCursor_ = nullptr;
-    core::window::CursorType resizeCursorType_ = core::window::CursorType::Arrow;
-    core::window::Handle cursorWindow_ = nullptr;
+    // The panel edge owns the pointer: it is what takes a press that resizes the
+    // panel away from the panel's own controls.
+    bool panelEdgeActive_ = false;
     bool visible_ = false;
     DockPosition dockPosition_ = DockPosition::Bottom;
     app::PerformanceSnapshot performanceSnapshot_;

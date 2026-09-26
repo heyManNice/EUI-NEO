@@ -44,7 +44,6 @@ public:
     core::Rect contentBounds() const override { return {}; }
     void filterInput(std::vector<core::PointerEvent>&, core::ScrollEvent&) override {}
     bool update(int, int, float, float) override { return false; }
-    void updateCursor(core::window::Handle) override {}
     void render(int, int, float, const core::Rect*) override {}
     void releaseGraphicsResources() override {}
     void shutdown() override {}
