@@ -30,7 +30,7 @@ struct DslAppConfig {
     bool maximizedValue = false;
     float uiScaleValue = 1.0f;
 #if defined(EUI_DEBUG_BUILD)
-    bool showDebugStatsInTitleValue = true;
+    bool showDebugStatsInTitleValue = false;
     bool showDebugOverlayValue = true;
 #else
     bool showDebugStatsInTitleValue = false;

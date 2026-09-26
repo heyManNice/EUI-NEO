@@ -3,12 +3,14 @@
 #include "eui/app.h"
 #include "core/platform/async.h"
 #include "core/platform/performance_stats.h"
+#include "core/app/performance_snapshot.h"
 #include "core/platform/platform.h"
 #include "core/render/render_backend.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdint>
 #include <limits>
 
 namespace app {
@@ -18,7 +20,8 @@ struct AppRunner {
     bool trayAvailable = false;
     bool hiddenToTray = false;
     int renderedFrames = 0;
-    double lastTitleUpdate = 0.0;
+    double lastPerformanceUpdate = 0.0;
+    std::uint64_t performanceRevision = 0;
     double nextFrameTime = 0.0;
     double frameInterval = 1.0 / 60.0;
     double lastFrameTime = 0.0;
@@ -63,7 +66,7 @@ struct AppRunner {
     core::platform::ProcessUsageSampler usageSampler;
 
     void resetTiming(double now) {
-        lastTitleUpdate = now;
+        lastPerformanceUpdate = now;
         nextFrameTime = now;
         lastFrameTime = now;
         usageSampler.reset();
@@ -192,12 +195,14 @@ struct AppRunner {
         }
     }
 
-    template <typename SetTitleFn>
-    void updateFrameTitle(double now, SetTitleFn&& setTitle) {
+    template <typename SetTitleFn, typename PublishSnapshotFn>
+    void updatePerformanceStats(double now, SetTitleFn&& setTitle, PublishSnapshotFn&& publishSnapshot) {
+#if !defined(EUI_DEBUG_BUILD) || !defined(EUI_DEVTOOLS_AVAILABLE)
         if (!showDebugStatsInTitle()) {
             return;
         }
-        const double elapsed = now - lastTitleUpdate;
+#endif
+        const double elapsed = now - lastPerformanceUpdate;
         if (elapsed < debugTitleUpdateInterval()) {
             return;
         }
@@ -206,13 +211,6 @@ struct AppRunner {
         const double averageRenderMs = measuredRenderFrames > 0
             ? accumulatedRenderMs / static_cast<double>(measuredRenderFrames)
             : std::numeric_limits<double>::quiet_NaN();
-
-        char cpuText[32];
-        if (usage.hasCpuPercent) {
-            std::snprintf(cpuText, sizeof(cpuText), "%.0f%%", usage.cpuPercent);
-        } else {
-            std::snprintf(cpuText, sizeof(cpuText), "n/a");
-        }
 
         const double statsFrames = static_cast<double>(std::max(1, measuredRenderStatsFrames));
         const double averageDirtyRects = accumulatedDirtyRectCount / statsFrames;
@@ -248,86 +246,137 @@ struct AppRunner {
         const double cachePercent = static_cast<double>(renderCacheFrames) * 100.0 / statsFrames;
         const double cacheRecreatedPercent = static_cast<double>(renderCacheRecreatedFrames) * 100.0 / statsFrames;
 
-        char renderStatsText[512];
-        if (measuredRenderStatsFrames > 0) {
-            std::snprintf(renderStatsText,
-                          sizeof(renderStatsText),
-                          " | Dirty %.1f/%.0f%% | Draw R%.0f P%.0f TP%.0f T%.0f I%.0f | Batch F%.1f V%.0f | Blur C%.1f R%.1f | Layer H%.0f M%.0f D%.0f Re%.0f | Pass %.1f C%.1f B%.1f/%.0f%% | Pipe RP%.1f/%.0f%% Cp%.1f Ba%.1f Sub%.1f Pr%.1f/%.0f%% Inc%.1f/%.1f Rs%.1f | Full %.0f%% Cache %.0f%% Re %.0f%%",
-                          averageDirtyRects,
-                          averageDirtyAreaPercent,
-                          averageRectDraws,
-                          averagePolygonDraws,
-                          averageTextPrepares,
-                          averageTextDraws,
-                          averageImageDraws,
-                          averageTextBatchFlushes,
-                          averageTextBatchVertices,
-                          averageBackdropCaptures,
-                          averageBackdropCaptureReuses,
-                          averageRetainedLayerHits,
-                          averageRetainedLayerMisses,
-                          averageRetainedLayerDraws,
-                          averageRetainedLayerRebuilds,
-                          averageRenderDirectPasses,
-                          averageClearCalls,
-                          averageCacheBlits,
-                          averageBlitAreaPercent,
-                          averageBackendRenderPasses,
-                          averageBackendRenderPassAreaPercent,
-                          averageBackendCopyRegions,
-                          averageBackendBarriers,
-                          averageBackendSubmits,
-                          averageBackendPresents,
-                          averageBackendPresentAreaPercent,
-                          averageBackendIncrementalPresents,
-                          averageBackendIncrementalPresentSupported,
-                          averageBackendResolveDraws,
-                          fullPaintPercent,
-                          cachePercent,
-                          cacheRecreatedPercent);
-        } else {
-            renderStatsText[0] = '\0';
-        }
+        PerformanceSnapshot snapshot;
+        snapshot.revision = ++performanceRevision;
+        snapshot.elapsedSeconds = elapsed;
+        snapshot.framesPerSecond = renderedFrames / elapsed;
+        snapshot.processUsage = usage;
+        snapshot.hasRenderDuration = measuredRenderFrames > 0;
+        snapshot.renderDurationMs = snapshot.hasRenderDuration ? averageRenderMs : 0.0;
+        snapshot.hasRenderStats = measuredRenderStatsFrames > 0;
+        snapshot.render.dirtyRects = averageDirtyRects;
+        snapshot.render.dirtyAreaPercent = averageDirtyAreaPercent;
+        snapshot.render.blitAreaPercent = averageBlitAreaPercent;
+        snapshot.render.rectDraws = averageRectDraws;
+        snapshot.render.polygonDraws = averagePolygonDraws;
+        snapshot.render.textPrepares = averageTextPrepares;
+        snapshot.render.textDraws = averageTextDraws;
+        snapshot.render.imageDraws = averageImageDraws;
+        snapshot.render.textBatchFlushes = averageTextBatchFlushes;
+        snapshot.render.textBatchVertices = averageTextBatchVertices;
+        snapshot.render.backdropCaptures = averageBackdropCaptures;
+        snapshot.render.backdropCaptureReuses = averageBackdropCaptureReuses;
+        snapshot.render.retainedLayerHits = averageRetainedLayerHits;
+        snapshot.render.retainedLayerMisses = averageRetainedLayerMisses;
+        snapshot.render.retainedLayerDraws = averageRetainedLayerDraws;
+        snapshot.render.retainedLayerRebuilds = averageRetainedLayerRebuilds;
+        snapshot.render.renderDirectPasses = averageRenderDirectPasses;
+        snapshot.render.clearCalls = averageClearCalls;
+        snapshot.render.cacheBlits = averageCacheBlits;
+        snapshot.render.backendRenderPasses = averageBackendRenderPasses;
+        snapshot.render.backendRenderPassAreaPercent = averageBackendRenderPassAreaPercent;
+        snapshot.render.backendCopyRegions = averageBackendCopyRegions;
+        snapshot.render.backendBarriers = averageBackendBarriers;
+        snapshot.render.backendSubmits = averageBackendSubmits;
+        snapshot.render.backendPresents = averageBackendPresents;
+        snapshot.render.backendPresentAreaPercent = averageBackendPresentAreaPercent;
+        snapshot.render.backendIncrementalPresents = averageBackendIncrementalPresents;
+        snapshot.render.backendIncrementalPresentSupported = averageBackendIncrementalPresentSupported;
+        snapshot.render.backendResolveDraws = averageBackendResolveDraws;
+        snapshot.render.fullPaintPercent = fullPaintPercent;
+        snapshot.render.renderCachePercent = cachePercent;
+        snapshot.render.renderCacheRecreatedPercent = cacheRecreatedPercent;
+        publishSnapshot(snapshot);
 
-        char title[768];
-        if (!usage.hasGpuPercent && std::isnan(averageRenderMs)) {
-            std::snprintf(title,
-                          sizeof(title),
-                          "%s - %.0f FPS | CPU %s | GPU n/a%s",
-                          windowTitle(),
-                          renderedFrames / elapsed,
-                          cpuText,
-                          renderStatsText);
-        } else if (!usage.hasGpuPercent) {
-            std::snprintf(title,
-                          sizeof(title),
-                          "%s - %.0f FPS | CPU %s | GPU %.2f ms%s",
-                          windowTitle(),
-                          renderedFrames / elapsed,
-                          cpuText,
-                          averageRenderMs,
-                          renderStatsText);
-        } else if (std::isnan(averageRenderMs)) {
-            std::snprintf(title,
-                          sizeof(title),
-                          "%s - %.0f FPS | CPU %s | GPU %.0f%%%s",
-                          windowTitle(),
-                          renderedFrames / elapsed,
-                          cpuText,
-                          usage.gpuPercent,
-                          renderStatsText);
-        } else {
-            std::snprintf(title,
-                          sizeof(title),
-                          "%s - %.0f FPS | CPU %s | GPU %.0f%% | Render %.2f ms%s",
-                          windowTitle(),
-                          renderedFrames / elapsed,
-                          cpuText,
-                          usage.gpuPercent,
-                          averageRenderMs,
-                          renderStatsText);
+        if (showDebugStatsInTitle()) {
+            char cpuText[32];
+            if (usage.hasCpuPercent) {
+                std::snprintf(cpuText, sizeof(cpuText), "%.0f%%", usage.cpuPercent);
+            } else {
+                std::snprintf(cpuText, sizeof(cpuText), "n/a");
+            }
+
+            char renderStatsText[512];
+            if (measuredRenderStatsFrames > 0) {
+                std::snprintf(renderStatsText,
+                              sizeof(renderStatsText),
+                              " | Dirty %.1f/%.0f%% | Draw R%.0f P%.0f TP%.0f T%.0f I%.0f | Batch F%.1f V%.0f | Blur C%.1f R%.1f | Layer H%.0f M%.0f D%.0f Re%.0f | Pass %.1f C%.1f B%.1f/%.0f%% | Pipe RP%.1f/%.0f%% Cp%.1f Ba%.1f Sub%.1f Pr%.1f/%.0f%% Inc%.1f/%.1f Rs%.1f | Full %.0f%% Cache %.0f%% Re %.0f%%",
+                              averageDirtyRects,
+                              averageDirtyAreaPercent,
+                              averageRectDraws,
+                              averagePolygonDraws,
+                              averageTextPrepares,
+                              averageTextDraws,
+                              averageImageDraws,
+                              averageTextBatchFlushes,
+                              averageTextBatchVertices,
+                              averageBackdropCaptures,
+                              averageBackdropCaptureReuses,
+                              averageRetainedLayerHits,
+                              averageRetainedLayerMisses,
+                              averageRetainedLayerDraws,
+                              averageRetainedLayerRebuilds,
+                              averageRenderDirectPasses,
+                              averageClearCalls,
+                              averageCacheBlits,
+                              averageBlitAreaPercent,
+                              averageBackendRenderPasses,
+                              averageBackendRenderPassAreaPercent,
+                              averageBackendCopyRegions,
+                              averageBackendBarriers,
+                              averageBackendSubmits,
+                              averageBackendPresents,
+                              averageBackendPresentAreaPercent,
+                              averageBackendIncrementalPresents,
+                              averageBackendIncrementalPresentSupported,
+                              averageBackendResolveDraws,
+                              fullPaintPercent,
+                              cachePercent,
+                              cacheRecreatedPercent);
+            } else {
+                renderStatsText[0] = '\0';
+            }
+
+            char title[768];
+            if (!usage.hasGpuPercent && std::isnan(averageRenderMs)) {
+                std::snprintf(title,
+                              sizeof(title),
+                              "%s - %.0f FPS | CPU %s | GPU n/a%s",
+                              windowTitle(),
+                              renderedFrames / elapsed,
+                              cpuText,
+                              renderStatsText);
+            } else if (!usage.hasGpuPercent) {
+                std::snprintf(title,
+                              sizeof(title),
+                              "%s - %.0f FPS | CPU %s | Render %.2f ms%s",
+                              windowTitle(),
+                              renderedFrames / elapsed,
+                              cpuText,
+                              averageRenderMs,
+                              renderStatsText);
+            } else if (std::isnan(averageRenderMs)) {
+                std::snprintf(title,
+                              sizeof(title),
+                              "%s - %.0f FPS | CPU %s | GPU %.0f%%%s",
+                              windowTitle(),
+                              renderedFrames / elapsed,
+                              cpuText,
+                              usage.gpuPercent,
+                              renderStatsText);
+            } else {
+                std::snprintf(title,
+                              sizeof(title),
+                              "%s - %.0f FPS | CPU %s | GPU %.0f%% | Render %.2f ms%s",
+                              windowTitle(),
+                              renderedFrames / elapsed,
+                              cpuText,
+                              usage.gpuPercent,
+                              averageRenderMs,
+                              renderStatsText);
+            }
+            setTitle(title);
         }
-        setTitle(title);
         renderedFrames = 0;
         accumulatedRenderMs = 0.0;
         accumulatedDirtyRectCount = 0.0;
@@ -364,7 +413,7 @@ struct AppRunner {
         fullPaintFrames = 0;
         renderCacheFrames = 0;
         renderCacheRecreatedFrames = 0;
-        lastTitleUpdate = now;
+        lastPerformanceUpdate = now;
     }
 
     void advanceFrameClock(double now, bool animating) {

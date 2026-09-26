@@ -1,5 +1,6 @@
 #include "core/debug/devtools_ui.h"
 #include "core/debug/devtools_icons.h"
+#include "core/debug/devtools_performance.h"
 
 #include <algorithm>
 
@@ -7,7 +8,6 @@ namespace core::debug {
 
 namespace {
 
-constexpr float kToolbarHeight = 31.0f;
 constexpr float kTabFontSize = 14.0f;
 constexpr float kTabHorizontalPadding = 14.0f;
 constexpr float kMoreMenuWidth = 136.0f;
@@ -43,10 +43,10 @@ void composeToolbarIcon(core::dsl::Ui& ui, const std::string& id, const char* sv
 }
 
 void composeToolbarTab(core::dsl::Ui& ui, const std::string& id, const std::string& label,
-                       bool selected) {
+                       bool selected, const std::function<void()>& onClick) {
     ui.stack(id)
         .width(core::SizeValue::wrapContent())
-        .height(kToolbarHeight)
+        .height(kDevtoolsToolbarHeight)
         .content([&] {
             ui.rect(id + ".background")
                 .fill()
@@ -55,15 +55,16 @@ void composeToolbarTab(core::dsl::Ui& ui, const std::string& id, const std::stri
                         {0.23f, 0.28f, 0.34f, 1.0f},
                         {0.23f, 0.28f, 0.34f, 1.0f})
                 .instantStates()
+                .onClick(onClick)
                 .build();
             ui.row(id + ".content")
                 .width(core::SizeValue::wrapContent())
-                .height(kToolbarHeight)
+                .height(kDevtoolsToolbarHeight)
                 .padding(kTabHorizontalPadding, 0.0f)
                 .content([&] {
                     ui.text(id + ".label")
                         .width(core::SizeValue::wrapContent())
-                        .height(kToolbarHeight)
+                        .height(kDevtoolsToolbarHeight)
                         .text(label)
                         .fontSize(kTabFontSize)
                         .color(selected ? "#DCE7F5" : "#9CA9B8")
@@ -77,7 +78,7 @@ void composeToolbarTab(core::dsl::Ui& ui, const std::string& id, const std::stri
                     .width(core::SizeValue::fill())
                     .height(2.0f)
                     .margin(4.0f, 0.0f, 4.0f, 0.0f)
-                    .y(kToolbarHeight - 2.0f)
+                    .y(kDevtoolsToolbarHeight - 2.0f)
                     .ignoreLayout()
                     .color("#66A9F7")
                     .build();
@@ -164,10 +165,11 @@ void composeMoreMenu(core::dsl::Ui& ui, float x, float y, DockPosition selectedP
         .build();
 }
 
-void composeToolbar(core::dsl::Ui& ui, const DevtoolsUiActions& actions) {
+void composeToolbar(core::dsl::Ui& ui, const DevtoolsUiState& state, const DevtoolsUiActions& actions) {
+    const bool compact = state.panel.width < 360.0f;
     ui.stack("toolbar")
         .width(core::SizeValue::fill())
-        .height(kToolbarHeight)
+        .height(kDevtoolsToolbarHeight)
         .content([&] {
             ui.rect("toolbar.background")
                 .fill()
@@ -176,24 +178,27 @@ void composeToolbar(core::dsl::Ui& ui, const DevtoolsUiActions& actions) {
                 .build();
             ui.row("toolbar.items")
                 .fill()
-                .padding(8.0f, 0.0f)
+                .padding(compact ? 4.0f : 8.0f, 0.0f)
                 .alignItems(core::Align::CENTER)
                 .content([&] {
-                    ui.row("toolbar.leading")
-                        .width(core::SizeValue::wrapContent())
-                        .height(24.0f)
-                        .gap(4.0f)
-                        .content([&] {
-                            composeToolbarIcon(ui, "selectElement", icons::kSelectElementSvg);
-                            composeToolbarIcon(ui, "deviceViewport", icons::kDeviceViewportSvg);
-                        })
-                        .build();
+                    if (!compact) {
+                        ui.row("toolbar.leading")
+                            .width(core::SizeValue::wrapContent())
+                            .height(24.0f)
+                            .gap(4.0f)
+                            .content([&] {
+                                composeToolbarIcon(ui, "selectElement", icons::kSelectElementSvg);
+                                composeToolbarIcon(ui, "deviceViewport", icons::kDeviceViewportSvg);
+                            })
+                            .build();
+                    }
                     ui.row("toolbar.tabs")
                         .width(core::SizeValue::wrapContent())
-                        .height(kToolbarHeight)
-                        .margin(8.0f, 0.0f, 0.0f, 0.0f)
+                        .height(kDevtoolsToolbarHeight)
+                        .margin(compact ? 0.0f : 8.0f, 0.0f, 0.0f, 0.0f)
                         .content([&] {
-                            composeToolbarTab(ui, "elements.tab", "Elements", true);
+                            composeToolbarTab(ui, "performance.tab", "Performance", state.activeTab == DevtoolsTab::Performance, [onSelect = actions.selectTab] { onSelect(DevtoolsTab::Performance); });
+                            composeToolbarTab(ui, "elements.tab", "Elements", state.activeTab == DevtoolsTab::Elements, [onSelect = actions.selectTab] { onSelect(DevtoolsTab::Elements); });
                         })
                         .build();
                     ui.stack("toolbar.spacer")
@@ -216,7 +221,11 @@ void composeToolbar(core::dsl::Ui& ui, const DevtoolsUiActions& actions) {
         .build();
 }
 
-void composePanelContent(core::dsl::Ui& ui) {
+void composePanelContent(core::dsl::Ui& ui, const DevtoolsUiState& state, const DevtoolsUiActions& actions) {
+    if (state.activeTab == DevtoolsTab::Performance) {
+        composePerformanceTab(ui, state, actions);
+        return;
+    }
     ui.column("panel.content")
         .width(core::SizeValue::fill())
         .height(core::SizeValue::fill())
@@ -226,7 +235,7 @@ void composePanelContent(core::dsl::Ui& ui) {
             ui.text("empty.title")
                 .width(core::SizeValue::fill())
                 .height(28.0f)
-                .text("EUI DevTools")
+                .text("Elements")
                 .fontSize(19.0f)
                 .color("#ECF3FA")
                 .build();
@@ -267,14 +276,14 @@ void composeDevtoolsUi(core::dsl::Ui& ui, const DevtoolsUiState& state, const De
                             .color("#596574")
                             .build();
                     }
-                    composeToolbar(ui, actions);
-                    composePanelContent(ui);
+                    composeToolbar(ui, state, actions);
+                    composePanelContent(ui, state, actions);
                 })
                 .build();
             if (state.moreMenuOpen) {
                 composeMoreMenu(ui,
                                 std::max(panel.x + 8.0f, panel.x + panel.width - kMoreMenuWidth - 36.0f),
-                                panel.y + kToolbarHeight + 6.0f, state.dockPosition,
+                                panel.y + kDevtoolsToolbarHeight + 6.0f, state.dockPosition,
                                 actions.selectDockPosition);
             }
         })

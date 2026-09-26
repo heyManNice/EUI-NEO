@@ -268,8 +268,8 @@ std::unique_ptr<ManagedWindow> createManagedWindow(const app::DslWindowRequest& 
         core::window::destroyWindow(childWindow);
         return {};
     }
-    managed->state.lastTitleUpdate = glfwGetTime();
-    managed->state.nextFrameTime = managed->state.lastTitleUpdate;
+    managed->state.lastPerformanceUpdate = glfwGetTime();
+    managed->state.nextFrameTime = managed->state.lastPerformanceUpdate;
     installWindowCallbacks(childWindow, managed->state);
 
     if (!managed->content.initialize(childWindow, request)) {
@@ -436,7 +436,7 @@ int eui_app_run() {
 
     WindowState windowState;
     windowState.resetTiming(glfwGetTime());
-    updateFrameInterval(window, windowState, windowState.lastTitleUpdate, true);
+    updateFrameInterval(window, windowState, windowState.lastPerformanceUpdate, true);
     if (app::showDebugStatsInTitle()) {
         char title[128];
         std::snprintf(title, sizeof(title), "%s - 0 FPS", app::windowTitle());
@@ -579,6 +579,9 @@ int eui_app_run() {
             [&](const char* title) {
                 glfwSetWindowTitle(window, title);
             },
+            [&](const app::PerformanceSnapshot& snapshot) {
+                app::detail::publishPerformanceSnapshot(snapshot);
+            },
             [&] {
                 return anyRenderableManagedWindowAnimating(childWindows);
             });
@@ -586,6 +589,8 @@ int eui_app_run() {
         const bool anyAnimating = windowState.anyAnimating(anyRenderableManagedWindowAnimating(childWindows));
         if (anyAnimating) {
             glfwPollEvents();
+        } else if (app::detail::performancePanelVisible()) {
+            glfwWaitEventsTimeout(app::debugTitleUpdateInterval());
         } else {
             glfwWaitEvents();
         }

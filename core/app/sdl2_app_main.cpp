@@ -755,6 +755,9 @@ int eui_app_run() {
             [&](const char* title) {
                 SDL_SetWindowTitle(window, title);
             },
+            [&](const app::PerformanceSnapshot& snapshot) {
+                app::detail::publishPerformanceSnapshot(snapshot);
+            },
             [&] {
                 return childWindows.anyAnimating();
             });

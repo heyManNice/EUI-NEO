@@ -350,7 +350,7 @@ endif()
 # the generated entry source in a global property because normal CMake
 # variables from this directory are not visible in the parent's call scope.
 set_property(GLOBAL PROPERTY EUI_NEO_APP_MAIN_SOURCE "${EUI_APP_MAIN_SOURCE}")
-set_property(GLOBAL PROPERTY EUI_NEO_DEBUG_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/core/debug/devtools_host.cpp;${CMAKE_CURRENT_SOURCE_DIR}/core/debug/devtools_ui.cpp")
+set_property(GLOBAL PROPERTY EUI_NEO_DEBUG_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/core/debug/devtools_host.cpp;${CMAKE_CURRENT_SOURCE_DIR}/core/debug/devtools_ui.cpp;${CMAKE_CURRENT_SOURCE_DIR}/core/debug/devtools_performance.cpp")
 
 target_link_libraries(eui_neo PUBLIC Freetype::Freetype)
 
@@ -715,6 +715,9 @@ if(EUI_BUILD_TEST_FIXTURES)
             endforeach()
             target_compile_definitions(${unit_name} PRIVATE $<$<CONFIG:Debug>:EUI_DEVTOOLS_AVAILABLE=1>)
         endif()
+        if(unit_name STREQUAL "performance_snapshot")
+            target_compile_definitions(${unit_name} PRIVATE $<$<CONFIG:Debug>:EUI_DEVTOOLS_AVAILABLE=1>)
+        endif()
         target_link_libraries(${unit_name} PRIVATE eui::neo)
         eui_apply_compile_options(${unit_name})
         if(unit_name STREQUAL "shadertoy_packaged_assets")
@@ -804,11 +807,11 @@ if(EUI_ENABLE_INSTALL)
         FILES_MATCHING PATTERN "*.h"
         PATTERN "debug" EXCLUDE
     )
-    install(FILES core/debug/devtools_host.h core/debug/devtools_ui.h core/debug/devtools_icons.h
+    install(FILES core/debug/devtools_host.h core/debug/devtools_ui.h core/debug/devtools_performance.h core/debug/devtools_icons.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/eui-neo/core/debug
         CONFIGURATIONS Debug
     )
-    install(FILES core/debug/devtools_host.cpp core/debug/devtools_ui.cpp
+    install(FILES core/debug/devtools_host.cpp core/debug/devtools_ui.cpp core/debug/devtools_performance.cpp
         DESTINATION ${CMAKE_INSTALL_DATADIR}/eui-neo/app
         CONFIGURATIONS Debug
     )
@@ -879,7 +882,7 @@ set(EUI_NEO_DEPS_MODE "@EUI_DEPS_MODE@")
 set(EUI_NEO_ENABLE_MARKDOWN @EUI_ENABLE_MARKDOWN@)
 set(EUI_NEO_ENABLE_MODULES @EUI_ENABLE_MODULES@)
 set(EUI_APP_MAIN_SOURCE "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/eui-neo/app/app_main.cpp")
-set(EUI_DEBUG_SOURCES "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/eui-neo/app/devtools_host.cpp;${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/eui-neo/app/devtools_ui.cpp")
+set(EUI_DEBUG_SOURCES "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/eui-neo/app/devtools_host.cpp;${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/eui-neo/app/devtools_ui.cpp;${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/eui-neo/app/devtools_performance.cpp")
 set(EUI_APP_ASSETS_DIR "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/eui-neo/assets")
 set_property(GLOBAL PROPERTY EUI_NEO_APP_MAIN_SOURCE "${EUI_APP_MAIN_SOURCE}")
 set_property(GLOBAL PROPERTY EUI_NEO_DEBUG_SOURCES "${EUI_DEBUG_SOURCES}")

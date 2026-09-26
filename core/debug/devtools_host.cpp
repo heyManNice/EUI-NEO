@@ -40,6 +40,26 @@ void DevtoolsHost::setDetachedWindowCloser(std::function<void()> closer) {
     detachedWindowCloser_ = std::move(closer);
 }
 
+void DevtoolsHost::setPerformanceSnapshot(const app::PerformanceSnapshot& snapshot) {
+    if (performanceSnapshot_.revision == snapshot.revision) {
+        return;
+    }
+    performanceSnapshot_ = snapshot;
+    if (performanceVisible()) {
+        composeRequested_ = true;
+        core::platform::requestUiUpdate();
+    }
+}
+
+void DevtoolsHost::selectTab(DevtoolsTab tab) {
+    if (activeTab_ == tab) {
+        return;
+    }
+    activeTab_ = tab;
+    composeRequested_ = true;
+    core::platform::requestUiUpdate();
+}
+
 void DevtoolsHost::close() {
     visible_ = false;
     moreMenuOpen_ = false;
@@ -261,13 +281,19 @@ void DevtoolsHost::filterInput(std::vector<PointerEvent>& pointerEvents, ScrollE
 }
 
 void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const Rect& panel, bool detached) {
-    composeDevtoolsUi(ui, {width, height, panel, detached, dockPosition_, moreMenuOpen_}, {
+    composeDevtoolsUi(ui, {width, height, panel, detached, dockPosition_, activeTab_, moreMenuOpen_, performanceScrollOffset_, performanceSnapshot_}, {
         [this] {
             moreMenuOpen_ = !moreMenuOpen_;
             composeRequested_ = true;
         },
         [this] { close(); },
-        [this](DockPosition position) { selectDockPosition(position); }
+        [this](DevtoolsTab tab) { selectTab(tab); },
+        [this](DockPosition position) { selectDockPosition(position); },
+        [this](float offset) {
+            performanceScrollOffset_ = offset;
+            composeRequested_ = true;
+            core::platform::requestUiUpdate();
+        }
     });
 }
 
@@ -344,6 +370,9 @@ void DevtoolsHost::shutdown() {
     runtime_.shutdown(false);
     visible_ = false;
     dockPosition_ = DockPosition::Bottom;
+    activeTab_ = DevtoolsTab::Performance;
+    performanceSnapshot_ = {};
+    performanceScrollOffset_ = 0.0f;
     detachedWindowOpener_ = {};
     detachedWindowCloser_ = {};
     moreMenuOpen_ = false;

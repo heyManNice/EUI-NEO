@@ -19,6 +19,9 @@ public:
     int contentHeight() const;
     bool visible() const { return visible_; }
     DockPosition dockPosition() const { return dockPosition_; }
+    DevtoolsTab activeTab() const { return activeTab_; }
+    bool performanceVisible() const { return visible_ && activeTab_ == DevtoolsTab::Performance; }
+    void setPerformanceSnapshot(const app::PerformanceSnapshot& snapshot);
     void setDetachedWindowOpener(std::function<void()> opener);
     void setDetachedWindowCloser(std::function<void()> closer);
     void detachedWindowClosed();
@@ -37,6 +40,7 @@ private:
     int maximumPanelSize() const;
     Rect panelBounds() const;
     void selectDockPosition(DockPosition position);
+    void selectTab(DevtoolsTab tab);
     void close();
     void composeUi(core::dsl::Ui& ui, float width, float height, const Rect& panel, bool detached);
     bool overResizeBoundary(double x, double y) const;
@@ -58,6 +62,9 @@ private:
     core::window::Handle cursorWindow_ = nullptr;
     bool visible_ = false;
     DockPosition dockPosition_ = DockPosition::Bottom;
+    DevtoolsTab activeTab_ = DevtoolsTab::Performance;
+    app::PerformanceSnapshot performanceSnapshot_;
+    float performanceScrollOffset_ = 0.0f;
     std::function<void()> detachedWindowOpener_;
     std::function<void()> detachedWindowCloser_;
     bool moreMenuOpen_ = false;

@@ -6,6 +6,7 @@
 int main() {
     const app::DslAppConfig defaults;
     assert(defaults.debugTitleIntervalValue == 1.0);
+    assert(!defaults.showDebugStatsInTitleValue);
     assert(!defaults.shutdownHandler);
 #if defined(EUI_DEBUG_BUILD)
     assert(defaults.showDebugOverlayValue);
@@ -37,6 +38,7 @@ int main() {
         .alwaysOnTop(true)
         .maximized(true)
         .debugTitleInterval(0.5)
+        .showDebugStatsInTitle()
         .showDebugOverlay(true)
         .onDebugOverlay([&](eui::Ui&, const eui::Screen&) { debugOverlayCalled = true; })
         .uiScale(1.25f)
@@ -71,11 +73,7 @@ int main() {
     eui::Ui debugUi;
     config.debugOverlayCompose(debugUi, {});
     assert(debugOverlayCalled);
-#if defined(EUI_DEBUG_BUILD)
     assert(config.showDebugStatsInTitleValue);
-#else
-    assert(!config.showDebugStatsInTitleValue);
-#endif
 
     title.clear();
     pageId.clear();

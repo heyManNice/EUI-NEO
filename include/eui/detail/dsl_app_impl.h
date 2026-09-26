@@ -8,6 +8,7 @@
 
 #include "3rd/stb_image.h"
 #include "core/dsl_runtime.h"
+#include "core/app/performance_snapshot.h"
 #include "core/platform/platform.h"
 #include "core/render/text.h"
 
@@ -33,6 +34,22 @@
 namespace app {
 
 namespace detail {
+
+inline void publishPerformanceSnapshot(const PerformanceSnapshot& snapshot) {
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+    core::debug::devtoolsHost().setPerformanceSnapshot(snapshot);
+#else
+    (void)snapshot;
+#endif
+}
+
+inline bool performancePanelVisible() {
+#if defined(EUI_DEBUG_BUILD) && defined(EUI_DEVTOOLS_AVAILABLE)
+    return core::debug::devtoolsHost().performanceVisible();
+#else
+    return false;
+#endif
+}
 
 inline core::dsl::Runtime& dslRuntime() {
     static core::dsl::Runtime runtime;

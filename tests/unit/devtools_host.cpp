@@ -32,6 +32,38 @@ int main() {
     assert(core::detail::inputQueue(window).keys.empty());
     assert(host.update());
     assert(!host.update());
+    assert(host.activeTab() == core::debug::DevtoolsTab::Performance);
+    assert(host.performanceVisible());
+
+    app::PerformanceSnapshot sample;
+    sample.revision = 1;
+    sample.framesPerSecond = 60.0;
+    host.setPerformanceSnapshot(sample);
+    assert(host.update());
+
+    const auto clickTab = [&](double x) {
+        core::PointerEvent pointer;
+        pointer.x = x;
+        pointer.y = static_cast<double>(host.contentHeight() + 16);
+        pointer.action = core::PointerAction::Press;
+        pointer.button = core::PointerButton::Left;
+        pointer.buttons.set(core::PointerButton::Left, true);
+        std::vector<core::PointerEvent> events{pointer};
+        core::ScrollEvent scroll;
+        host.filterInput(events, scroll);
+        host.update();
+
+        pointer.action = core::PointerAction::Release;
+        pointer.buttons.set(core::PointerButton::Left, false);
+        events = {pointer};
+        host.filterInput(events, scroll);
+        host.update();
+    };
+    clickTab(220.0);
+    assert(host.activeTab() == core::debug::DevtoolsTab::Elements);
+    assert(!host.performanceVisible());
+    clickTab(110.0);
+    assert(host.activeTab() == core::debug::DevtoolsTab::Performance);
 
     core::PointerEvent toolbarPointer;
     toolbarPointer.x = 20.0;

@@ -29,7 +29,7 @@ class MainWindowRuntime {
 public:
     explicit MainWindowRuntime(AppRunner& runner) : runner_(runner) {}
 
-    template <typename AfterUpdateFn, typename UpdateChildrenFn, typename SetTitleFn, typename ChildAnimatingFn>
+    template <typename AfterUpdateFn, typename UpdateChildrenFn, typename SetTitleFn, typename PublishSnapshotFn, typename ChildAnimatingFn>
     void runFrame(core::window::Handle window,
                   core::render::RenderBackend& renderBackend,
                   const MainWindowMetrics& metrics,
@@ -39,6 +39,7 @@ public:
                   AfterUpdateFn&& afterUpdate,
                   UpdateChildrenFn&& updateChildren,
                   SetTitleFn&& setTitle,
+                  PublishSnapshotFn&& publishSnapshot,
                   ChildAnimatingFn&& childAnimating) {
         runner_.updateFrameInterval(refreshRate, now);
         const bool updateRequested = runner_.consumeUpdateRequest();
@@ -69,7 +70,7 @@ public:
                         std::forward<AfterUpdateFn>(afterUpdate));
 
         updateChildren(deltaSeconds, updateRequested);
-        runner_.updateFrameTitle(core::window::timeSeconds(), std::forward<SetTitleFn>(setTitle));
+        runner_.updatePerformanceStats(core::window::timeSeconds(), std::forward<SetTitleFn>(setTitle), std::forward<PublishSnapshotFn>(publishSnapshot));
         runner_.advanceFrameClock(core::window::timeSeconds(), runner_.anyAnimating(childAnimating()));
     }
 
