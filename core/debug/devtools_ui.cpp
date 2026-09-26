@@ -175,6 +175,7 @@ void composeToolbar(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devto
                 .fill()
                 .ignoreLayout()
                 .color("#292F38")
+                .onClick(state.moreMenuOpen ? actions.dismissMoreMenu : std::function<void()>{})
                 .build();
             ui.row("toolbar.items")
                 .fill()
@@ -187,8 +188,8 @@ void composeToolbar(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devto
                             .height(24.0f)
                             .gap(4.0f)
                             .content([&] {
-                                composeToolbarIcon(ui, "selectElement", icons::kSelectElementSvg);
-                                composeToolbarIcon(ui, "deviceViewport", icons::kDeviceViewportSvg);
+                                composeToolbarIcon(ui, "selectElement", icons::kSelectElementSvg, state.moreMenuOpen ? actions.dismissMoreMenu : std::function<void()>{});
+                                composeToolbarIcon(ui, "deviceViewport", icons::kDeviceViewportSvg, state.moreMenuOpen ? actions.dismissMoreMenu : std::function<void()>{});
                             })
                             .build();
                     }
@@ -210,7 +211,7 @@ void composeToolbar(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devto
                         .height(24.0f)
                         .gap(4.0f)
                         .content([&] {
-                            composeToolbarIcon(ui, "settings", icons::kSettingsSvg);
+                            composeToolbarIcon(ui, "settings", icons::kSettingsSvg, state.moreMenuOpen ? actions.dismissMoreMenu : std::function<void()>{});
                             composeToolbarIcon(ui, "more", icons::kMoreSvg, actions.toggleMoreMenu);
                             composeToolbarIcon(ui, "close", icons::kCloseSvg, actions.close);
                         })
@@ -230,20 +231,12 @@ void composePanelContent(core::dsl::Ui& ui, const DevtoolsUiState& state, const 
         .width(core::SizeValue::fill())
         .height(core::SizeValue::fill())
         .padding(24.0f, 28.0f, 24.0f, 0.0f)
-        .gap(10.0f)
         .content([&] {
-            ui.text("empty.title")
-                .width(core::SizeValue::fill())
-                .height(28.0f)
-                .text("Elements")
-                .fontSize(19.0f)
-                .color("#ECF3FA")
-                .build();
             ui.text("empty.description")
                 .width(core::SizeValue::fill())
-                .height(24.0f)
+                .height(28.0f)
                 .text("Element inspection is the next milestone.")
-                .fontSize(13.0f)
+                .fontSize(15.0f)
                 .color("#9CA9B8")
                 .build();
         })
@@ -268,6 +261,7 @@ void composeDevtoolsUi(core::dsl::Ui& ui, const DevtoolsUiState& state, const De
                         .fill()
                         .ignoreLayout()
                         .color("#20252D")
+                        .onClick(state.moreMenuOpen ? actions.dismissMoreMenu : std::function<void()>{})
                         .build();
                     if (!detached) {
                         ui.rect("panel.border")
@@ -281,6 +275,12 @@ void composeDevtoolsUi(core::dsl::Ui& ui, const DevtoolsUiState& state, const De
                 })
                 .build();
             if (state.moreMenuOpen) {
+                ui.rect("more.dismiss")
+                    .position(panel.x, panel.y + kDevtoolsToolbarHeight)
+                    .size(panel.width, std::max(0.0f, panel.height - kDevtoolsToolbarHeight))
+                    .color({0.0f, 0.0f, 0.0f, 0.0f})
+                    .onClick(actions.dismissMoreMenu)
+                    .build();
                 composeMoreMenu(ui,
                                 std::max(panel.x + 8.0f, panel.x + panel.width - kMoreMenuWidth - 36.0f),
                                 panel.y + kDevtoolsToolbarHeight + 6.0f, state.dockPosition,

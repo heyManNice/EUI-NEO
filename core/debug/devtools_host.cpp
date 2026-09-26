@@ -52,10 +52,20 @@ void DevtoolsHost::setPerformanceSnapshot(const app::PerformanceSnapshot& snapsh
 }
 
 void DevtoolsHost::selectTab(DevtoolsTab tab) {
+    dismissMoreMenu();
     if (activeTab_ == tab) {
         return;
     }
     activeTab_ = tab;
+    composeRequested_ = true;
+    core::platform::requestUiUpdate();
+}
+
+void DevtoolsHost::dismissMoreMenu() {
+    if (!moreMenuOpen_) {
+        return;
+    }
+    moreMenuOpen_ = false;
     composeRequested_ = true;
     core::platform::requestUiUpdate();
 }
@@ -261,6 +271,9 @@ void DevtoolsHost::filterInput(std::vector<PointerEvent>& pointerEvents, ScrollE
         const Rect panel = panelBounds();
         const bool inside = event.x >= panel.x && event.x < panel.x + panel.width &&
                             event.y >= panel.y && event.y < panel.y + panel.height;
+        if (moreMenuOpen_ && event.action == PointerAction::Press && !inside) {
+            dismissMoreMenu();
+        }
         queueDevtoolsPointer(event, inside && !resizeCursorActive_);
         if (!inside && !overBoundary && !captured) {
             pointerInPanel = false;
@@ -286,6 +299,7 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
             moreMenuOpen_ = !moreMenuOpen_;
             composeRequested_ = true;
         },
+        [this] { dismissMoreMenu(); },
         [this] { close(); },
         [this](DevtoolsTab tab) { selectTab(tab); },
         [this](DockPosition position) { selectDockPosition(position); },

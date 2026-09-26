@@ -26,6 +26,7 @@ struct DevtoolsUiState {
 
 struct DevtoolsUiActions {
     std::function<void()> toggleMoreMenu;
+    std::function<void()> dismissMoreMenu;
     std::function<void()> close;
     std::function<void(DevtoolsTab)> selectTab;
     std::function<void(DockPosition)> selectDockPosition;

@@ -41,6 +41,7 @@ private:
     Rect panelBounds() const;
     void selectDockPosition(DockPosition position);
     void selectTab(DevtoolsTab tab);
+    void dismissMoreMenu();
     void close();
     void composeUi(core::dsl::Ui& ui, float width, float height, const Rect& panel, bool detached);
     bool overResizeBoundary(double x, double y) const;

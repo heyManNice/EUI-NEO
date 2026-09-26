@@ -19,9 +19,9 @@ std::string metricValue(double value, int decimals = 1, const char* suffix = "")
 void composeSection(core::dsl::Ui& ui, const std::string& id, const std::string& label) {
     ui.text(id)
         .width(core::SizeValue::fill())
-        .height(25.0f)
+        .height(28.0f)
         .text(label)
-        .fontSize(13.0f)
+        .fontSize(15.0f)
         .color("#91C1FF")
         .build();
 }
@@ -29,21 +29,21 @@ void composeSection(core::dsl::Ui& ui, const std::string& id, const std::string&
 void composeMetric(core::dsl::Ui& ui, const std::string& id, const std::string& label, const std::string& value) {
     ui.row(id)
         .width(core::SizeValue::fill())
-        .height(21.0f)
+        .height(24.0f)
         .alignItems(core::Align::CENTER)
         .content([&] {
             ui.text(id + ".label")
                 .width(core::SizeValue::fill())
-                .height(21.0f)
+                .height(24.0f)
                 .text(label)
-                .fontSize(12.0f)
+                .fontSize(14.0f)
                 .color("#AAB7C6")
                 .build();
             ui.text(id + ".value")
                 .width(core::SizeValue::wrapContent())
-                .height(21.0f)
+                .height(24.0f)
                 .text(value)
-                .fontSize(12.0f)
+                .fontSize(14.0f)
                 .color("#ECF3FA")
                 .build();
         })
@@ -57,19 +57,12 @@ void composePerformanceMetrics(core::dsl::Ui& ui, const app::PerformanceSnapshot
         .padding(18.0f, 16.0f, 18.0f, 16.0f)
         .gap(4.0f)
         .content([&] {
-            ui.text("performance.title")
-                .width(core::SizeValue::fill())
-                .height(28.0f)
-                .text("Performance")
-                .fontSize(19.0f)
-                .color("#ECF3FA")
-                .build();
             if (snapshot.revision == 0) {
                 ui.text("performance.waiting")
                     .width(core::SizeValue::fill())
-                    .height(24.0f)
+                    .height(28.0f)
                     .text("Waiting for the first sample...")
-                    .fontSize(13.0f)
+                    .fontSize(15.0f)
                     .color("#9CA9B8")
                     .build();
                 return;

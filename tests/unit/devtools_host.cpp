@@ -253,6 +253,16 @@ int main() {
                     panelY + 31.0 + 6.0 + 2.0 + (static_cast<double>(row) + 0.5) * 22.67);
     };
 
+    clickDocked(752.0, dockHost.contentBounds().height + 16.0);
+    clickDocked(400.0, dockHost.contentBounds().height + 90.0);
+    clickDocked(638.0, dockHost.contentBounds().height + 73.0);
+    assert(dockHost.dockPosition() == core::debug::DockPosition::Bottom);
+
+    clickDocked(752.0, dockHost.contentBounds().height + 16.0);
+    clickDocked(400.0, 50.0);
+    clickDocked(638.0, dockHost.contentBounds().height + 73.0);
+    assert(dockHost.dockPosition() == core::debug::DockPosition::Bottom);
+
     chooseDock(1);
     assert(dockHost.dockPosition() == core::debug::DockPosition::Left);
     assert(dockHost.contentBounds().x == 300.0f);
@@ -318,6 +328,10 @@ int main() {
     };
     composeDetached();
     detachedRuntime.update(nullptr, 0.0f, 1.0f, 1.0f);
+    clickDetached(592.0, 16.0);
+    clickDetached(300.0, 200.0);
+    clickDetached(478.0, 95.0);
+    assert(dockHost.dockPosition() == core::debug::DockPosition::Floating);
     clickDetached(592.0, 16.0);
     clickDetached(478.0, 95.0);
     assert(dockHost.dockPosition() == core::debug::DockPosition::Bottom);
