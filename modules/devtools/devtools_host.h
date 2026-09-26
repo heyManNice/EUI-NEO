@@ -44,7 +44,7 @@ public:
     int contentHeight() const;
     float performanceScrollOffset() const;
     const std::string& selectedElement() const;
-    const std::vector<std::string>& collapsedElements() const;
+    const std::vector<std::string>& expandedElements() const;
     const core::dsl::runtime::ElementTreeSnapshot& elementTree() const;
 
     // The panel's own element tree. Tests use it to see what the panel composed

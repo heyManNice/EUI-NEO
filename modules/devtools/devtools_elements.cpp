@@ -63,12 +63,14 @@ const char* elementKindName(core::dsl::ElementKind kind) {
     return "element";
 }
 
-bool isCollapsed(const DevtoolsPanelState* panelState, const std::string& id) {
+// Nodes start collapsed: a row is only opened if the user expanded it, so a tree
+// of a whole page does not unfold itself the moment the tab is shown.
+bool isExpanded(const DevtoolsPanelState* panelState, const std::string& id) {
     if (panelState == nullptr) {
         return false;
     }
-    const std::vector<std::string>& collapsed = panelState->collapsedElements;
-    return std::find(collapsed.begin(), collapsed.end(), id) != collapsed.end();
+    const std::vector<std::string>& expanded = panelState->expandedElements;
+    return std::find(expanded.begin(), expanded.end(), id) != expanded.end();
 }
 
 const ElementTreeNode* findNode(const ElementTreeSnapshot& tree, const std::string& id) {
@@ -88,7 +90,7 @@ std::vector<ElementRow> visibleElementRows(const ElementTreeSnapshot& tree, cons
         }
         hiddenDeeperThan = -1;
         const bool hasChildren = index + 1 < tree.nodes.size() && tree.nodes[index + 1].depth > node.depth;
-        const bool collapsed = hasChildren && isCollapsed(panelState, node.id);
+        const bool collapsed = hasChildren && !isExpanded(panelState, node.id);
         rows.push_back({&node, hasChildren, collapsed});
         if (collapsed) {
             hiddenDeeperThan = node.depth;

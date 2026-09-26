@@ -323,7 +323,9 @@ int main() {
                               {0.0f, 20.0f, 64.0f, 32.0f}});
         host.setElementTree(tree);
         frame();
-        assert(countPanelRows(host) == 3);
+        // Every node with children starts collapsed, so three published nodes show
+        // up as the root row alone until its disclosure is opened.
+        assert(countPanelRows(host) == 1);
 
         // Clicking a row selects that element and shows its details. A panel state
         // change lands on the frame after the click, so the frame is run first.
@@ -354,10 +356,16 @@ int main() {
             assert(host.selectedElement() == "page.root");
         }
 
-        // The disclosure glyph of the first row collapses its subtree.
+        // The disclosure glyph of the root opens its subtree, and clicking it again
+        // puts the subtree back. Leaf rows have no glyph to click.
         clickPanel(theme.elementDisclosureSize * 0.5, rowY);
-        assert(host.collapsedElements().size() == 1);
-        assert(host.collapsedElements()[0] == "page.root");
+        assert(host.expandedElements().size() == 1);
+        assert(host.expandedElements()[0] == "page.root");
+        frame();
+        assert(countPanelRows(host) == 3);
+
+        clickPanel(theme.elementDisclosureSize * 0.5, rowY);
+        assert(host.expandedElements().empty());
         frame();
         assert(countPanelRows(host) == 1);
 

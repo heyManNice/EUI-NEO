@@ -281,9 +281,9 @@ const std::string& DevtoolsHost::selectedElement() const {
     return panelState_ != nullptr ? panelState_->selectedElement : empty;
 }
 
-const std::vector<std::string>& DevtoolsHost::collapsedElements() const {
+const std::vector<std::string>& DevtoolsHost::expandedElements() const {
     static const std::vector<std::string> empty;
-    return panelState_ != nullptr ? panelState_->collapsedElements : empty;
+    return panelState_ != nullptr ? panelState_->expandedElements : empty;
 }
 
 bool DevtoolsHost::overResizeBoundary(double x, double y) const {
@@ -422,11 +422,11 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
             }
         },
         [this, &state](const std::string& id) {
-            const auto collapsed = std::find(state.collapsedElements.begin(), state.collapsedElements.end(), id);
-            if (collapsed == state.collapsedElements.end()) {
-                state.collapsedElements.push_back(id);
+            const auto expanded = std::find(state.expandedElements.begin(), state.expandedElements.end(), id);
+            if (expanded == state.expandedElements.end()) {
+                state.expandedElements.push_back(id);
             } else {
-                state.collapsedElements.erase(collapsed);
+                state.expandedElements.erase(expanded);
             }
             requestCompose();
         },

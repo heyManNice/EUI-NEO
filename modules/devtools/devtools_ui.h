@@ -23,9 +23,10 @@ struct DevtoolsPanelState {
     std::string selectedElement;
     // The row the pointer is over, previewed in the page until it leaves.
     std::string hoveredElement;
-    // Elements the user collapsed. The tree itself comes from the app, so the
-    // panel only remembers what the user hid inside it.
-    std::vector<std::string> collapsedElements;
+    // Elements the user opened. The tree itself comes from the app, so the panel
+    // only remembers what the user expanded inside it: every node with children
+    // starts collapsed, which keeps a deep page readable from the first frame.
+    std::vector<std::string> expandedElements;
 };
 
 // Everything the panel needs for one composition. The host owns geometry, the
