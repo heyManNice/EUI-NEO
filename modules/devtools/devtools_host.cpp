@@ -462,7 +462,7 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
             state.selectedElement = id;
             requestCompose();
         },
-        [this, &state](const std::string& id, bool hovered) {
+        [&state](const std::string& id, bool hovered) {
             // Leaving a row only clears the preview if that row still owns it, so
             // moving between rows does not depend on callback order.
             if (hovered) {
@@ -482,7 +482,7 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
             }
             requestCompose();
         },
-        [this](const std::string& id) {
+        [](const std::string& id) {
             core::window::setClipboardText(id);
         },
         [this, &state](float offset) {
@@ -496,7 +496,20 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
             state.propertiesHeight = height;
             requestCompose();
         },
-        [this, &state] { state.propertiesResizeStartHeight = state.propertiesHeight; },
+        [this, &state](float startHeight, float pixelScale) {
+            state.propertiesResizeStartHeight = startHeight;
+            state.propertiesResizeScale = pixelScale > 0.0f ? pixelScale : 1.0f;
+            // The divider measures against what the press recorded, so the panel has
+            // to compose again before the drag moves: its callbacks read the state
+            // through the composition, not through the runtime that called them.
+            requestCompose();
+        },
+        [&state] {
+            // A finished drag leaves no origin behind: the next press measures from
+            // the height the panel is at then, not from an earlier drag's start.
+            state.propertiesResizeStartHeight = 0.0f;
+            state.propertiesResizeScale = 1.0f;
+        },
         [this, &state](core::dsl::runtime::DebugPropertyId property, bool open) {
             if (state.colorEditorOpen && state.colorEditorProperty == property && open) {
                 return;

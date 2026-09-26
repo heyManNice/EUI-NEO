@@ -24,11 +24,16 @@ struct DevtoolsPanelState {
     // The row the pointer is over, previewed in the page until it leaves.
     std::string hoveredElement;
     float propertiesScrollOffset = 0.0f;
-    // Height of the property area. The host seeds it from the theme on the first
-    // composition and the divider at its top edge changes it from then on. The drag
-    // start height is what the divider measures its pointer against.
+    // Height of the property area, in the logical units the panel composes in. The
+    // host only seeds it from the theme's fraction; the divider on its top edge owns
+    // it from then on.
     float propertiesHeight = 0.0f;
+    // What the drag in progress measured when it started: the height it works from
+    // and the framebuffer pixels per logical unit it converts pointer deltas with.
+    // Both are zeroed when the drag ends, because a pointer event is not in the
+    // units the panel composes in.
     float propertiesResizeStartHeight = 0.0f;
+    float propertiesResizeScale = 1.0f;
     // The colour whose channels are open under its row; one at a time keeps the
     // property list flat and short.
     bool colorEditorOpen = false;
@@ -70,7 +75,14 @@ struct DevtoolsUiActions {
     std::function<void(const std::string&)> copyElementId;
     std::function<void(float)> setPropertiesScrollOffset;
     std::function<void(float)> setPropertiesHeight;
-    std::function<void()> beginPropertiesResize;
+    // Starts a divider drag: the height it works from and the framebuffer pixels per
+    // logical unit it converts pointer deltas with, both measured on the pressed
+    // element. Pointer events arrive in framebuffer pixels while the panel composes
+    // in logical units, so the ratio is what keeps a drag on the pointer instead of
+    // ahead of it. The end of a drag drops both, so the next one starts from the
+    // height the panel is at then instead of the one an earlier drag left behind.
+    std::function<void(float, float)> beginPropertiesResize;
+    std::function<void()> endPropertiesResize;
     std::function<void(core::dsl::runtime::DebugPropertyId, bool)> togglePropertyColorEditor;
     std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId, float)> setElementPropertyNumber;
     std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId, const core::Color&)> setElementPropertyColor;

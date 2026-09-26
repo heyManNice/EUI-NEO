@@ -124,9 +124,10 @@ int main() {
     host.setDetachedWindowOpener([&] { ++detachedOpens; });
     host.setDetachedWindowCloser([&] { ++detachedCloses; });
 
-    // One app frame for the window the panel is docked into.
-    const auto frame = [&] {
-        return host.update(kWindowWidth, kWindowHeight, kDpiScale, kFrameSeconds);
+    // One app frame for the window the panel is docked into. A test that needs a
+    // differently scaled window drives the host with its own factor.
+    const auto frame = [&](float dpiScale = kDpiScale) {
+        return host.update(kWindowWidth, kWindowHeight, dpiScale, kFrameSeconds);
     };
 
     // A hidden panel leaves the whole window to the page.
@@ -210,22 +211,23 @@ int main() {
     };
     // Sliders report a value while the pointer is pressed and moved, so editing one
     // is a drag rather than a single click.
-    const auto dragPanel = [&](double fromX, double fromY, double toX, double toY) {
+    const auto dragPanel = [&](double fromX, double fromY, double toX, double toY,
+                               float dpiScale = kDpiScale) {
         core::ScrollEvent scroll;
         core::PointerEvent press = pressAt(fromX, fromY);
         routePointer(press, scroll);
-        frame();
+        frame(dpiScale);
 
         press.action = core::PointerAction::Move;
         press.x = toX;
         press.y = toY;
         routePointer(press, scroll);
-        frame();
+        frame(dpiScale);
 
         press.action = core::PointerAction::Release;
         press.buttons.set(core::PointerButton::Left, false);
         routePointer(press, scroll);
-        frame();
+        frame(dpiScale);
     };
     const auto clickPanel = [&](double x, double y) {
         core::PointerEvent press = pressAt(x, y);
@@ -493,6 +495,24 @@ int main() {
             const float shorter = panelElementFrame(host, "elements.properties.background").height;
             assert(shorter < taller);
             assert(shorter >= theme.propertiesMinimumHeight);
+        }
+
+        // A pointer event is in framebuffer pixels while the area is measured in the
+        // units the panel composes in, so a scaled window must not resize the area
+        // faster than the pointer: on a 2x window a 10 pixel drag grows it by 5.
+        {
+            constexpr float kScaledDpi = 2.0f;
+            frame(kScaledDpi);
+            const float before = panelElementFrame(host, "elements.properties.background").height;
+            const core::Rect handle = panelElementFrame(host, "elements.properties.handle");
+            const double pointerX = (handle.x + handle.width * 0.5) * kScaledDpi;
+            const double pointerY = (handle.y + handle.height * 0.5) * kScaledDpi;
+            dragPanel(pointerX, pointerY, pointerX, pointerY - 10.0, kScaledDpi);
+            const float taller = panelElementFrame(host, "elements.properties.background").height;
+            assert(taller - before > 4.5f);
+            assert(taller - before < 5.5f);
+            // Put the window back the way the rest of the test expects it.
+            frame();
         }
 
         // Hovering a row previews that element in the page.

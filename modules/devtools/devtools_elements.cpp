@@ -176,8 +176,13 @@ void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRo
 
 // The divider on the top edge of the property area: dragging it up gives the area
 // more room and dragging it down takes room away, within what the tree can spare. The
-// press records the height the drag started from, so a drag measures the pointer
-// against a fixed value instead of accumulating deltas.
+// press records the height the drag works from, so a drag measures the pointer against
+// a fixed value instead of accumulating deltas.
+//
+// A pointer event is in framebuffer pixels while the panel composes in logical units,
+// so the press also records the ratio between them and the drag divides its delta with
+// it: without that the area would resize as many times faster than the pointer as the
+// window is scaled.
 //
 // The strip that takes the pointer is the same element that shows the hover: a child
 // rectangle would be the topmost interactive element and swallow the press without
@@ -188,7 +193,9 @@ void composeElementPropertyDivider(core::dsl::Ui& ui,
                                    float y,
                                    float width,
                                    float height,
+                                   float currentHeight,
                                    float dragStartHeight,
+                                   float pixelScale,
                                    float minimumHeight,
                                    float maximumHeight,
                                    const DevtoolsUiActions& actions) {
@@ -199,17 +206,26 @@ void composeElementPropertyDivider(core::dsl::Ui& ui,
         .states(theme.transparent, theme.propertiesHandleHover, theme.propertiesHandleHover)
         .instantStates()
         .cursor(core::CursorShape::Hand)
-        .onPress([begin = actions.beginPropertiesResize](const core::PointerEvent&, const core::Rect&) {
+        .onPress([begin = actions.beginPropertiesResize, liveHeight = currentHeight,
+                  composedWidth = width](const core::PointerEvent&, const core::Rect& bounds) {
             if (begin) {
-                begin();
+                // The bounds come back in framebuffer pixels, so their width against
+                // the width the strip was composed with is the ratio to divide by.
+                begin(liveHeight, static_cast<float>(bounds.width) / std::max(0.001f, composedWidth));
             }
         })
-        .onDrag([resize = actions.setPropertiesHeight, dragStartHeight, minimumHeight,
+        .onRelease([end = actions.endPropertiesResize](const core::PointerEvent&, const core::Rect&) {
+            if (end) {
+                end();
+            }
+        })
+        .onDrag([resize = actions.setPropertiesHeight, dragStartHeight, pixelScale, minimumHeight,
                  maximumHeight](const core::dsl::DragEvent& event) {
             if (!resize) {
                 return;
             }
-            resize(std::clamp(dragStartHeight - static_cast<float>(event.totalY), minimumHeight, maximumHeight));
+            const float delta = static_cast<float>(event.totalY) / std::max(0.001f, pixelScale);
+            resize(std::clamp(dragStartHeight - delta, minimumHeight, maximumHeight));
         })
         .build();
     ui.rect(id + ".line")
@@ -309,8 +325,9 @@ void composeElementsTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const D
             ? state.panelState->propertiesResizeStartHeight
             : propertyHeight;
         composeElementPropertyDivider(ui, "elements.properties.handle", state.panel.x, top + listHeight,
-                                      state.panel.width, handleHeight, dragStartHeight, minimumHeight,
-                                      maximumPropertyHeight, actions);
+                                      state.panel.width, handleHeight, propertyHeight, dragStartHeight,
+                                      state.panelState != nullptr ? state.panelState->propertiesResizeScale : 1.0f,
+                                      minimumHeight, maximumPropertyHeight, actions);
         ElementPropertiesState properties;
         properties.properties = state.properties;
         properties.overrideCount = state.propertyOverrideCount;
