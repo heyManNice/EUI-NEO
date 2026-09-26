@@ -100,6 +100,17 @@ public:
     // Bumped whenever the element structure changes, which lets a tree view tell
     // "same tree, new frames" from "the tree itself changed" without diffing.
     std::uint64_t elementStructureRevision() const { return elementStructureRevision_; }
+
+    // Marks one element as inspected. The renderer draws the inspection overlay
+    // for it using the same transform and clip the element itself is drawn with,
+    // after the page content, so the overlay is never covered by the page. An
+    // empty id clears the mark.
+    void setInspectedElement(const std::string& id);
+    const std::string& inspectedElement() const { return instances_.inspectedElement; }
+
+    // Geometry of the inspection overlay for the current frame; the renderer draws
+    // exactly this, and tests read it without a renderer.
+    runtime::DebugInspection debugInspection(float dpiScale);
 #endif
 
     void shutdown(bool releaseCachedImageTextures = true);
@@ -364,3 +375,6 @@ private:
 #include "core/runtime/runtime_lifecycle.h"
 #include "core/runtime/runtime_input.h"
 #include "core/runtime/runtime_update.h"
+#if defined(EUI_DEBUG_BUILD)
+#include "core/runtime/runtime_inspection.h"
+#endif

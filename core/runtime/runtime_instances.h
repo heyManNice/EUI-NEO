@@ -463,6 +463,12 @@ public:
         releasePrimitive(texts);
         releasePrimitive(images);
         releasePrimitive(shaderToys);
+#if defined(EUI_DEBUG_BUILD)
+        if (debugOverlayPrimitiveInitialized && debugOverlayPrimitive) {
+            debugOverlayPrimitive->destroy();
+            debugOverlayPrimitiveInitialized = false;
+        }
+#endif
 
         if (releaseCachedImageTextures) {
             ImagePrimitive::releaseCachedTextures();
@@ -495,6 +501,15 @@ public:
         frameTargets.clear();
         paintBounds.clear();
         retainedLayers.clear();
+#if defined(EUI_DEBUG_BUILD)
+        debugOverlayPrimitive.reset();
+        debugOverlayPrimitiveInitialized = false;
+        inspectedElement.clear();
+        inspectionPath.clear();
+        inspectionPathId.clear();
+        inspectionPathGeneration = 0;
+        composeGeneration = 0;
+#endif
     }
 
     std::unordered_map<std::string, RectInstance> rects;
@@ -512,6 +527,22 @@ public:
     std::unordered_map<std::string, FrameTargetInstance> frameTargets;
     std::unordered_map<std::string, PaintBoundsInstance> paintBounds;
     std::unordered_map<std::string, RetainedLayerInstance> retainedLayers;
+
+#if defined(EUI_DEBUG_BUILD)
+    // Debug tools draw transient overlays (element inspection) through one
+    // primitive kept alive for the runtime, so they never allocate per frame.
+    std::unique_ptr<RoundedRectPrimitive> debugOverlayPrimitive;
+    bool debugOverlayPrimitiveInitialized = false;
+
+    // The element a debug tool inspects, and the path that leads to it. Element
+    // pointers only stay valid until the next compose, so the path is keyed by the
+    // compose generation instead of being pinned for the runtime's lifetime.
+    std::string inspectedElement;
+    std::vector<const Element*> inspectionPath;
+    std::string inspectionPathId;
+    std::uint64_t inspectionPathGeneration = 0;
+    std::uint64_t composeGeneration = 0;
+#endif
 };
 
 } // namespace core::dsl::runtime

@@ -1,11 +1,16 @@
 #pragma once
 
 #include "core/dsl.h"
+#include "core/runtime/runtime_geometry.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
+
+namespace core::dsl {
+class Ui;
+}
 
 namespace core::dsl::runtime {
 
@@ -49,5 +54,35 @@ inline std::string truncateElementText(const std::string& text, std::size_t limi
     }
     return text.substr(0, end);
 }
+
+// Everything the renderer needs to draw the inspection overlay for one element.
+// The runtime derives it from the element path with the same transform and clip
+// rules the element itself is drawn with, so the overlay cannot drift away from
+// the element it describes.
+struct DebugInspection {
+    bool active = false;
+    RenderTransform transform;
+    LayoutRect frame;
+    EdgeInsets padding;
+    Rect scissor;
+    bool hasScissor = false;
+};
+
+// The overlay palette follows components::LayoutDebugStyle (frame red, content
+// blue, low-alpha fills), kept here as values because core never depends on
+// components.
+inline constexpr Color kInspectionFrameColor{0.96f, 0.32f, 0.38f, 0.16f};
+inline constexpr Color kInspectionFrameStroke{0.96f, 0.32f, 0.38f, 0.95f};
+inline constexpr Color kInspectionContentColor{0.28f, 0.58f, 0.98f, 0.14f};
+inline constexpr Color kInspectionContentStroke{0.28f, 0.58f, 0.98f, 0.95f};
+
+struct InstanceStore;
+
+#if defined(EUI_DEBUG_BUILD)
+// Geometry of the inspection overlay for the element the store marks as
+// inspected. Both the panel (through `Runtime::debugInspection`) and the renderer
+// read this, so there is one implementation of "where is that element now".
+DebugInspection computeInspection(Ui& ui, InstanceStore& instances, float dpiScale);
+#endif
 
 } // namespace core::dsl::runtime

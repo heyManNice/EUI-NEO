@@ -99,6 +99,7 @@ int main() {
     assert(!frame());
     assert(!host.visible());
     assert(!host.wantsElementTree());
+    assert(host.inspectedElement().empty());
     assert(host.contentBounds().x == 0.0f);
     assert(host.contentBounds().width == static_cast<float>(kWindowWidth));
     assert(host.contentBounds().height == static_cast<float>(kWindowHeight));
@@ -330,6 +331,7 @@ int main() {
                             theme.elementRowHeight * 0.5;
         clickPanel(200.0, rowY);
         assert(host.selectedElement() == "page.root");
+        assert(host.inspectedElement() == "page.root");
         frame();
         assert(hasPanelElement(host, "elements.details"));
 
@@ -343,6 +345,10 @@ int main() {
         clickPanel(120.0, tabY);
         assert(host.activeTab() == DevtoolsTab::Performance);
         assert(!host.wantsElementTree());
+        // Leaving the tab drops the mark, so a page is never marked while nobody
+        // looks at the tree, while the selection itself is remembered.
+        assert(host.inspectedElement().empty());
+        assert(host.selectedElement() == "page.root");
     }
 
     // A floating panel leaves the whole window to the page and opens its window.

@@ -24,6 +24,13 @@ inline void Runtime::compose(const std::string& pageId, const Rect& viewport, Co
 template <typename ComposeFn>
 inline void Runtime::composeViewport(const std::string& pageId, const Rect& viewport, bool clipViewport, ComposeFn&& composeFn) {
     const std::vector<runtime::ElementSnapshot> previousStructure = elementStructure_;
+#if defined(EUI_DEBUG_BUILD)
+    // A compose rebuilds every element, so anything that remembered element
+    // pointers (the inspection path) has to forget them.
+    ++instances_.composeGeneration;
+    instances_.inspectionPath.clear();
+    instances_.inspectionPathId.clear();
+#endif
     const Screen screen{viewport.width, viewport.height};
     ui_.begin(pageId);
     ui_.setFocusedId(focusedId_);

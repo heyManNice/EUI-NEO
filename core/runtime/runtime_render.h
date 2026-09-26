@@ -49,6 +49,15 @@ private:
                                bool hasScissor,
                                const Rect& scissorRect);
 
+#if defined(EUI_DEBUG_BUILD)
+    // Draws the inspection overlay (frame box and content box) for the element the
+    // instance store marks as inspected.
+    void renderInspection(core::render::RenderBackend& renderBackend,
+                          int windowWidth,
+                          int windowHeight,
+                          float dpiScale);
+#endif
+
     bool isRetainedLayerCandidate(const Element& element,
                                   const runtime::PaintBoundsInstance& bounds,
                                   const Rect& subtreePixels,
@@ -195,6 +204,14 @@ inline void RuntimeRenderer::renderDirect(core::render::RenderBackend& renderBac
     for (const Element* root : roots) {
         renderElement(renderBackend, *root, windowWidth, windowHeight, dpiScale, identity, dirtyRect, hasScissor, scissor);
     }
+#if defined(EUI_DEBUG_BUILD)
+    // The inspection overlay is drawn after the page, so page content (including
+    // siblings painted later) never covers it. Its geometry already carries the
+    // element's transform and the ancestor clips, so it stays where the element is.
+    if (!instances_.inspectedElement.empty()) {
+        renderInspection(renderBackend, windowWidth, windowHeight, dpiScale);
+    }
+#endif
 }
 
 inline void RuntimeRenderer::prepareTextElement(
@@ -934,6 +951,71 @@ inline bool RuntimeRenderer::renderRetainedElements(
     ++core::render::currentRenderFrameStats().retainedLayerDraws;
     return true;
 }
+
+#if defined(EUI_DEBUG_BUILD)
+inline void RuntimeRenderer::renderInspection(core::render::RenderBackend& renderBackend,
+                                              int windowWidth,
+                                              int windowHeight,
+                                              float dpiScale) {
+    const runtime::DebugInspection inspection = runtime::computeInspection(ui_, instances_, dpiScale);
+    if (!inspection.active) {
+        return;
+    }
+    if (!instances_.debugOverlayPrimitive) {
+        instances_.debugOverlayPrimitive = std::make_unique<RoundedRectPrimitive>();
+    }
+    runtime::InstanceStore& store = instances_;
+    if (!store.debugOverlayPrimitiveInitialized) {
+        store.debugOverlayPrimitiveInitialized = store.debugOverlayPrimitive->initialize();
+        if (!store.debugOverlayPrimitiveInitialized) {
+            return;
+        }
+    }
+
+    if (inspection.hasScissor) {
+        applyOptionalScissor(renderBackend, true, inspection.scissor, windowHeight);
+    } else {
+        applyOptionalScissor(renderBackend, false, {}, windowHeight);
+    }
+
+    const Rect frame = applyRenderTransform(toPixelRect(inspection.frame, dpiScale), inspection.transform);
+    const float paddingLeft = toPixels(inspection.padding.left, dpiScale);
+    const float paddingTop = toPixels(inspection.padding.top, dpiScale);
+    const float paddingRight = toPixels(inspection.padding.right, dpiScale);
+    const float paddingBottom = toPixels(inspection.padding.bottom, dpiScale);
+    const Rect content{frame.x + paddingLeft,
+                       frame.y + paddingTop,
+                       std::max(0.0f, frame.width - paddingLeft - paddingRight),
+                       std::max(0.0f, frame.height - paddingTop - paddingBottom)};
+
+    // One pixel stroke in window pixels, so the overlay stays crisp at any scale.
+    const Border stroke{1.0f, {1.0f, 1.0f, 1.0f, 1.0f}};
+    const auto drawBox = [&](const Rect& box, const Color& fill, const Color& line) {
+        store.debugOverlayPrimitive->setBounds(box.x, box.y, box.width, box.height);
+        store.debugOverlayPrimitive->setColor(fill);
+        store.debugOverlayPrimitive->setGradient({});
+        Border border = stroke;
+        border.color = line;
+        store.debugOverlayPrimitive->setBorder(border);
+        store.debugOverlayPrimitive->setShadow({});
+        store.debugOverlayPrimitive->setCornerRadius(0.0f);
+        store.debugOverlayPrimitive->setBlur(0.0f);
+        store.debugOverlayPrimitive->setOpacity(1.0f);
+        store.debugOverlayPrimitive->setTransformMatrix(
+            combinedPrimitiveMatrix(inspection.transform, box, Transform{}));
+        ++core::render::currentRenderFrameStats().rectDraws;
+        store.debugOverlayPrimitive->render(windowWidth, windowHeight);
+    };
+
+    drawBox(frame, runtime::kInspectionFrameColor, runtime::kInspectionFrameStroke);
+    if (content.width > 0.0f && content.height > 0.0f) {
+        drawBox(content, runtime::kInspectionContentColor, runtime::kInspectionContentStroke);
+    }
+
+    // Leave the backend scissor to the caller's next draw, like the tree does.
+    renderBackend.setScissor(false, {}, windowHeight);
+}
+#endif
 
 inline void RuntimeRenderer::renderRect(
     const Element& element,

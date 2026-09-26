@@ -28,6 +28,7 @@ public:
     void setPerformanceSnapshot(const app::PerformanceSnapshot& snapshot) override;
     bool wantsElementTree() const override;
     void setElementTree(const core::dsl::runtime::ElementTreeSnapshot& tree) override;
+    const std::string& inspectedElement() const override;
     void releaseGraphicsResources() override;
     void shutdown() override;
 

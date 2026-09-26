@@ -74,6 +74,13 @@ public:
     virtual bool wantsElementTree() const { return false; }
     virtual void setElementTree(const core::dsl::runtime::ElementTreeSnapshot& tree) {}
 
+    // The element the overlay wants marked in the page, empty for none. The app
+    // layer forwards it to the page Runtime, which draws the inspection overlay.
+    virtual const std::string& inspectedElement() const {
+        static const std::string empty;
+        return empty;
+    }
+
     virtual void releaseGraphicsResources() = 0;
 
     virtual void shutdown() = 0;
