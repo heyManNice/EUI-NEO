@@ -51,8 +51,10 @@ public:
                              core::ScrollEvent& scrollEvent) = 0;
 
     // Runs once per frame after the page Runtime update and returns true when
-    // the overlay repainted, asking the window to render again.
-    virtual bool update(int framebufferWidth, int framebufferHeight, float dpiScale) = 0;
+    // the overlay repainted, asking the window to render again. `deltaSeconds`
+    // is the frame the page was updated with: animated overlay content only
+    // advances while it is driven by the frame clock.
+    virtual bool update(int framebufferWidth, int framebufferHeight, float dpiScale, float deltaSeconds) = 0;
 
     virtual void updateCursor(core::window::Handle window) = 0;
 

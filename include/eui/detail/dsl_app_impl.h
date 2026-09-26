@@ -445,7 +445,7 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
     if (overlay != nullptr) {
         // The overlay draws on top of the rendered app frame, so an overlay
         // repaint never forces the app render cache to be rebuilt.
-        if (overlay->update(windowWidth, windowHeight, effectiveScale)) {
+        if (overlay->update(windowWidth, windowHeight, effectiveScale, deltaSeconds)) {
             // The overlay draws inside the app render cache, so its repaint has
             // to rebuild the cached frame it belongs to.
             detail::dslRuntime().requestFullPaint();

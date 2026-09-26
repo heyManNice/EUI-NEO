@@ -29,6 +29,7 @@ namespace {
 constexpr int kWindowWidth = 800;
 constexpr int kWindowHeight = 600;
 constexpr float kDpiScale = 1.0f;
+constexpr float kFrameSeconds = 1.0f / 60.0f;
 
 core::PointerEvent pressAt(double x, double y) {
     core::PointerEvent event;
@@ -60,8 +61,13 @@ int main() {
     host.setDetachedWindowOpener([&] { ++detachedOpens; });
     host.setDetachedWindowCloser([&] { ++detachedCloses; });
 
+    // One app frame for the window the panel is docked into.
+    const auto frame = [&] {
+        return host.update(kWindowWidth, kWindowHeight, kDpiScale, kFrameSeconds);
+    };
+
     // A hidden panel leaves the whole window to the page.
-    assert(!host.update(kWindowWidth, kWindowHeight, kDpiScale));
+    assert(!frame());
     assert(!host.visible());
     assert(host.contentBounds().x == 0.0f);
     assert(host.contentBounds().width == static_cast<float>(kWindowWidth));
@@ -72,7 +78,7 @@ int main() {
     assert(!host.handleHotkey(F12Key(core::KeyAction::Release)));
     assert(host.handleHotkey(F12Key(core::KeyAction::Press)));
     assert(host.visible());
-    assert(host.update(kWindowWidth, kWindowHeight, kDpiScale));
+    assert(frame());
     assert(host.contentHeight() < kWindowHeight);
     assert(host.activeTab() == DevtoolsTab::Performance);
 
@@ -96,16 +102,38 @@ int main() {
     // The panel composes the same content again, so it has nothing new to
     // repaint: showing a panel repaints the window because the page area
     // changes, which the app layer reads from contentBounds().
-    host.update(kWindowWidth, kWindowHeight, kDpiScale);
+    frame();
 
     // A new sample repaints the panel once.
     app::PerformanceSnapshot sample;
     sample.revision = 1;
     sample.framesPerSecond = 60.0;
     host.setPerformanceSnapshot(sample);
-    assert(host.update(kWindowWidth, kWindowHeight, kDpiScale));
+    assert(frame());
     host.setPerformanceSnapshot(sample);
-    assert(!host.update(kWindowWidth, kWindowHeight, kDpiScale));
+    assert(!frame());
+
+    // The wheel reaches the docked panel and actually advances its scroll. The
+    // panel runtime is driven with the frame delta, so the impulse based scroll
+    // moves: a zero delta would leave the offset where it was.
+    {
+        app::PerformanceSnapshot longSample;
+        longSample.revision = 2;
+        longSample.hasRenderStats = true;   // a metric list long enough to scroll
+        host.setPerformanceSnapshot(longSample);
+        frame();
+
+        core::PointerEvent overPanel = pressAt(kWindowWidth * 0.5, static_cast<double>(host.contentHeight()) + 60.0);
+        overPanel.action = core::PointerAction::Move;
+        overPanel.button = core::PointerButton::None;
+        overPanel.buttons = {};
+        core::ScrollEvent wheel{0.0, -1.0};
+        std::vector<core::PointerEvent> events{overPanel};
+        host.filterInput(events, wheel);
+        assert(!wheel.active());            // the panel owns the wheel, not the page
+        frame();
+        assert(host.performanceScrollOffset() > 0.0f);
+    }
 
     // Routes one event through the panel and returns the copy the page sees. The
     // caller keeps its own coordinates, because an event the panel consumes is
@@ -119,12 +147,12 @@ int main() {
         core::PointerEvent press = pressAt(x, y);
         core::ScrollEvent scroll;
         routePointer(press, scroll);
-        host.update(kWindowWidth, kWindowHeight, kDpiScale);
+        frame();
 
         press.action = core::PointerAction::Release;
         press.buttons.set(core::PointerButton::Left, false);
         routePointer(press, scroll);
-        host.update(kWindowWidth, kWindowHeight, kDpiScale);
+        frame();
     };
 
     // The panel keeps pointer and wheel while the pointer is on it.
@@ -176,8 +204,7 @@ int main() {
     // inside the interaction frame would leave the panel's primitive bounds unusable
     // for that frame's draw, so the renderer culls the whole panel and the panel area
     // shows the cleared render cache for one frame.
-    const bool presentedAfterInteraction = host.update(kWindowWidth, kWindowHeight, kDpiScale) ||
-                                           host.update(kWindowWidth, kWindowHeight, kDpiScale);
+    const bool presentedAfterInteraction = frame() || frame();
     assert(presentedAfterInteraction);
 
     clickPanel(kWindowWidth - 48.0, host.contentBounds().height + 16.0);
@@ -212,20 +239,20 @@ int main() {
     core::PointerEvent sideResize = pressAt(502.0, 200.0);
     core::ScrollEvent sideScroll;
     assert(routePointer(sideResize, sideScroll).x < 0.0);
-    host.update(kWindowWidth, kWindowHeight, kDpiScale);
+    frame();
 
     sideResize.action = core::PointerAction::Move;
     sideResize.button = core::PointerButton::None;
     sideResize.x = 452.0;
     assert(routePointer(sideResize, sideScroll).x < 0.0);
     assert(host.contentBounds().width == 450.0f);
-    host.update(kWindowWidth, kWindowHeight, kDpiScale);
+    frame();
 
     sideResize.action = core::PointerAction::Release;
     sideResize.button = core::PointerButton::Left;
     sideResize.buttons.set(core::PointerButton::Left, false);
     routePointer(sideResize, sideScroll);
-    host.update(kWindowWidth, kWindowHeight, kDpiScale);
+    frame();
 
     chooseDock(2);
     assert(host.dockPosition() == DockPosition::Bottom);
@@ -240,6 +267,11 @@ int main() {
 
     // The detached window composes the same panel and can dock it back.
     core::dsl::Runtime detachedRuntime;
+    // A detached panel is a normal window, so the frame loop drives it with a real
+    // frame delta. That is also why its scrolling and transitions work.
+    const auto frameDetached = [&] {
+        return detachedRuntime.update(nullptr, kFrameSeconds, 1.0f, 1.0f);
+    };
     const auto composeDetached = [&] {
         detachedRuntime.compose("eui.devtools.detached", 640.0f, 420.0f,
             [&](core::dsl::Ui& ui, const core::dsl::Screen& screen) {
@@ -249,18 +281,18 @@ int main() {
     const auto clickDetached = [&](double x, double y) {
         core::PointerEvent event = pressAt(x, y);
         detachedRuntime.pushPointerEvent(event);
-        detachedRuntime.update(nullptr, 0.0f, 1.0f, 1.0f);
+        frameDetached();
         event.action = core::PointerAction::Release;
         event.buttons.set(core::PointerButton::Left, false);
         detachedRuntime.pushPointerEvent(event);
-        detachedRuntime.update(nullptr, 0.0f, 1.0f, 1.0f);
+        frameDetached();
         if (detachedRuntime.composeRequested()) {
             composeDetached();
-            detachedRuntime.update(nullptr, 0.0f, 1.0f, 1.0f);
+            frameDetached();
         }
     };
     composeDetached();
-    detachedRuntime.update(nullptr, 0.0f, 1.0f, 1.0f);
+    frameDetached();
 
     const double detachedMoreX = 640.0 - 48.0;
     const double detachedMenuX = 640.0 - theme.menuWidth - 36.0 + 10.0;

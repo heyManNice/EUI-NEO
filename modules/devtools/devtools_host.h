@@ -22,7 +22,7 @@ public:
     bool handleHotkey(const core::KeyEvent& key) override;
     core::Rect contentBounds() const override;
     void filterInput(std::vector<core::PointerEvent>& pointerEvents, core::ScrollEvent& scrollEvent) override;
-    bool update(int framebufferWidth, int framebufferHeight, float dpiScale) override;
+    bool update(int framebufferWidth, int framebufferHeight, float dpiScale, float deltaSeconds) override;
     void updateCursor(core::window::Handle window) override;
     void render(int windowWidth, int windowHeight, float dpiScale, const core::Rect* dirtyRect) override;
     void setPerformanceSnapshot(const app::PerformanceSnapshot& snapshot) override;
@@ -39,6 +39,7 @@ public:
     DockPosition dockPosition() const;
     DevtoolsTab activeTab() const;
     int contentHeight() const;
+    float performanceScrollOffset() const;
 
 private:
     int panelSize() const;

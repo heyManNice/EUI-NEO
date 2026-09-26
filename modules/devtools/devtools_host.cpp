@@ -233,6 +233,10 @@ int DevtoolsHost::contentHeight() const {
     return static_cast<int>(contentBounds().height);
 }
 
+float DevtoolsHost::performanceScrollOffset() const {
+    return panelState_ != nullptr ? panelState_->performanceScrollOffset : 0.0f;
+}
+
 bool DevtoolsHost::overResizeBoundary(double x, double y) const {
     const core::Rect panel = panelBounds();
     if (dockPosition_ == DockPosition::Bottom) {
@@ -355,7 +359,7 @@ void DevtoolsHost::composeDetached(core::dsl::Ui& ui, const core::dsl::Screen& s
     composeUi(ui, screen.width, screen.height, {0.0f, 0.0f, screen.width, screen.height}, true);
 }
 
-bool DevtoolsHost::update(int framebufferWidth, int framebufferHeight, float dpiScale) {
+bool DevtoolsHost::update(int framebufferWidth, int framebufferHeight, float dpiScale, float deltaSeconds) {
     if (framebufferWidth != framebufferWidth_ || framebufferHeight != framebufferHeight_ ||
         dpiScale != dpiScale_) {
         requestCompose();
@@ -389,8 +393,15 @@ bool DevtoolsHost::update(int framebufferWidth, int framebufferHeight, float dpi
     if (composeRequested_) {
         composePanel();
     }
-    const bool repainted = runtime_.update(nullptr, 0.0f, 1.0f, dpiScale_) || composed;
-    if (composeRequested_) {
+    // The panel runtime is driven with the frame the page was updated with. Scroll
+    // impulses and transitions only advance while the frame clock does, so a
+    // zero delta would freeze every animation the panel owns while the pointer
+    // is over it in docked mode (the detached window is a normal window and gets
+    // a real delta from the frame loop).
+    const bool repainted = runtime_.update(nullptr, deltaSeconds, 1.0f, dpiScale_) || composed;
+    if (composeRequested_ || runtime_.isAnimating()) {
+        // Panel state changes and panel animations both need the next frame; the
+        // page runtime knows nothing about either of them.
         core::platform::requestFrame();
     }
     return repainted;
