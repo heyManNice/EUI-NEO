@@ -489,6 +489,14 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
             state.propertiesScrollOffset = offset;
             requestCompose();
         },
+        [this, &state](float height) {
+            if (state.propertiesHeight == height) {
+                return;
+            }
+            state.propertiesHeight = height;
+            requestCompose();
+        },
+        [this, &state] { state.propertiesResizeStartHeight = state.propertiesHeight; },
         [this, &state](core::dsl::runtime::DebugPropertyId property, bool open) {
             if (state.colorEditorOpen && state.colorEditorProperty == property && open) {
                 return;

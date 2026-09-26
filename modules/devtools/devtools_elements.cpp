@@ -174,6 +174,51 @@ void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRo
         .build();
 }
 
+// The divider on the top edge of the property area: dragging it up gives the area
+// more room and dragging it down takes room away, within what the tree can spare. The
+// press records the height the drag started from, so a drag measures the pointer
+// against a fixed value instead of accumulating deltas.
+//
+// The strip that takes the pointer is the same element that shows the hover: a child
+// rectangle would be the topmost interactive element and swallow the press without
+// ever reaching a handler.
+void composeElementPropertyDivider(core::dsl::Ui& ui,
+                                   const std::string& id,
+                                   float x,
+                                   float y,
+                                   float width,
+                                   float height,
+                                   float dragStartHeight,
+                                   float minimumHeight,
+                                   float maximumHeight,
+                                   const DevtoolsUiActions& actions) {
+    const DevtoolsTheme& theme = devtoolsTheme();
+    ui.rect(id + ".body")
+        .position(x, y)
+        .size(width, height)
+        .states(theme.transparent, theme.propertiesHandleHover, theme.propertiesHandleHover)
+        .instantStates()
+        .cursor(core::CursorShape::Hand)
+        .onPress([begin = actions.beginPropertiesResize](const core::PointerEvent&, const core::Rect&) {
+            if (begin) {
+                begin();
+            }
+        })
+        .onDrag([resize = actions.setPropertiesHeight, dragStartHeight, minimumHeight,
+                 maximumHeight](const core::dsl::DragEvent& event) {
+            if (!resize) {
+                return;
+            }
+            resize(std::clamp(dragStartHeight - static_cast<float>(event.totalY), minimumHeight, maximumHeight));
+        })
+        .build();
+    ui.rect(id + ".line")
+        .position(x, y + std::floor((height - 1.0f) * 0.5f))
+        .size(width, 1.0f)
+        .color(theme.panelBorder)
+        .build();
+}
+
 void composeElementsNotice(core::dsl::Ui& ui, const std::string& id, const std::string& text, float width,
                            float height) {
     const DevtoolsTheme& theme = devtoolsTheme();
@@ -213,12 +258,23 @@ void composeElementsTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const D
     const float contentHeight =
         std::max(0.0f, state.panel.height - theme.toolbarHeight - (state.detached ? 0.0f : 1.0f));
     const bool hasTree = tree != nullptr && !tree->nodes.empty();
-    // The property area keeps the bottom of the tab and the tree keeps the rest, so
-    // selecting a row does not move anything around.
-    const float propertyHeight =
-        hasTree ? std::min(theme.propertiesHeight, contentHeight * 0.65f) : 0.0f;
+    // The property area belongs to the element the user selected, so it only takes
+    // space while there is one, and the divider on its top edge decides how much.
+    const bool hasProperties = hasTree && state.properties != nullptr && state.properties->active;
     const float noticeHeight = tree != nullptr && tree->truncated ? theme.elementRowHeight : 0.0f;
-    const float listHeight = std::max(0.0f, contentHeight - propertyHeight - noticeHeight);
+    const float availableHeight = std::max(0.0f, contentHeight - noticeHeight);
+    const float handleHeight = hasProperties ? theme.propertiesHandleHeight : 0.0f;
+    // The tree keeps a few rows whatever the divider does, so the area can always be
+    // grown and shrunk instead of pinning itself to one end.
+    const float minimumHeight = std::min(theme.propertiesMinimumHeight, availableHeight);
+    const float maximumPropertyHeight = std::max(
+        minimumHeight, availableHeight - handleHeight - theme.propertiesMinimumTreeHeight);
+    const float requestedHeight = state.panelState != nullptr && state.panelState->propertiesHeight > 0.0f
+        ? state.panelState->propertiesHeight
+        : availableHeight * theme.propertiesInitialFraction;
+    const float propertyHeight =
+        hasProperties ? std::clamp(requestedHeight, minimumHeight, maximumPropertyHeight) : 0.0f;
+    const float listHeight = std::max(0.0f, availableHeight - handleHeight - propertyHeight);
 
     if (!hasTree) {
         composeElementsNotice(ui, "elements.empty",
@@ -247,13 +303,21 @@ void composeElementsTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const D
             .build();
     }
 
-    if (hasTree && propertyHeight > 0.0f) {
+    if (hasProperties) {
+        const float dragStartHeight =
+            state.panelState != nullptr && state.panelState->propertiesResizeStartHeight > 0.0f
+            ? state.panelState->propertiesResizeStartHeight
+            : propertyHeight;
+        composeElementPropertyDivider(ui, "elements.properties.handle", state.panel.x, top + listHeight,
+                                      state.panel.width, handleHeight, dragStartHeight, minimumHeight,
+                                      maximumPropertyHeight, actions);
         ElementPropertiesState properties;
         properties.properties = state.properties;
         properties.overrideCount = state.propertyOverrideCount;
         composeElementProperties(ui, "elements.properties",
-                                 {state.panel.x, top + listHeight, state.panel.width, propertyHeight}, properties,
-                                 state, actions);
+                                 {state.panel.x, top + listHeight + handleHeight, state.panel.width,
+                                  propertyHeight},
+                                 properties, state, actions);
     }
 
     if (tree != nullptr && tree->truncated) {

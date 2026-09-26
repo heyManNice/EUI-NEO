@@ -380,7 +380,12 @@ int main() {
         // up as the root row alone until its disclosure is opened.
         assert(countPanelRows(host) == 1);
 
-        // Clicking a row selects that element and shows its details. A panel state
+        // Nothing is selected yet, so the property area and its divider take no room
+        // at all: the tree keeps the whole tab.
+        assert(!hasPanelElement(host, "elements.properties"));
+        assert(!hasPanelElement(host, "elements.properties.handle"));
+
+        // Clicking a row selects that element and shows its properties. A panel state
         // change lands on the frame after the click, so the frame is run first.
         const double rowY = host.contentBounds().height + theme.toolbarHeight + 1.0 +
                             theme.elementRowHeight * 0.5;
@@ -393,7 +398,6 @@ int main() {
         assert(host.propertiesElement() == "page.root");
         assert(!host.properties().active);
         assert(!hasPanelElement(host, "elements.properties.footer.inner.text"));
-
         core::dsl::runtime::DebugElementProperties values;
         values.active = true;
         values.id = "page.root";
@@ -467,6 +471,30 @@ int main() {
             assert(edit.id.empty());
         }
 
+        // The divider resizes the area: dragging it up gives the area more room, and
+        // dragging down past the minimum stops there instead of collapsing the area.
+        // The area's background spans it, so its frame is the height the divider set.
+        {
+            const float before = panelElementFrame(host, "elements.properties.background").height;
+            assert(before > 0.0f);
+            const core::Rect handle = panelElementFrame(host, "elements.properties.handle");
+            assert(handle.height > 0.0f);
+            dragPanel(handle.x + handle.width * 0.5, handle.y + handle.height * 0.5, handle.x + handle.width * 0.5,
+                      handle.y + handle.height * 0.5 - 30.0);
+            const float taller = panelElementFrame(host, "elements.properties.background").height;
+            assert(taller > before);
+
+            const core::Rect moved = panelElementFrame(host, "elements.properties.handle");
+            // Far enough to reach the minimum, and short enough to stay inside the
+            // window: a pointer that leaves the panel cancels the drag.
+            const double dragDown = taller - theme.propertiesMinimumHeight + 20.0;
+            dragPanel(moved.x + moved.width * 0.5, moved.y + moved.height * 0.5, moved.x + moved.width * 0.5,
+                      moved.y + moved.height * 0.5 + dragDown);
+            const float shorter = panelElementFrame(host, "elements.properties.background").height;
+            assert(shorter < taller);
+            assert(shorter >= theme.propertiesMinimumHeight);
+        }
+
         // Hovering a row previews that element in the page.
         {
             core::PointerEvent overRow = pressAt(200.0, rowY);
@@ -508,8 +536,7 @@ int main() {
         assert(host.hoveredElement().empty());
         // The property area only asks for values while it is on screen.
         assert(host.propertiesElement().empty());
-        assert(host.selectedElement() == "page.root");
-    }
+        assert(host.selectedElement() == "page.root");    }
 
     // A floating panel leaves the whole window to the page and opens its window.
     chooseDock(0);

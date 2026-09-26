@@ -24,6 +24,11 @@ struct DevtoolsPanelState {
     // The row the pointer is over, previewed in the page until it leaves.
     std::string hoveredElement;
     float propertiesScrollOffset = 0.0f;
+    // Height of the property area. The host seeds it from the theme on the first
+    // composition and the divider at its top edge changes it from then on. The drag
+    // start height is what the divider measures its pointer against.
+    float propertiesHeight = 0.0f;
+    float propertiesResizeStartHeight = 0.0f;
     // The colour whose channels are open under its row; one at a time keeps the
     // property list flat and short.
     bool colorEditorOpen = false;
@@ -64,6 +69,8 @@ struct DevtoolsUiActions {
     std::function<void(const std::string&)> toggleElementCollapsed;
     std::function<void(const std::string&)> copyElementId;
     std::function<void(float)> setPropertiesScrollOffset;
+    std::function<void(float)> setPropertiesHeight;
+    std::function<void()> beginPropertiesResize;
     std::function<void(core::dsl::runtime::DebugPropertyId, bool)> togglePropertyColorEditor;
     std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId, float)> setElementPropertyNumber;
     std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId, const core::Color&)> setElementPropertyColor;

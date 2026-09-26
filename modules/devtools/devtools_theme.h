@@ -79,7 +79,13 @@ struct DevtoolsTheme {
     float propertySwitchTrackWidth = 32.0f;
     float propertySwitchTrackHeight = 18.0f;
     float propertyColumnGap = 6.0f;
-    float propertiesHeight = 196.0f;
+    // The property area starts at this share of the space the tab has, and the divider
+    // moves it between the minimum height and what the tree can spare.
+    float propertiesInitialFraction = 0.45f;
+    float propertiesMinimumHeight = 66.0f;
+    float propertiesMinimumTreeHeight = 66.0f;
+    float propertiesHandleHeight = 6.0f;
+    core::Color propertiesHandleHover{0.250f, 0.310f, 0.390f, 1.0f};
 
     // Font Awesome 7 Free-Solid codepoints, the icon font EUI-NEO already ships.
     unsigned int iconSelectElement = 0xF245;
