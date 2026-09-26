@@ -106,11 +106,18 @@ public:
     // after the page content, so the overlay is never covered by the page. An
     // empty id clears the mark.
     void setInspectedElement(const std::string& id);
-    const std::string& inspectedElement() const { return instances_.inspectedElement; }
+    const std::string& inspectedElement() const { return instances_.inspectedMark.id; }
 
-    // Geometry of the inspection overlay for the current frame; the renderer draws
+    // Marks the element the pointer is over in a tree view. It is a preview, so it
+    // draws a lighter overlay on top of the selection and a tool is expected to
+    // clear it again when the pointer leaves.
+    void setHoveredElement(const std::string& id);
+    const std::string& hoveredElement() const { return instances_.hoveredMark.id; }
+
+    // Geometry of the inspection overlays for the current frame; the renderer draws
     // exactly this, and tests read it without a renderer.
     runtime::DebugInspection debugInspection(float dpiScale);
+    runtime::DebugInspection debugHoverInspection(float dpiScale);
 #endif
 
     void shutdown(bool releaseCachedImageTextures = true);

@@ -15,48 +15,47 @@ namespace core::dsl {
 
 namespace runtime {
 
-inline bool findInspectionPath(Ui& ui, InstanceStore& instances, const Element& element) {
-    instances.inspectionPath.push_back(&element);
-    if (element.id == instances.inspectedElement) {
+inline bool findInspectionPath(Ui& ui, InstanceStore& instances, InspectionMark& mark, const Element& element) {
+    mark.path.push_back(&element);
+    if (element.id == mark.id) {
         return true;
     }
     for (const Element* child : element.orderedChildren) {
-        if (findInspectionPath(ui, instances, *child)) {
+        if (findInspectionPath(ui, instances, mark, *child)) {
             return true;
         }
     }
-    instances.inspectionPath.pop_back();
+    mark.path.pop_back();
     return false;
 }
 
-inline const std::vector<const Element*>& inspectionPath(Ui& ui, InstanceStore& instances) {
-    if (instances.inspectionPathId == instances.inspectedElement &&
-        instances.inspectionPathGeneration == instances.composeGeneration) {
-        return instances.inspectionPath;
+inline const std::vector<const Element*>& inspectionPath(Ui& ui, InstanceStore& instances, InspectionMark& mark) {
+    if (mark.pathId == mark.id && mark.pathGeneration == instances.composeGeneration) {
+        return mark.path;
     }
-    instances.inspectionPathId = instances.inspectedElement;
-    instances.inspectionPathGeneration = instances.composeGeneration;
-    instances.inspectionPath.clear();
-    if (instances.inspectedElement.empty()) {
-        return instances.inspectionPath;
+    mark.pathId = mark.id;
+    mark.pathGeneration = instances.composeGeneration;
+    mark.path.clear();
+    if (mark.id.empty()) {
+        return mark.path;
     }
-    // Depth first search for the path from a root to the inspected element. It only
-    // runs when the inspected element changed or the page was recomposed.
+    // Depth first search for the path from a root to the marked element. It only
+    // runs when the mark changed or the page was recomposed.
     for (const Element* root : ui.orderedRoots()) {
-        if (findInspectionPath(ui, instances, *root)) {
+        if (findInspectionPath(ui, instances, mark, *root)) {
             break;
         }
     }
-    return instances.inspectionPath;
+    return mark.path;
 }
 
-inline DebugInspection computeInspection(Ui& ui, InstanceStore& instances, float dpiScale) {
+inline DebugInspection computeInspection(Ui& ui, InstanceStore& instances, InspectionMark& mark, float dpiScale) {
     DebugInspection inspection;
-    if (instances.inspectedElement.empty()) {
+    if (mark.id.empty()) {
         return inspection;
     }
-    const std::vector<const Element*>& path = inspectionPath(ui, instances);
-    if (path.empty() || path.back()->id != instances.inspectedElement) {
+    const std::vector<const Element*>& path = inspectionPath(ui, instances, mark);
+    if (path.empty() || path.back()->id != mark.id) {
         return inspection;
     }
 
@@ -94,20 +93,35 @@ inline DebugInspection computeInspection(Ui& ui, InstanceStore& instances, float
 } // namespace runtime
 
 inline void Runtime::setInspectedElement(const std::string& id) {
-    if (instances_.inspectedElement == id) {
+    if (instances_.inspectedMark.id == id) {
         return;
     }
-    instances_.inspectedElement = id;
-    instances_.inspectionPath.clear();
-    instances_.inspectionPathId.clear();
+    instances_.inspectedMark.id = id;
+    instances_.inspectedMark.path.clear();
+    instances_.inspectedMark.pathId.clear();
     // The previous overlay has to disappear and the new one has to appear, and
     // overlays are drawn while the render cache is filled.
     fullPaintRequested_ = true;
     paintRequested_ = true;
 }
 
+inline void Runtime::setHoveredElement(const std::string& id) {
+    if (instances_.hoveredMark.id == id) {
+        return;
+    }
+    instances_.hoveredMark.id = id;
+    instances_.hoveredMark.path.clear();
+    instances_.hoveredMark.pathId.clear();
+    fullPaintRequested_ = true;
+    paintRequested_ = true;
+}
+
 inline runtime::DebugInspection Runtime::debugInspection(float dpiScale) {
-    return runtime::computeInspection(ui_, instances_, dpiScale);
+    return runtime::computeInspection(ui_, instances_, instances_.inspectedMark, dpiScale);
+}
+
+inline runtime::DebugInspection Runtime::debugHoverInspection(float dpiScale) {
+    return runtime::computeInspection(ui_, instances_, instances_.hoveredMark, dpiScale);
 }
 
 #endif

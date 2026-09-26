@@ -111,6 +111,13 @@ void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRo
     const std::function<void()> toggle = actions.toggleElementCollapsed
         ? std::function<void()>([toggle = actions.toggleElementCollapsed, nodeId] { toggle(nodeId); })
         : std::function<void()>{};
+    // Hovering a row previews that element in the page; leaving it takes the
+    // preview back. The row itself is still selected by a click.
+    const std::function<void(bool)> hover = actions.hoverElement
+        ? std::function<void(bool)>([hover = actions.hoverElement, nodeId](bool entered) {
+              hover(nodeId, entered);
+          })
+        : std::function<void(bool)>{};
 
     ui.stack(base)
         .width(core::SizeValue::fill())
@@ -123,6 +130,7 @@ void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRo
                         theme.elementRowHover)
                 .instantStates()
                 .onClick(select)
+                .onHover(hover)
                 .build();
             ui.row(base + ".content")
                 .fill()

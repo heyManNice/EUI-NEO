@@ -81,6 +81,14 @@ public:
         return empty;
     }
 
+    // The element the overlay previews while the pointer is over it, for example a
+    // tree row under the mouse. Empty for none; cleared as soon as the pointer
+    // leaves, so it stays a preview.
+    virtual const std::string& hoveredElement() const {
+        static const std::string empty;
+        return empty;
+    }
+
     virtual void releaseGraphicsResources() = 0;
 
     virtual void shutdown() = 0;

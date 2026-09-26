@@ -68,21 +68,50 @@ struct DebugInspection {
     bool hasScissor = false;
 };
 
+// One element a debug tool marks, plus the cached path that leads to it. Element
+// pointers only stay valid until the next compose, so the cache is keyed by the
+// compose generation instead of being pinned for the runtime's lifetime.
+// A tool keeps two of these: the selected element (persistent) and the element
+// the pointer is over in its tree view (transient preview).
+struct InspectionMark {
+    std::string id;
+    std::vector<const Element*> path;
+    std::string pathId;
+    std::uint64_t pathGeneration = 0;
+};
+
 // The overlay palette follows components::LayoutDebugStyle (frame red, content
 // blue, low-alpha fills), kept here as values because core never depends on
-// components.
-inline constexpr Color kInspectionFrameColor{0.96f, 0.32f, 0.38f, 0.16f};
-inline constexpr Color kInspectionFrameStroke{0.96f, 0.32f, 0.38f, 0.95f};
-inline constexpr Color kInspectionContentColor{0.28f, 0.58f, 0.98f, 0.14f};
-inline constexpr Color kInspectionContentStroke{0.28f, 0.58f, 0.98f, 0.95f};
+// components. Both boxes of a hover preview share one colour so a preview never
+// reads as a selection.
+struct InspectionPalette {
+    Color frameFill;
+    Color frameStroke;
+    Color contentFill;
+    Color contentStroke;
+};
+
+inline constexpr InspectionPalette kInspectionSelectionPalette{
+    {0.96f, 0.32f, 0.38f, 0.16f},
+    {0.96f, 0.32f, 0.38f, 0.95f},
+    {0.28f, 0.58f, 0.98f, 0.14f},
+    {0.28f, 0.58f, 0.98f, 0.95f}
+};
+
+inline constexpr InspectionPalette kInspectionHoverPalette{
+    {0.98f, 0.75f, 0.30f, 0.14f},
+    {0.98f, 0.75f, 0.30f, 0.95f},
+    {0.98f, 0.75f, 0.30f, 0.07f},
+    {0.98f, 0.75f, 0.30f, 0.55f}
+};
 
 struct InstanceStore;
 
 #if defined(EUI_DEBUG_BUILD)
-// Geometry of the inspection overlay for the element the store marks as
-// inspected. Both the panel (through `Runtime::debugInspection`) and the renderer
-// read this, so there is one implementation of "where is that element now".
-DebugInspection computeInspection(Ui& ui, InstanceStore& instances, float dpiScale);
+// Geometry of the inspection overlay for one mark. Both the panel (through
+// `Runtime::debugInspection`) and the renderer read this, so there is one
+// implementation of "where is that element now".
+DebugInspection computeInspection(Ui& ui, InstanceStore& instances, InspectionMark& mark, float dpiScale);
 #endif
 
 } // namespace core::dsl::runtime

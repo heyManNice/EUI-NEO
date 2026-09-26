@@ -335,6 +335,26 @@ int main() {
         frame();
         assert(hasPanelElement(host, "elements.details"));
 
+        // Hovering a row previews that element in the page.
+        {
+            core::PointerEvent overRow = pressAt(200.0, rowY);
+            overRow.action = core::PointerAction::Move;
+            overRow.button = core::PointerButton::None;
+            overRow.buttons = {};
+            core::ScrollEvent hoverScroll;
+            routePointer(overRow, hoverScroll);
+            frame();
+            assert(host.hoveredElement() == "page.root");
+
+            // Leaving the list takes the preview back without touching the selection.
+            core::PointerEvent overPage = overRow;
+            overPage.y = 20.0;
+            routePointer(overPage, hoverScroll);
+            frame();
+            assert(host.hoveredElement().empty());
+            assert(host.inspectedElement() == "page.root");
+        }
+
         // The disclosure glyph of the first row collapses its subtree.
         clickPanel(theme.elementDisclosureSize * 0.5, rowY);
         assert(host.collapsedElements().size() == 1);
@@ -348,6 +368,7 @@ int main() {
         // Leaving the tab drops the mark, so a page is never marked while nobody
         // looks at the tree, while the selection itself is remembered.
         assert(host.inspectedElement().empty());
+        assert(host.hoveredElement().empty());
         assert(host.selectedElement() == "page.root");
     }
 

@@ -26,10 +26,12 @@ inline void Runtime::composeViewport(const std::string& pageId, const Rect& view
     const std::vector<runtime::ElementSnapshot> previousStructure = elementStructure_;
 #if defined(EUI_DEBUG_BUILD)
     // A compose rebuilds every element, so anything that remembered element
-    // pointers (the inspection path) has to forget them.
+    // pointers (the inspection paths) has to forget them.
     ++instances_.composeGeneration;
-    instances_.inspectionPath.clear();
-    instances_.inspectionPathId.clear();
+    instances_.inspectedMark.path.clear();
+    instances_.inspectedMark.pathId.clear();
+    instances_.hoveredMark.path.clear();
+    instances_.hoveredMark.pathId.clear();
 #endif
     const Screen screen{viewport.width, viewport.height};
     ui_.begin(pageId);

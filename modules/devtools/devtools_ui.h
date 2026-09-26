@@ -21,6 +21,8 @@ struct DevtoolsPanelState {
     float performanceScrollOffset = 0.0f;
     float elementsScrollOffset = 0.0f;
     std::string selectedElement;
+    // The row the pointer is over, previewed in the page until it leaves.
+    std::string hoveredElement;
     // Elements the user collapsed. The tree itself comes from the app, so the
     // panel only remembers what the user hid inside it.
     std::vector<std::string> collapsedElements;
@@ -49,6 +51,7 @@ struct DevtoolsUiActions {
     std::function<void(float)> setPerformanceScrollOffset;
     std::function<void(float)> setElementsScrollOffset;
     std::function<void(const std::string&)> selectElement;
+    std::function<void(const std::string&, bool)> hoverElement;
     std::function<void(const std::string&)> toggleElementCollapsed;
     std::function<void(const std::string&)> copyElementId;
 };

@@ -479,6 +479,7 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
         // The overlay decides which element the page should mark, and the page
         // draws it with the same transform and clip as the element itself.
         detail::dslRuntime().setInspectedElement(overlay->inspectedElement());
+        detail::dslRuntime().setHoveredElement(overlay->hoveredElement());
         // The overlay draws on top of the rendered app frame, so an overlay
         // repaint never forces the app render cache to be rebuilt.
         if (overlay->update(windowWidth, windowHeight, effectiveScale, deltaSeconds)) {

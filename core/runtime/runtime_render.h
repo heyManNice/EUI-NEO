@@ -50,12 +50,13 @@ private:
                                const Rect& scissorRect);
 
 #if defined(EUI_DEBUG_BUILD)
-    // Draws the inspection overlay (frame box and content box) for the element the
-    // instance store marks as inspected.
+    // Draws the inspection overlay (frame box and content box) for one mark.
     void renderInspection(core::render::RenderBackend& renderBackend,
+                          runtime::InspectionMark& mark,
                           int windowWidth,
                           int windowHeight,
-                          float dpiScale);
+                          float dpiScale,
+                          const runtime::InspectionPalette& palette);
 #endif
 
     bool isRetainedLayerCandidate(const Element& element,
@@ -205,11 +206,17 @@ inline void RuntimeRenderer::renderDirect(core::render::RenderBackend& renderBac
         renderElement(renderBackend, *root, windowWidth, windowHeight, dpiScale, identity, dirtyRect, hasScissor, scissor);
     }
 #if defined(EUI_DEBUG_BUILD)
-    // The inspection overlay is drawn after the page, so page content (including
-    // siblings painted later) never covers it. Its geometry already carries the
-    // element's transform and the ancestor clips, so it stays where the element is.
-    if (!instances_.inspectedElement.empty()) {
-        renderInspection(renderBackend, windowWidth, windowHeight, dpiScale);
+    // The inspection overlays are drawn after the page, so page content (including
+    // siblings painted later) never covers them. Their geometry already carries the
+    // element's transform and the ancestor clips, so they stay where the element is.
+    // The hover preview goes on top of the selection: it is the transient one.
+    if (!instances_.inspectedMark.id.empty()) {
+        renderInspection(renderBackend, instances_.inspectedMark, windowWidth, windowHeight, dpiScale,
+                         runtime::kInspectionSelectionPalette);
+    }
+    if (!instances_.hoveredMark.id.empty()) {
+        renderInspection(renderBackend, instances_.hoveredMark, windowWidth, windowHeight, dpiScale,
+                         runtime::kInspectionHoverPalette);
     }
 #endif
 }
@@ -954,10 +961,12 @@ inline bool RuntimeRenderer::renderRetainedElements(
 
 #if defined(EUI_DEBUG_BUILD)
 inline void RuntimeRenderer::renderInspection(core::render::RenderBackend& renderBackend,
+                                              runtime::InspectionMark& mark,
                                               int windowWidth,
                                               int windowHeight,
-                                              float dpiScale) {
-    const runtime::DebugInspection inspection = runtime::computeInspection(ui_, instances_, dpiScale);
+                                              float dpiScale,
+                                              const runtime::InspectionPalette& palette) {
+    const runtime::DebugInspection inspection = runtime::computeInspection(ui_, instances_, mark, dpiScale);
     if (!inspection.active) {
         return;
     }
@@ -989,12 +998,12 @@ inline void RuntimeRenderer::renderInspection(core::render::RenderBackend& rende
                        std::max(0.0f, frame.height - paddingTop - paddingBottom)};
 
     // One pixel stroke in window pixels, so the overlay stays crisp at any scale.
-    const Border stroke{1.0f, {1.0f, 1.0f, 1.0f, 1.0f}};
-    const auto drawBox = [&](const Rect& box, const Color& fill, const Color& line) {
+    const Border boxStroke{1.0f, {1.0f, 1.0f, 1.0f, 1.0f}};
+    const auto drawBox = [&](const Rect& box, const Color& boxFill, const Color& line) {
         store.debugOverlayPrimitive->setBounds(box.x, box.y, box.width, box.height);
-        store.debugOverlayPrimitive->setColor(fill);
+        store.debugOverlayPrimitive->setColor(boxFill);
         store.debugOverlayPrimitive->setGradient({});
-        Border border = stroke;
+        Border border = boxStroke;
         border.color = line;
         store.debugOverlayPrimitive->setBorder(border);
         store.debugOverlayPrimitive->setShadow({});
@@ -1007,9 +1016,12 @@ inline void RuntimeRenderer::renderInspection(core::render::RenderBackend& rende
         store.debugOverlayPrimitive->render(windowWidth, windowHeight);
     };
 
-    drawBox(frame, runtime::kInspectionFrameColor, runtime::kInspectionFrameStroke);
-    if (content.width > 0.0f && content.height > 0.0f) {
-        drawBox(content, runtime::kInspectionContentColor, runtime::kInspectionContentStroke);
+    drawBox(frame, palette.frameFill, palette.frameStroke);
+    if (inspection.padding.left > 0.0f || inspection.padding.top > 0.0f ||
+        inspection.padding.right > 0.0f || inspection.padding.bottom > 0.0f) {
+        if (content.width > 0.0f && content.height > 0.0f) {
+            drawBox(content, palette.contentFill, palette.contentStroke);
+        }
     }
 
     // Leave the backend scissor to the caller's next draw, like the tree does.

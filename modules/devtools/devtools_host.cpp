@@ -83,6 +83,14 @@ const std::string& DevtoolsHost::inspectedElement() const {
     return panelState_->selectedElement;
 }
 
+const std::string& DevtoolsHost::hoveredElement() const {
+    static const std::string empty;
+    if (!visible_ || panelState_ == nullptr || panelState_->activeTab != DevtoolsTab::Elements) {
+        return empty;
+    }
+    return panelState_->hoveredElement;
+}
+
 const core::dsl::runtime::ElementTreeSnapshot& DevtoolsHost::elementTree() const {
     return elementTree_;
 }
@@ -411,6 +419,17 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
             }
             state.selectedElement = id;
             requestCompose();
+        },
+        [this, &state](const std::string& id, bool hovered) {
+            // Leaving a row only clears the preview if that row still owns it, so
+            // moving between rows does not depend on callback order.
+            if (hovered) {
+                state.hoveredElement = id;
+                return;
+            }
+            if (state.hoveredElement == id) {
+                state.hoveredElement.clear();
+            }
         },
         [this, &state](const std::string& id) {
             const auto collapsed = std::find(state.collapsedElements.begin(), state.collapsedElements.end(), id);

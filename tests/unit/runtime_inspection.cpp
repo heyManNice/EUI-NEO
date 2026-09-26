@@ -111,6 +111,22 @@ int main() {
     assert(scrollShift < -10.0f);
     assert(scrolled.scissor.height == 100.0f);                      // the clip stays at the container
 
+    // A hover preview is a second mark: both can be active at once and neither
+    // disturbs the other.
+    pageRuntime.setHoveredElement("page.list");
+    settle(pageRuntime);
+    const core::dsl::runtime::DebugInspection hovered = pageRuntime.debugHoverInspection(1.0f);
+    assert(hovered.active);
+    assert(hovered.frame.x == 20.0f);
+    assert(hovered.frame.width == 200.0f);
+    assert(pageRuntime.hoveredElement() == "page.list");
+    assert(pageRuntime.inspectedElement() == "page.card");
+    assert(pageRuntime.debugInspection(1.0f).active);
+    pageRuntime.setHoveredElement("");
+    settle(pageRuntime);
+    assert(!pageRuntime.debugHoverInspection(1.0f).active);
+    assert(pageRuntime.debugInspection(1.0f).active);   // the selection survives the preview
+
     // A page that no longer contains the element simply stops drawing the overlay.
     pageRuntime.setInspectedElement("page.missing");
     settle(pageRuntime);

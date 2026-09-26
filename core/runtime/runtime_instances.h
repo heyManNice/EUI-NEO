@@ -8,6 +8,10 @@
 #include "core/render/text.h"
 #include "core/runtime/runtime_geometry.h"
 
+#if defined(EUI_DEBUG_BUILD)
+#include "core/runtime/runtime_inspector.h"
+#endif
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -504,10 +508,8 @@ public:
 #if defined(EUI_DEBUG_BUILD)
         debugOverlayPrimitive.reset();
         debugOverlayPrimitiveInitialized = false;
-        inspectedElement.clear();
-        inspectionPath.clear();
-        inspectionPathId.clear();
-        inspectionPathGeneration = 0;
+        inspectedMark = {};
+        hoveredMark = {};
         composeGeneration = 0;
 #endif
     }
@@ -534,13 +536,11 @@ public:
     std::unique_ptr<RoundedRectPrimitive> debugOverlayPrimitive;
     bool debugOverlayPrimitiveInitialized = false;
 
-    // The element a debug tool inspects, and the path that leads to it. Element
-    // pointers only stay valid until the next compose, so the path is keyed by the
-    // compose generation instead of being pinned for the runtime's lifetime.
-    std::string inspectedElement;
-    std::vector<const Element*> inspectionPath;
-    std::string inspectionPathId;
-    std::uint64_t inspectionPathGeneration = 0;
+    // The element a debug tool inspects (the one selected in its tree) and the one
+    // the pointer is over there (a transient preview). Each mark carries its own
+    // cached path; the compose generation invalidates both at once.
+    InspectionMark inspectedMark;
+    InspectionMark hoveredMark;
     std::uint64_t composeGeneration = 0;
 #endif
 };
