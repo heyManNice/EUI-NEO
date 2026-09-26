@@ -724,6 +724,43 @@ int main() {
     clickDetached(detachedMenuX, detachedRowY);
     assert(host.dockPosition() == DockPosition::Floating);
 
+    // A panel in its own window has no edge inside the app's window, but its picker
+    // still owns the pointer over the page: the app layer asks the page what is under
+    // it, and the click that picks does not reach the app.
+    {
+        const auto detachedFrame = [&](const std::string& part) {
+            core::Rect found;
+            for (const core::dsl::runtime::ElementTreeNode& node : detachedRuntime.elementTree().nodes) {
+                if (node.id.find(part) != std::string::npos) {
+                    found = node.frame;
+                    break;
+                }
+            }
+            return found;
+        };
+        const core::Rect arrow = detachedFrame("selectElement");
+        clickDetached(arrow.x + arrow.width * 0.5, arrow.y + arrow.height * 0.5);
+        assert(host.pickingElement());
+
+        core::PointerEvent press = pressAt(700.0, 60.0);
+        core::ScrollEvent pickScroll;
+        const core::PointerEvent routed = routePointer(press, pickScroll);
+        assert(routed.x < 0.0 && routed.y < 0.0);
+        assert(host.pickedPointer().x == 700.0);
+        frame();
+
+        host.setElementUnderPointer("page.ok");
+        core::PointerEvent release = press;
+        release.action = core::PointerAction::Release;
+        release.buttons.set(core::PointerButton::Left, false);
+        routePointer(release, pickScroll);
+        frame();
+        host.setElementUnderPointer("page.ok");
+        frame();
+        assert(!host.pickingElement());
+        assert(host.selectedElement() == "page.ok");
+    }
+
     clickDetached(detachedMoreX, 16.0);
     clickDetached(detachedMenuX, detachedRowY);
     assert(host.dockPosition() == DockPosition::Bottom);

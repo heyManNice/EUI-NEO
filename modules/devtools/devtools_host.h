@@ -69,6 +69,7 @@ private:
     void selectDockPosition(DockPosition position);
     void selectTab(DevtoolsTab tab);
     void setPickingElement(bool picking);
+    void capturePickPointer(core::PointerEvent& event);
     void dismissMoreMenu();
     void close();
     void openDetachedWindow();

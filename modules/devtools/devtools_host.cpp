@@ -409,14 +409,35 @@ bool DevtoolsHost::overResizeBoundary(double x, double y) const {
            std::abs(x - boundary) <= kResizeBoundaryHalfWidth * dpiScale_;
 }
 
+void DevtoolsHost::capturePickPointer(core::PointerEvent& event) {
+    // The picker owns the pointer: it remembers where to ask, and the page never sees
+    // the click that picks, so picking an element does not also press it.
+    pickedPointer_ = event;
+    if (event.isRelease(core::PointerButton::Left)) {
+        pickCommitPending_ = true;
+    }
+    event.x = kOutsidePointer;
+    event.y = kOutsidePointer;
+    event.deltaX = 0.0;
+    event.deltaY = 0.0;
+}
+
 void DevtoolsHost::filterInput(std::vector<core::PointerEvent>& pointerEvents, core::ScrollEvent& scrollEvent) {
-    if (!visible_ || panelSize() <= 0) {
+    if (!visible_) {
         return;
     }
-    // While the panel picks, it owns the pointer wherever it is over the page: the
-    // events are what the app layer hit tests, and the click that picks never reaches
-    // the page, so picking an element does not also press it.
     const bool picking = pickingElement();
+    if (panelSize() <= 0) {
+        // A panel in a window of its own has no edge inside this one, but its picker
+        // still owns the pointer over the page: that is what the app layer hit tests.
+        if (!picking) {
+            return;
+        }
+        for (core::PointerEvent& event : pointerEvents) {
+            capturePickPointer(event);
+        }
+        return;
+    }
     bool pointerInPanel = false;
     for (core::PointerEvent& event : pointerEvents) {
         const bool overBoundary = overResizeBoundary(event.x, event.y);
@@ -465,14 +486,7 @@ void DevtoolsHost::filterInput(std::vector<core::PointerEvent>& pointerEvents, c
 
         if (!inside && !overBoundary && !captured) {
             if (picking) {
-                pickedPointer_ = event;
-                if (event.isRelease(core::PointerButton::Left)) {
-                    pickCommitPending_ = true;
-                }
-                event.x = kOutsidePointer;
-                event.y = kOutsidePointer;
-                event.deltaX = 0.0;
-                event.deltaY = 0.0;
+                capturePickPointer(event);
             }
             pointerInPanel = false;
             continue;
