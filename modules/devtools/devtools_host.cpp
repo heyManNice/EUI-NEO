@@ -93,6 +93,10 @@ const std::string& DevtoolsHost::propertiesElement() const {
 
 void DevtoolsHost::setElementProperties(const core::dsl::runtime::DebugElementProperties& properties) {
     properties_ = properties;
+    if (!properties_.active) {
+        // The divider is gone with the area, so its hover cannot stay.
+        propertiesDividerHover_ = false;
+    }
     if (visible_) {
         requestCompose();
     }
@@ -191,6 +195,7 @@ void DevtoolsHost::close() {
     visible_ = false;
     resizing_ = false;
     resizeCursorActive_ = false;
+    propertiesDividerHover_ = false;
     if (panelState_ != nullptr) {
         panelState_->moreMenuOpen = false;
     }
@@ -215,6 +220,7 @@ void DevtoolsHost::selectDockPosition(DockPosition position) {
     dockPosition_ = position;
     resizing_ = false;
     resizeCursorActive_ = false;
+    propertiesDividerHover_ = false;
     resetCursor();
     if (position == DockPosition::Floating) {
         openDetachedWindow();
@@ -510,6 +516,11 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
             state.propertiesResizeStartHeight = 0.0f;
             state.propertiesResizeScale = 1.0f;
         },
+        [this](bool over) {
+            // The cursor the panel asks the window for is applied at the end of this
+            // same frame, so the hover only has to be remembered.
+            propertiesDividerHover_ = over;
+        },
         [this, &state](core::dsl::runtime::DebugPropertyId property, bool open) {
             if (state.colorEditorOpen && state.colorEditorProperty == property && open) {
                 return;
@@ -614,13 +625,11 @@ bool DevtoolsHost::update(int framebufferWidth, int framebufferHeight, float dpi
 
 void DevtoolsHost::updateCursor(core::window::Handle window) {
     cursorWindow_ = window;
-    if (!visible_ || dockPosition_ == DockPosition::Floating || !resizeCursorActive_ || window == nullptr) {
+    const core::window::CursorType type = desiredCursor();
+    if (type == core::window::CursorType::Arrow || window == nullptr) {
         resetCursor();
         return;
     }
-    const core::window::CursorType type = dockPosition_ == DockPosition::Bottom
-        ? core::window::CursorType::ResizeVertical
-        : core::window::CursorType::ResizeHorizontal;
     if (resizeCursor_ != nullptr && resizeCursorType_ != type) {
         core::window::destroyCursor(resizeCursor_);
         resizeCursor_ = nullptr;
@@ -633,6 +642,23 @@ void DevtoolsHost::updateCursor(core::window::Handle window) {
         core::window::setCursor(window, resizeCursor_);
         resizeCursorApplied_ = true;
     }
+}
+
+core::window::CursorType DevtoolsHost::desiredCursor() const {
+    if (!visible_) {
+        return core::window::CursorType::Arrow;
+    }
+    // The divider resizes the property area on every edge and in the panel's own
+    // window; the panel edge follows the edge it is docked to and has no boundary at
+    // all while the panel is a window of its own.
+    if (propertiesDividerHover_) {
+        return core::window::CursorType::ResizeVertical;
+    }
+    if (dockPosition_ == DockPosition::Floating || !resizeCursorActive_) {
+        return core::window::CursorType::Arrow;
+    }
+    return dockPosition_ == DockPosition::Bottom ? core::window::CursorType::ResizeVertical
+                                                 : core::window::CursorType::ResizeHorizontal;
 }
 
 void DevtoolsHost::resetCursor() {

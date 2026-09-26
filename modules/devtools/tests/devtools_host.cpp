@@ -548,6 +548,27 @@ int main() {
             assert(host.selectedElement() == "page.root");
         }
 
+        // The divider that resizes the property area asks the window for the vertical
+        // resize cursor while the pointer is on it, and gives the arrow back after.
+        {
+            assert(host.desiredCursor() == core::window::CursorType::Arrow);
+            const core::Rect handle = panelElementFrame(host, "elements.properties.handle");
+            core::PointerEvent overHandle = pressAt(handle.x + handle.width * 0.5, handle.y + handle.height * 0.5);
+            overHandle.action = core::PointerAction::Move;
+            overHandle.button = core::PointerButton::None;
+            overHandle.buttons = {};
+            core::ScrollEvent hoverScroll;
+            routePointer(overHandle, hoverScroll);
+            frame();
+            assert(host.desiredCursor() == core::window::CursorType::ResizeVertical);
+
+            core::PointerEvent overPage = overHandle;
+            overPage.y = 20.0;
+            routePointer(overPage, hoverScroll);
+            frame();
+            assert(host.desiredCursor() == core::window::CursorType::Arrow);
+        }
+
         // The disclosure glyph of the root opens its subtree, and clicking it again
         // puts the subtree back. Leaf rows have no glyph to click.
         clickPanel(theme.elementDisclosureSize * 0.5, rowY);

@@ -54,6 +54,11 @@ public:
     const core::dsl::runtime::DebugElementProperties& properties() const;
     std::size_t propertyOverrideCount() const;
 
+    // The cursor the panel asks the window for: the divider inside the panel resizes
+    // the property area, the panel edge resizes the panel itself. It is what
+    // `updateCursor` applies, and a test without a window can read it.
+    core::window::CursorType desiredCursor() const;
+
     // The panel's own element tree. Tests use it to see what the panel composed
     // without a renderer; it is also what a future "inspect the inspector" view
     // would read.
@@ -88,6 +93,7 @@ private:
     int dragStartSize_ = 0;
     bool resizing_ = false;
     bool resizeCursorActive_ = false;
+    bool propertiesDividerHover_ = false;
     bool resizeCursorApplied_ = false;
     core::window::CursorHandle resizeCursor_ = nullptr;
     core::window::CursorType resizeCursorType_ = core::window::CursorType::Arrow;

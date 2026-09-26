@@ -83,6 +83,10 @@ struct DevtoolsUiActions {
     // height the panel is at then instead of the one an earlier drag left behind.
     std::function<void(float, float)> beginPropertiesResize;
     std::function<void()> endPropertiesResize;
+    // The pointer entered or left the divider that resizes the property area. A host
+    // driven panel does not own its window, so the panel reports the hover and lets
+    // the host pick the cursor the window shows for it.
+    std::function<void(bool)> hoverPropertiesDivider;
     std::function<void(core::dsl::runtime::DebugPropertyId, bool)> togglePropertyColorEditor;
     std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId, float)> setElementPropertyNumber;
     std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId, const core::Color&)> setElementPropertyColor;
