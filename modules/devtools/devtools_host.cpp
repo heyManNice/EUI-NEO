@@ -34,7 +34,9 @@ namespace {
 // destruction: the hooks point at it, and the session that owns those hooks is a file
 // scope object in the application, so it is destroyed *after* this object would have been —
 // which is enough for "remove the hooks I installed" to reach into freed storage. One
-// leaked object at exit buys an ordering the application cannot get wrong.
+// leaked object at exit buys an ordering the application cannot get wrong. What the host
+// keeps of a run — the panel's runtime, its state, its preview primitive — is released by
+// `shutdown()` when the session ends, not by this object going away.
 DevtoolsHost& devtoolsHost() {
     static DevtoolsHost* host = new DevtoolsHost();
     return *host;
@@ -62,7 +64,13 @@ bool attachDevtoolsHost() {
         value.attach = [](core::dsl::Runtime& page, const app::detail::OverlayWindows& windows) {
             devtoolsHost().attach(&page, windows);
         };
-        value.detach = [] { devtoolsHost().detach(); };
+        // The app is shutting the panel's page down: take the panel off it, and shut the
+        // panel's own runtime down with it. This is the one place that runs while the device
+        // is still current, which is what makes the teardown complete rather than partial.
+        value.detach = [] {
+            devtoolsHost().detach();
+            devtoolsHost().shutdown();
+        };
         value.contentBounds = [](int windowWidth, int windowHeight, float dpiScale) {
             return devtoolsHost().contentBounds(windowWidth, windowHeight, dpiScale);
         };
@@ -994,9 +1002,18 @@ void DevtoolsHost::releaseGraphicsResources() {
 }
 
 void DevtoolsHost::shutdown() {
+    // The panel's runtime is shut down without asking it to release device resources: with a
+    // device that is still current there is nothing left of them (the app's own
+    // releaseGraphics hook ran first), and without a device a call into it would be worse
+    // than a buffer that dies with it.
     runtime_.shutdown(false);
     if (boxPreviewPrimitiveInitialized_) {
-        boxPreviewPrimitive_.destroy();
+        if (core::render::activeRenderBackend() != nullptr) {
+            boxPreviewPrimitive_.destroy();
+        } else {
+            // Dropped, not destroyed: the device it belonged to is gone.
+            boxPreviewPrimitive_ = core::RoundedRectPrimitive{};
+        }
         boxPreviewPrimitiveInitialized_ = false;
     }
     panelState_ = nullptr;

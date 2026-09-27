@@ -45,7 +45,15 @@ public:
     // Wires the panel onto the page it inspects: the runtime hooks it uses, and the window
     // services the app layer owns. `page` is the runtime to read and write; a test may
     // attach none and drive the setters below itself.
+    //
+    // The page it is replacing is unhooked here, which requires that page to still be alive:
+    // the contract is that a page is detached before it is destroyed, and the app layer keeps
+    // it — `app::shutdown()` detaches the panel before it shuts the page runtime down. A
+    // caller that destroys a page first has to detach it first as well.
     void attach(core::dsl::Runtime* page, const app::detail::OverlayWindows& windows);
+    // Takes the panel off the page and throws the page's session away. It touches no device,
+    // so it is safe after the window and its render backend are gone — which is when the
+    // session that owns the panel is destroyed.
     void detach();
 
     // Window area left to the page, in framebuffer pixels. The panel takes the rest of it
@@ -63,6 +71,10 @@ public:
     // pass: the geometry is already resolved in `pass`.
     void renderPageOverlay(const core::dsl::runtime::RenderPassContext& pass);
     void releaseGraphicsResources();
+    // Shuts the panel's own runtime down and forgets the panel state: what a run left behind
+    // does not reach the next one in the same process. It is run by the app layer's shutdown
+    // path, while the device is still current — the preview primitive is released for real
+    // there; a session torn down after the device is gone only drops the handle.
     void shutdown();
 
     // ---- the panel's side: state the panel widget layer drives and reads ----
