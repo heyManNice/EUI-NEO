@@ -786,6 +786,17 @@ DevtoolsUiActions DevtoolsHost::buildActions(DevtoolsPanelState& state) {
     };
     actions.shell.close = [this] { close(); };
 
+    actions.shell.setTabScrollOffset = [this, &state](float offset) {
+        // The panel runtime animates the scroll and reports every step of it, so this is
+        // called for frames that move the row by less than a pixel; only a change is a
+        // reason to compose the panel again.
+        if (state.tabScrollOffset == offset) {
+            return;
+        }
+        state.tabScrollOffset = offset;
+        requestCompose();
+    };
+
     actions.performance.setScrollOffset = [this, &state](float offset) {
         state.performanceScrollOffset = offset;
         requestCompose();
@@ -943,6 +954,17 @@ bool DevtoolsHost::updatePanel(int framebufferWidth, int framebufferHeight, floa
     // is over it in docked mode (the detached window is a normal window and gets
     // a real delta from the frame loop).
     const bool repainted = runtime_.update(nullptr, deltaSeconds, 1.0f, dpiScale_) || composed;
+    // The tab row clips what does not fit, so how far it may scroll sideways needs the room
+    // it had and the width of the tabs in it. Both are read back from the tree the runtime
+    // just laid out, so the toolbar never has to measure itself.
+    if (panelState_ != nullptr) {
+        if (const core::dsl::Element* strip = runtime_.findElement("eui.devtools.toolbar.tabs")) {
+            panelState_->tabStripWidth = strip->frame.width;
+        }
+        if (const core::dsl::Element* track = runtime_.findElement("eui.devtools.toolbar.tabs.track")) {
+            panelState_->tabTrackWidth = track->frame.width;
+        }
+    }
     if (repainted && hasPage() && dockPosition_ != DockPosition::Floating) {
         // A docked panel draws inside the page's render cache, so a repaint of its own only
         // becomes visible when that cached frame is rebuilt. The detached panel is a window

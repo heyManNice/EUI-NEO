@@ -243,21 +243,52 @@ void composeToolbar(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devto
                     }
                     // The tab row takes whatever the leading and trailing controls leave
                     // and clips what does not fit, so the buttons on the right always stay
-                    // reachable however many tabs the panel has.
+                    // reachable however many tabs the panel has. What it clips the wheel
+                    // can bring back: the row is scrollable sideways, and the tabs inside
+                    // it slide while the trailing controls stay where they are.
+                    const float tabMaxOffset = state.panelState != nullptr
+                        ? std::max(0.0f, state.panelState->tabTrackWidth - state.panelState->tabStripWidth)
+                        : 0.0f;
+                    const float tabOffset = state.panelState != nullptr
+                        ? std::clamp(state.panelState->tabScrollOffset, 0.0f, tabMaxOffset)
+                        : 0.0f;
+                    const std::function<void(float)> onTabScroll = actions.shell.setTabScrollOffset;
                     ui.row("toolbar.tabs")
                         .width(core::SizeValue::fill())
                         .height(theme.toolbarHeight)
                         .margin(compact ? 0.0f : theme.toolbarPadding, 0.0f, 0.0f, 0.0f)
                         .clip()
-                        .content([&] {
-                            const DevtoolsTab activeTab = state.panelState != nullptr
-                                ? state.panelState->activeTab : DevtoolsTab::Performance;
-                            for (const TabEntry& entry : kTabs) {
-                                composeToolbarTab(ui, entry.id, entry.label, activeTab == entry.tab,
-                                                  [onSelect = actions.shell.selectTab, tab = entry.tab] {
-                                                      onSelect(tab);
-                                                  });
+                        .scrollState("toolbar.tabs", tabOffset, tabMaxOffset, theme.toolbarHeight)
+                        .onScrollOffsetChanged([onTabScroll](float value) {
+                            if (onTabScroll) {
+                                onTabScroll(value);
                             }
+                        })
+                        .content([&] {
+                            // The tabs live in a stack so the row inside it can slide: a row
+                            // lays its children out from its own origin, so the sideways
+                            // shift has to happen in a container that takes an explicit x.
+                            ui.stack("toolbar.tabs.track")
+                                .width(core::SizeValue::wrapContent())
+                                .height(theme.toolbarHeight)
+                                .content([&] {
+                                    const DevtoolsTab activeTab = state.panelState != nullptr
+                                        ? state.panelState->activeTab : DevtoolsTab::Performance;
+                                    ui.row("toolbar.tabs.row")
+                                        .x(-tabOffset)
+                                        .width(core::SizeValue::wrapContent())
+                                        .height(theme.toolbarHeight)
+                                        .content([&] {
+                                            for (const TabEntry& entry : kTabs) {
+                                                composeToolbarTab(ui, entry.id, entry.label, activeTab == entry.tab,
+                                                                  [onSelect = actions.shell.selectTab, tab = entry.tab] {
+                                                                      onSelect(tab);
+                                                                  });
+                                            }
+                                        })
+                                        .build();
+                                })
+                                .build();
                         })
                         .build();
                     ui.row("toolbar.trailing")

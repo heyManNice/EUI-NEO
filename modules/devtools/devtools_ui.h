@@ -34,6 +34,14 @@ enum class DevtoolsTab {
 struct DevtoolsPanelState {
     DevtoolsTab activeTab = DevtoolsTab::Performance;
     bool moreMenuOpen = false;
+    // How far the tab row is scrolled sideways, in the logical units the panel composes in.
+    // A narrow panel clips the tabs it cannot show, and this is what brings them back.
+    float tabScrollOffset = 0.0f;
+    // What the tab row and the tabs inside it measured after the last layout: the room the
+    // row had, and how wide the tabs are. The row needs both to know how far it may scroll,
+    // and it reads them back instead of measuring the toolbar a second time.
+    float tabStripWidth = 0.0f;
+    float tabTrackWidth = 0.0f;
     float performanceScrollOffset = 0.0f;
     float elementsScrollOffset = 0.0f;
     std::string selectedElement;
@@ -98,6 +106,8 @@ struct DevtoolsUiActions {
         std::function<void()> toggleMoreMenu;
         std::function<void()> dismissMoreMenu;
         std::function<void()> close;
+        // Where the tab row is scrolled to, in logical units.
+        std::function<void(float)> setTabScrollOffset;
     };
 
     // The performance page.
