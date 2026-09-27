@@ -943,6 +943,12 @@ bool DevtoolsHost::updatePanel(int framebufferWidth, int framebufferHeight, floa
     // is over it in docked mode (the detached window is a normal window and gets
     // a real delta from the frame loop).
     const bool repainted = runtime_.update(nullptr, deltaSeconds, 1.0f, dpiScale_) || composed;
+    if (repainted && hasPage() && dockPosition_ != DockPosition::Floating) {
+        // A docked panel draws inside the page's render cache, so a repaint of its own only
+        // becomes visible when that cached frame is rebuilt. The detached panel is a window
+        // of its own and is composed by the window manager, which needs no such request.
+        session_.page->requestFullPaint();
+    }
     if (composeRequested_ || runtime_.isAnimating()) {
         // Panel state changes and panel animations both need the next frame; the
         // page runtime knows nothing about either of them.
