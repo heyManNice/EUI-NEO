@@ -146,6 +146,7 @@ tests/        Probe sources, fixture apps, and local benchmark notes
 - [DSL Design And Current Implementation](docs/DSL.md)
 - [Components](docs/组件.md)
 - [Modules](docs/模块.md)
+- [Tooling Protocol](docs/工具协议.md)
 - [State Model](docs/状态.md)
 - [Layout](docs/布局.md)
 - [Events](docs/事件.md)

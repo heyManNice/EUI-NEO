@@ -148,6 +148,7 @@ tests/        probe 源码、fixture 应用和本地 benchmark 记录
 - [DSL 设计与当前实现](docs/DSL.md)
 - [组件](docs/组件.md)
 - [模块](docs/模块.md)
+- [工具协议](docs/工具协议.md)
 - [状态模型](docs/状态.md)
 - [布局](docs/布局.md)
 - [事件](docs/事件.md)
