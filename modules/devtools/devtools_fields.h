@@ -11,24 +11,18 @@
 
 // The values the panel can read and write on an element.
 //
-// This is the panel's own model. The framework offers a page's elements, a way to look one
-// up, a moment to write it (after a compose, before layout) and a way to ask for the frame
-// that shows the result; it does not know what a "field" is, which of them a row can edit,
-// or what kind of value one holds. "Editable values" is an editing decision, and editing is
-// what the panel does.
-//
-// One table below describes every field: the name the panel gives it, the kind of value it
-// holds, and the element member it reads and writes. Reading, writing and applying a patch
-// all walk that table, so adding a field is one row here plus one row in the property area.
+// Editing is the panel's decision, so "which values can be edited" is a table in this file
+// rather than anything the framework knows: it names each field, the kind of value it holds
+// and the element member it reads and writes, and every read, write and patch walks it. A
+// new field is one row here plus one row in the property area (devtools_properties.cpp).
 
 #if defined(EUI_TOOLING)
 
 namespace modules::devtools {
 
-// A page can hold tens of thousands of elements and a tool that reads one only ever shows a
-// window of the text, so the values read for the panel stop copying at these sizes. They are
-// about what a copy costs, not about what a tool displays: a tool that wants another limit
-// uses its own.
+// A page can hold tens of thousands of elements, so the text copied out of one element for
+// the panel stops at this many bytes: it is about what a copy costs, not about what the
+// panel shows.
 inline constexpr std::size_t kElementValueTextLimit = 64;
 
 // Copies at most `limit` bytes of text without splitting a UTF-8 sequence, so a truncated
@@ -45,14 +39,9 @@ inline std::string truncateElementText(const std::string& text, std::size_t limi
 }
 
 
-// The fields a tool may write on a live element, one line each: the name a tool uses for
-// the field, the kind of value it holds, and the element member it reads and writes.
-//
-// This table is the whole of what the module knows about editable values. Reading a field,
-// writing a field and applying what a tool wrote all walk the table; nothing here knows what
-// a tool calls the field, in which order it shows it, what range its editor covers or which
-// control it puts in the row. A new field is one line here plus one row in the tool that
-// presents it (see modules/devtools), and no function grows a branch.
+// One line per field: the name the panel uses, the kind of value it holds and the element
+// member it reads and writes. Every read, write and patch walks this table, so nothing here
+// names a field twice and no function grows a branch per field.
 #define DEVTOOLS_ELEMENT_FIELD_TABLE(X)                   \
     X(Color,           Color,  color)                \
     X(Opacity,         Number, opacity)              \

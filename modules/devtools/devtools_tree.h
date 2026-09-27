@@ -11,11 +11,8 @@
 
 // The page tree, as the panel holds it.
 //
-// The panel copies the tree out of the page instead of walking it while it draws: a
-// snapshot owns its strings, carries the depth of every node and stays valid across
-// composes, so the panel can hold it between frames. Building it is the panel's business —
-// the framework offers the page's elements in paint order plus a revision counter, and
-// nothing else knows what a "tree view" needs.
+// The copy owns its strings and carries every node's depth, so it stays valid across
+// composes and the panel can hold it between frames — which a walk while drawing could not.
 
 namespace modules::devtools {
 

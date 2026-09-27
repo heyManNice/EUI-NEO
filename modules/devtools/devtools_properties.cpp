@@ -22,10 +22,9 @@ using modules::devtools::ElementField;
 using modules::devtools::FieldKind;
 
 // One property the area shows, with the range its editor covers and the kinds of element
-// it can change something on. This table is the whole of the panel's knowledge about a
-// property: its label, its range and the kinds it applies to. The runtime only knows the
-// field itself (core/tooling/model.h), so adding a property is one row here and one row
-// there.
+// it can change something on. The label, the range and those kinds are the display side of
+// a field; the field itself (its kind and the member it reads) is in devtools_fields.h, so
+// adding a property is one row here and one row there.
 struct PropertyDescriptor {
     ElementField field;
     const char* label;
@@ -112,10 +111,9 @@ core::Transition controlTransition() {
     return core::Transition::make(0.16f, core::Ease::OutCubic);
 }
 
-// The runtime hands every editable value over as the field table it was built from
-// (core/tooling/model.h), so the area reads a field it added without a switch of its own:
-// a row knows which kind it shows, and the value is already in that kind. The three
-// readers are here so a row reads like the kind it is rather than like the union.
+// A row reads a value it added without a switch of its own: the field table
+// (devtools_fields.h) already carries the kind, and the three readers are here so a row
+// reads like the kind it is rather than like the union.
 float propertyNumber(const ElementValues& values, ElementField field) {
     return values.field(field).number;
 }

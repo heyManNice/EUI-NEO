@@ -6,13 +6,12 @@
 #include "core/render/primitive.h"
 #include "core/tooling/pass.h"
 
-// The box model preview a tool draws over the element it points at.
+// The box model preview the panel draws over the element it points at.
 //
-// Nothing here is core: the core resolves the geometry of the marked element and hands it
-// over inside the page render pass (core/tooling/pass.h), and this file decides what that
-// geometry looks like as pixels — one translucent fill per box model region, the hues the
-// browsers use for them, and how the regions are cut so no colour blends twice. Moving
-// this out of the core is what keeps a palette and a preview drawing out of the runtime.
+// The core resolves the geometry of the marked element and hands it over inside the page
+// render pass (core/tooling/pass.h). What that geometry looks like as pixels — one
+// translucent fill per box model region, the hues the browsers use for them, and how the
+// regions are cut so no colour blends twice — is a display decision and lives here.
 
 namespace modules::devtools {
 

@@ -24,9 +24,7 @@ void detachDevtoolsHost();
 //
 // It is the only part of the panel that talks to the framework, and it does so by hand:
 // the frame and the windows come from the function slots in `eui/detail/overlay_hooks.h`,
-// and everything it reads or writes on the page it does straight on the page Runtime. The
-// panel's own data flow (what it wants copied, and when) lives here too, so the framework
-// keeps no state for a tool it does not know about.
+// and everything it reads or writes on the page it does straight on the page Runtime.
 class DevtoolsHost {
 public:
     // One field edit the panel asked for. The value carries the kind it holds, so the host
@@ -71,10 +69,10 @@ public:
     // pass: the geometry is already resolved in `pass`.
     void renderPageOverlay(const core::dsl::runtime::RenderPassContext& pass);
     void releaseGraphicsResources();
-    // Shuts the panel's own runtime down and forgets the panel state: what a run left behind
-    // does not reach the next one in the same process. It is run by the app layer's shutdown
-    // path, while the device is still current — the preview primitive is released for real
-    // there; a session torn down after the device is gone only drops the handle.
+    // Shuts the panel's own runtime down and forgets the panel state, so what a run left
+    // behind does not reach the next one in the same process. The app layer runs this while
+    // its device is still current; a session torn down later only drops the preview handle,
+    // because the device it was created with is gone.
     void shutdown();
 
     // ---- the panel's side: state the panel widget layer drives and reads ----
@@ -116,10 +114,10 @@ public:
 
 private:
     // Everything the panel knows about the page it is attached to, and everything it wrote
-    // on it. `attach` creates one and `detach` throws it away whole, so a second page — a
-    // restarted app, a second window — can never inherit a patch, a copied snapshot or a
-    // picked element that names something the new page does not have. What the user chose
-    // for the panel itself (dock, size, tab, scroll offsets) lives outside this and stays.
+    // on it. `attach` creates one and `detach` throws it away whole: a patch, a copied
+    // snapshot or a picked element that names something the previous page had must not reach
+    // a page that does not have it. What the user chose for the panel itself (dock, size,
+    // tab, scroll offsets) lives outside this and stays.
     struct PageSession {
         core::dsl::Runtime* page = nullptr;
         app::detail::OverlayWindows windows;

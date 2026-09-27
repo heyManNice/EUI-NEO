@@ -4,7 +4,6 @@
 #include "modules/devtools/devtools_fields.h"
 #include "modules/devtools/devtools_tree.h"
 #include "core/dsl.h"
-#include "core/tooling/model.h"
 
 #include <functional>
 #include <string>
@@ -88,10 +87,9 @@ struct DevtoolsUiState {
 // fields it handles and leaves the rest empty, which turns the control that would
 // raise an empty command into a control that does nothing.
 //
-// The commands are grouped by the part of the panel that raises them, and a host
-// assigns every field by name instead of by position in one long list: a command that
-// is added, renamed or moved then shows up as a compile error at the call site, and
-// never as a callback wired to the neighbouring control.
+// Each field is assigned by name rather than by position, so a command that is renamed,
+// added or moved fails to compile at the call site instead of silently wiring the
+// neighbouring control.
 struct DevtoolsUiActions {
     // The panel itself: its tabs, where it is docked, and closing it.
     struct Shell {

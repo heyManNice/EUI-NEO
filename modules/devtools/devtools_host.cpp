@@ -30,22 +30,19 @@ bool isHotkey(const core::KeyEvent& key) {
 
 namespace {
 
-// The panel host lives for the whole process, and deliberately outlives its own static
-// destruction: the hooks point at it, and the session that owns those hooks is a file
-// scope object in the application, so it is destroyed *after* this object would have been —
-// which is enough for "remove the hooks I installed" to reach into freed storage. One
-// leaked object at exit buys an ordering the application cannot get wrong. What the host
-// keeps of a run — the panel's runtime, its state, its preview primitive — is released by
-// `shutdown()` when the session ends, not by this object going away.
+// The panel host lives for the whole process and is deliberately never destroyed: the hooks
+// point at it, while the session that owns them is a file scope object in the application and
+// is therefore destroyed *after* it. One leaked object at exit is what keeps that ordering
+// from writing into freed storage. What belongs to one run — the panel runtime, its state, the
+// preview primitive — is released by `shutdown()`, not by this object going away.
 DevtoolsHost& devtoolsHost() {
     static DevtoolsHost* host = new DevtoolsHost();
     return *host;
 }
 
-// The panel is one place in the app loop, so there is one owner. A second live session is
-// an application mistake: a debug build stops on it, and the session is refused the
-// panel rather than left sharing it with the first — which keeps the first one working
-// exactly as it was.
+// The panel is one slot in the app loop, so it has one owner. A second live session is an
+// application mistake: the debug build stops on it, and the session is handed no panel rather
+// than left to share the first one's.
 int liveSessions = 0;
 
 } // namespace
@@ -58,15 +55,15 @@ bool attachDevtoolsHost() {
     ++liveSessions;
     // The framework's side of the panel: the app loop asks these, and the panel answers.
     // Everything the panel reads and writes it does on the page runtime it is handed in
-    // `attach`, so nothing here is stored in the framework.
+    // `attach`.
     static app::detail::OverlayHooks hooks = [] {
         app::detail::OverlayHooks value;
         value.attach = [](core::dsl::Runtime& page, const app::detail::OverlayWindows& windows) {
             devtoolsHost().attach(&page, windows);
         };
-        // The app is shutting the panel's page down: take the panel off it, and shut the
-        // panel's own runtime down with it. This is the one place that runs while the device
-        // is still current, which is what makes the teardown complete rather than partial.
+        // The app is shutting its page down: take the panel off it and shut the panel's own
+        // runtime down with it. This is the one teardown that runs while the device is still
+        // current, which is why the preview primitive is released for real here.
         value.detach = [] {
             devtoolsHost().detach();
             devtoolsHost().shutdown();
@@ -92,18 +89,18 @@ bool attachDevtoolsHost() {
 }
 
 void detachDevtoolsHost() {
-    // Leaving is both halves of what attaching did: the app loop stops asking the panel, and
-    // the page stops calling it. The second half is the one an application cannot be asked
-    // to get right, so the session does it instead of leaving a panel wired to a page it no
-    // longer belongs to.
+    // Leaving undoes both halves of attaching: the app loop stops asking the panel, and the
+    // page stops calling it. The second half is the one an application cannot be asked to
+    // get right, so it happens here.
     app::detail::setOverlayHooks(nullptr);
     devtoolsHost().detach();
     --liveSessions;
 }
 
 void DevtoolsHost::attach(core::dsl::Runtime* page, const app::detail::OverlayWindows& windows) {
-    // A page arrives, and the one before it — a re-created runtime, a second window — is let
-    // go first, hooks and all: a page the panel no longer inspects must not keep calling it.
+    // A new page is attached, and the previous one is let go first, hooks and all: a page the
+    // panel no longer inspects must not keep calling it. That page has to be alive — a page is
+    // detached before it is destroyed, which is the order the app layer keeps.
     unhookPage();
     session_ = PageSession{};
     session_.page = page;
@@ -150,15 +147,13 @@ void DevtoolsHost::unhookPage() {
 }
 
 // The selection, the hover and the expansion all name elements of the page that just went
-// away, so the panel forgets which ones it was looking at. What the user chose for the
-// panel itself — the dock, its size, the tab, the scroll offsets — is not page state and
-// stays where it is.
+// away, so the panel forgets which ones it was looking at; what the user chose for the panel
+// itself (dock, size, tab, scroll offsets) is not page state and stays.
 //
-// The panel's state lives in the panel's runtime and is reached through the last compose,
-// so a panel that has not composed yet has no state to forget (it was never shown) and one
-// whose state is unreachable keeps a selection that names an element the next page does not
-// have — which reads as "nothing selected" in the area that shows it. Clearing later, at the
-// next compose, would be worse: it would throw away what the user did in between.
+// The state is reached through the last compose, so a panel that never composed has none to
+// forget, and a panel whose state is unreachable keeps a selection the next page does not
+// have — which the area that shows it reads as "nothing selected". The clearing is not
+// deferred to the next compose: it would then throw away what the user did in between.
 void DevtoolsHost::forgetPageSelection() {
     composeRequested_ = true;
     if (panelState_ == nullptr) {
