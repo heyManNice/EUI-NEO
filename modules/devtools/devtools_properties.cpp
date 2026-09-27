@@ -288,7 +288,7 @@ void composeRevertButton(core::dsl::Ui& ui, const std::string& id, const std::st
         .color(theme.accent)
         .horizontalAlign(core::HorizontalAlign::Center)
         .verticalAlign(core::VerticalAlign::Center)
-        .onClick([clear = actions.clearElementProperty, elementId, property] {
+        .onClick([clear = actions.properties.clearProperty, elementId, property] {
             if (clear) {
                 clear(elementId, property);
             }
@@ -316,7 +316,7 @@ void composeColorSwatch(core::dsl::Ui& ui, const std::string& id, const std::str
                 .animate(core::AnimProperty::Color | core::AnimProperty::Border)
                 .build();
         })
-        .onClick([toggle = actions.togglePropertyColorEditor, property, open] {
+        .onClick([toggle = actions.properties.toggleColorEditor, property, open] {
             if (toggle) {
                 toggle(property, !open);
             }
@@ -364,8 +364,8 @@ void composePropertyRow(core::dsl::Ui& ui,
         return;
     }
     if (row.kind == PropertyRowKind::Summary) {
-        const std::function<void()> copy = row.copyable && actions.copyElementId
-            ? std::function<void()>([copy = actions.copyElementId, elementId] { copy(elementId); })
+        const std::function<void()> copy = row.copyable && actions.properties.copyElementId
+            ? std::function<void()>([copy = actions.properties.copyElementId, elementId] { copy(elementId); })
             : std::function<void()>{};
         ui.text(id + ".value")
             .width(core::SizeValue::fill())
@@ -395,7 +395,7 @@ void composePropertyRow(core::dsl::Ui& ui,
             .size(std::max(24.0f, editorWidth), theme.elementRowHeight)
             .value(channelValue)
             .theme(controlTheme())
-            .onChange([set = actions.setElementPropertyColor, elementId, property = row.property,
+            .onChange([set = actions.properties.setColor, elementId, property = row.property,
                        channel = row.channel, current](float normalized) {
                 if (!set) {
                     return;
@@ -451,7 +451,7 @@ void composePropertyRow(core::dsl::Ui& ui,
             .checked(row.value == "on")
             .trackSize(theme.propertySwitchTrackWidth, theme.propertySwitchTrackHeight)
             .theme(controlTheme())
-            .onChange([set = actions.setElementPropertyFlag, elementId, property = row.property](bool value) {
+            .onChange([set = actions.properties.setFlag, elementId, property = row.property](bool value) {
                 if (set) {
                     set(elementId, property, value);
                 }
@@ -472,7 +472,7 @@ void composePropertyRow(core::dsl::Ui& ui,
             .size(std::max(24.0f, editorWidth), theme.elementRowHeight)
             .value(range > 0.0f ? (current - minimum) / range : 0.0f)
             .theme(controlTheme())
-            .onChange([set = actions.setElementPropertyNumber, elementId, property = row.property, minimum,
+            .onChange([set = actions.properties.setNumber, elementId, property = row.property, minimum,
                        range](float normalized) {
                 if (set) {
                     set(elementId, property, minimum + normalized * range);
@@ -528,7 +528,7 @@ void composePropertyFooter(core::dsl::Ui& ui,
         .color(theme.accent)
         .horizontalAlign(core::HorizontalAlign::Center)
         .verticalAlign(core::VerticalAlign::Center)
-        .onClick([clear = actions.clearElementProperties] {
+        .onClick([clear = actions.properties.clearProperties] {
             if (clear) {
                 clear();
             }
@@ -600,7 +600,7 @@ void composeElementProperties(core::dsl::Ui& ui,
                 .itemCount(static_cast<std::int64_t>(rows.size()))
                 .rowHeight(theme.elementRowHeight)
                 .offset(scrollOffset)
-                .onChange(actions.setPropertiesScrollOffset)
+                .onChange(actions.properties.setScrollOffset)
                 .row([&](core::dsl::Ui& rowUi, const std::string& rowId, std::int64_t index, float width,
                          float height) {
                     (void)height;

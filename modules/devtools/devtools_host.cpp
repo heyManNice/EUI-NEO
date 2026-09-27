@@ -508,143 +508,169 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
     // Panel state lives in the panel Runtime, so it is torn down with it and the
     // host never keeps a second copy of the same truth. Only one of the two panel
     // runtimes composes at a time, so the host tracks whichever one is active.
-    DevtoolsPanelState& state = ui.state<DevtoolsPanelState>("devtools.panel");
-    panelState_ = &state;
-    composeDevtoolsUi(ui, {width, height, panel, detached, dockPosition_, &state, &performanceSnapshot_, &elementTree_,
-                           &properties_, propertyOverrideCount_}, {
-        [this](DevtoolsTab tab) { selectTab(tab); },
-        [this](DockPosition position) { selectDockPosition(position); },
-        [this, &state] {
-            state.moreMenuOpen = !state.moreMenuOpen;
-            requestCompose();
-        },
-        [this, &state] {
-            if (!state.moreMenuOpen) {
-                return;
-            }
-            state.moreMenuOpen = false;
-            requestCompose();
-        },
-        [this] { close(); },
-        [this, &state](float offset) {
-            state.performanceScrollOffset = offset;
-            requestCompose();
-        },
-        [this, &state](float offset) {
-            state.elementsScrollOffset = offset;
-            requestCompose();
-        },
-        [this, &state](const std::string& id) {
-            if (state.selectedElement == id) {
-                return;
-            }
-            state.selectedElement = id;
-            state.revealedSelection.clear();
-            requestCompose();
-        },
-        [&state](const std::string& id, bool hovered) {
-            // Leaving a row only clears the preview if that row still owns it, so
-            // moving between rows does not depend on callback order.
-            if (hovered) {
-                state.hoveredElement = id;
-                return;
-            }
-            if (state.hoveredElement == id) {
-                state.hoveredElement.clear();
-            }
-        },
-        [this] { setPickingElement(!pickingElement()); },
-        [this, &state](const std::string& id) {
-            const auto expanded = std::find(state.expandedElements.begin(), state.expandedElements.end(), id);
-            if (expanded == state.expandedElements.end()) {
-                state.expandedElements.push_back(id);
-            } else {
-                state.expandedElements.erase(expanded);
-            }
-            requestCompose();
-        },
-        [this, &state](const std::string& id) {
-            // The tree has shown the selection; from now on it is the user's to move.
-            if (state.revealedSelection != id) {
-                state.revealedSelection = id;
-            }
-        },
-        [](const std::string& id) {
-            core::window::setClipboardText(id);
-        },
-        [this, &state](float offset) {
-            state.propertiesScrollOffset = offset;
-            requestCompose();
-        },
-        [this, &state](float height) {
-            if (state.propertiesHeight == height) {
-                return;
-            }
-            state.propertiesHeight = height;
-            requestCompose();
-        },
-        [this, &state](float startHeight, float pixelScale) {
-            state.propertiesResizeStartHeight = startHeight;
-            state.propertiesResizeScale = pixelScale > 0.0f ? pixelScale : 1.0f;
-            // The divider measures against what the press recorded, so the panel has
-            // to compose again before the drag moves: its callbacks read the state
-            // through the composition, not through the runtime that called them.
-            requestCompose();
-        },
-        [&state] {
-            // A finished drag leaves no origin behind: the next press measures from
-            // the height the panel is at then, not from an earlier drag's start.
-            state.propertiesResizeStartHeight = 0.0f;
-            state.propertiesResizeScale = 1.0f;
-        },
-        [this, &state](core::dsl::runtime::DebugPropertyId property, bool open) {
-            if (state.colorEditorOpen && state.colorEditorProperty == property && open) {
-                return;
-            }
-            state.colorEditorOpen = open;
-            state.colorEditorProperty = property;
-            requestCompose();
-        },
-        [this](const std::string& id, core::dsl::runtime::DebugPropertyId property, float value) {
-            ElementPropertyEdit edit;
-            edit.id = id;
-            edit.property = property;
-            edit.number = value;
-            queueElementPropertyEdit(edit);
-        },
-        [this](const std::string& id, core::dsl::runtime::DebugPropertyId property, const core::Color& value) {
-            ElementPropertyEdit edit;
-            edit.id = id;
-            edit.property = property;
-            edit.color = value;
-            queueElementPropertyEdit(edit);
-        },
-        [this](const std::string& id, core::dsl::runtime::DebugPropertyId property, bool value) {
-            ElementPropertyEdit edit;
-            edit.id = id;
-            edit.property = property;
-            edit.flag = value;
-            queueElementPropertyEdit(edit);
-        },
-        [this](const std::string& id, core::dsl::runtime::DebugPropertyId property) {
-            ElementPropertyEdit edit;
-            edit.id = id;
-            edit.property = property;
-            edit.clear = true;
-            queueElementPropertyEdit(edit);
-            // Putting a value back means the element has to be built from the app's
-            // code again: the override was written onto the composed element.
-            core::platform::requestUiUpdate();
-        },
-        [this] {
-            // An empty id with `clear` puts every element on the page back, which is
-            // what the property footer offers once a debug session changed something.
-            ElementPropertyEdit edit;
-            edit.clear = true;
-            queueElementPropertyEdit(edit);
-            core::platform::requestUiUpdate();
+    DevtoolsPanelState& panelState = ui.state<DevtoolsPanelState>("devtools.panel");
+    panelState_ = &panelState;
+
+    DevtoolsUiState state;
+    state.width = width;
+    state.height = height;
+    state.panel = panel;
+    state.detached = detached;
+    state.dockPosition = dockPosition_;
+    state.panelState = &panelState;
+    state.performance = &performanceSnapshot_;
+    state.elementTree = &elementTree_;
+    state.properties = &properties_;
+    state.propertyOverrideCount = propertyOverrideCount_;
+    composeDevtoolsUi(ui, state, buildActions(panelState));
+}
+
+// Every command the panel can raise, wired by name. The panel writes panel state or
+// queues an edit for the app layer; none of these handlers touch the page, which is
+// what keeps the panel's own truth in one place.
+DevtoolsUiActions DevtoolsHost::buildActions(DevtoolsPanelState& state) {
+    DevtoolsUiActions actions;
+
+    actions.shell.selectTab = [this](DevtoolsTab tab) { selectTab(tab); };
+    actions.shell.selectDockPosition = [this](DockPosition position) { selectDockPosition(position); };
+    actions.shell.toggleMoreMenu = [this, &state] {
+        state.moreMenuOpen = !state.moreMenuOpen;
+        requestCompose();
+    };
+    actions.shell.dismissMoreMenu = [this, &state] {
+        if (!state.moreMenuOpen) {
+            return;
         }
-    });
+        state.moreMenuOpen = false;
+        requestCompose();
+    };
+    actions.shell.close = [this] { close(); };
+
+    actions.performance.setScrollOffset = [this, &state](float offset) {
+        state.performanceScrollOffset = offset;
+        requestCompose();
+    };
+
+    actions.tree.setScrollOffset = [this, &state](float offset) {
+        state.elementsScrollOffset = offset;
+        requestCompose();
+    };
+    actions.tree.selectElement = [this, &state](const std::string& id) {
+        if (state.selectedElement == id) {
+            return;
+        }
+        state.selectedElement = id;
+        state.revealedSelection.clear();
+        requestCompose();
+    };
+    actions.tree.hoverElement = [&state](const std::string& id, bool hovered) {
+        // Leaving a row only clears the preview if that row still owns it, so
+        // moving between rows does not depend on callback order.
+        if (hovered) {
+            state.hoveredElement = id;
+            return;
+        }
+        if (state.hoveredElement == id) {
+            state.hoveredElement.clear();
+        }
+    };
+    actions.tree.toggleElementPicker = [this] { setPickingElement(!pickingElement()); };
+    actions.tree.toggleElementCollapsed = [this, &state](const std::string& id) {
+        const auto expanded = std::find(state.expandedElements.begin(), state.expandedElements.end(), id);
+        if (expanded == state.expandedElements.end()) {
+            state.expandedElements.push_back(id);
+        } else {
+            state.expandedElements.erase(expanded);
+        }
+        requestCompose();
+    };
+    actions.tree.setRevealedSelection = [&state](const std::string& id) {
+        // The tree has shown the selection; from now on it is the user's to move.
+        if (state.revealedSelection != id) {
+            state.revealedSelection = id;
+        }
+    };
+
+    actions.properties.copyElementId = [](const std::string& id) {
+        core::window::setClipboardText(id);
+    };
+    actions.properties.setScrollOffset = [this, &state](float offset) {
+        state.propertiesScrollOffset = offset;
+        requestCompose();
+    };
+    actions.properties.setHeight = [this, &state](float height) {
+        if (state.propertiesHeight == height) {
+            return;
+        }
+        state.propertiesHeight = height;
+        requestCompose();
+    };
+    actions.properties.beginResize = [this, &state](float startHeight, float pixelScale) {
+        state.propertiesResizeStartHeight = startHeight;
+        state.propertiesResizeScale = pixelScale > 0.0f ? pixelScale : 1.0f;
+        // The divider measures against what the press recorded, so the panel has
+        // to compose again before the drag moves: its callbacks read the state
+        // through the composition, not through the runtime that called them.
+        requestCompose();
+    };
+    actions.properties.endResize = [&state] {
+        // A finished drag leaves no origin behind: the next press measures from
+        // the height the panel is at then, not from an earlier drag's start.
+        state.propertiesResizeStartHeight = 0.0f;
+        state.propertiesResizeScale = 1.0f;
+    };
+    actions.properties.toggleColorEditor = [this, &state](core::dsl::runtime::DebugPropertyId property, bool open) {
+        if (state.colorEditorOpen && state.colorEditorProperty == property && open) {
+            return;
+        }
+        state.colorEditorOpen = open;
+        state.colorEditorProperty = property;
+        requestCompose();
+    };
+    actions.properties.setNumber = [this](const std::string& id, core::dsl::runtime::DebugPropertyId property,
+                                          float value) {
+        ElementPropertyEdit edit;
+        edit.id = id;
+        edit.property = property;
+        edit.number = value;
+        queueElementPropertyEdit(edit);
+    };
+    actions.properties.setColor = [this](const std::string& id, core::dsl::runtime::DebugPropertyId property,
+                                         const core::Color& value) {
+        ElementPropertyEdit edit;
+        edit.id = id;
+        edit.property = property;
+        edit.color = value;
+        queueElementPropertyEdit(edit);
+    };
+    actions.properties.setFlag = [this](const std::string& id, core::dsl::runtime::DebugPropertyId property,
+                                        bool value) {
+        ElementPropertyEdit edit;
+        edit.id = id;
+        edit.property = property;
+        edit.flag = value;
+        queueElementPropertyEdit(edit);
+    };
+    actions.properties.clearProperty = [this](const std::string& id, core::dsl::runtime::DebugPropertyId property) {
+        ElementPropertyEdit edit;
+        edit.id = id;
+        edit.property = property;
+        edit.clear = true;
+        queueElementPropertyEdit(edit);
+        // Putting a value back means the element has to be built from the app's
+        // code again: the override was written onto the composed element.
+        core::platform::requestUiUpdate();
+    };
+    actions.properties.clearProperties = [this] {
+        // An empty id with `clear` puts every element on the page back, which is
+        // what the property footer offers once a debug session changed something.
+        ElementPropertyEdit edit;
+        edit.clear = true;
+        queueElementPropertyEdit(edit);
+        core::platform::requestUiUpdate();
+    };
+
+    return actions;
 }
 
 void DevtoolsHost::composeDetached(core::dsl::Ui& ui, const core::dsl::Screen& screen) {

@@ -82,39 +82,68 @@ struct DevtoolsUiState {
     std::size_t propertyOverrideCount = 0;
 };
 
-// Commands the panel can request. None of them own state or draw.
+// Commands the panel can request. None of them own state or draw. A host fills the
+// fields it handles and leaves the rest empty, which turns the control that would
+// raise an empty command into a control that does nothing.
+//
+// The commands are grouped by the part of the panel that raises them, and a host
+// assigns every field by name instead of by position in one long list: a command that
+// is added, renamed or moved then shows up as a compile error at the call site, and
+// never as a callback wired to the neighbouring control.
 struct DevtoolsUiActions {
-    std::function<void(DevtoolsTab)> selectTab;
-    std::function<void(DockPosition)> selectDockPosition;
-    std::function<void()> toggleMoreMenu;
-    std::function<void()> dismissMoreMenu;
-    std::function<void()> close;
-    std::function<void(float)> setPerformanceScrollOffset;
-    std::function<void(float)> setElementsScrollOffset;
-    std::function<void(const std::string&)> selectElement;
-    std::function<void(const std::string&, bool)> hoverElement;
-    // Turns picking on or off. While it is on the panel owns the pointer and the
-    // element it picks becomes the selection, which the tree then keeps in view.
-    std::function<void()> toggleElementPicker;
-    std::function<void(const std::string&)> toggleElementCollapsed;
-    std::function<void(const std::string&)> setRevealedSelection;
-    std::function<void(const std::string&)> copyElementId;
-    std::function<void(float)> setPropertiesScrollOffset;
-    std::function<void(float)> setPropertiesHeight;
-    // Starts a divider drag: the height it works from and the framebuffer pixels per
-    // logical unit it converts pointer deltas with, both measured on the pressed
-    // element. Pointer events arrive in framebuffer pixels while the panel composes
-    // in logical units, so the ratio is what keeps a drag on the pointer instead of
-    // ahead of it. The end of a drag drops both, so the next one starts from the
-    // height the panel is at then instead of the one an earlier drag left behind.
-    std::function<void(float, float)> beginPropertiesResize;
-    std::function<void()> endPropertiesResize;
-    std::function<void(core::dsl::runtime::DebugPropertyId, bool)> togglePropertyColorEditor;
-    std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId, float)> setElementPropertyNumber;
-    std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId, const core::Color&)> setElementPropertyColor;
-    std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId, bool)> setElementPropertyFlag;
-    std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId)> clearElementProperty;
-    std::function<void()> clearElementProperties;
+    // The panel itself: its tabs, where it is docked, and closing it.
+    struct Shell {
+        std::function<void(DevtoolsTab)> selectTab;
+        std::function<void(DockPosition)> selectDockPosition;
+        std::function<void()> toggleMoreMenu;
+        std::function<void()> dismissMoreMenu;
+        std::function<void()> close;
+    };
+
+    // The performance page.
+    struct Performance {
+        std::function<void(float)> setScrollOffset;
+    };
+
+    // The element tree: what the user selects, opens and previews.
+    struct Tree {
+        std::function<void(float)> setScrollOffset;
+        std::function<void(const std::string&)> selectElement;
+        std::function<void(const std::string&, bool)> hoverElement;
+        // Turns picking on or off. While it is on the panel owns the pointer and the
+        // element it picks becomes the selection, which the tree then keeps in view.
+        std::function<void()> toggleElementPicker;
+        std::function<void(const std::string&)> toggleElementCollapsed;
+        // The tree has shown the selection, so revealing it again is no longer needed.
+        std::function<void(const std::string&)> setRevealedSelection;
+    };
+
+    // The property area: which element it shows, how tall it is, and the edits the
+    // user makes on it.
+    struct Properties {
+        std::function<void(const std::string&)> copyElementId;
+        std::function<void(float)> setScrollOffset;
+        std::function<void(float)> setHeight;
+        // Starts a divider drag: the height it works from and the framebuffer pixels per
+        // logical unit it converts pointer deltas with, both measured on the pressed
+        // element. Pointer events arrive in framebuffer pixels while the panel composes
+        // in logical units, so the ratio is what keeps a drag on the pointer instead of
+        // ahead of it. The end of a drag drops both, so the next one starts from the
+        // height the panel is at then instead of the one an earlier drag left behind.
+        std::function<void(float, float)> beginResize;
+        std::function<void()> endResize;
+        std::function<void(core::dsl::runtime::DebugPropertyId, bool)> toggleColorEditor;
+        std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId, float)> setNumber;
+        std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId, const core::Color&)> setColor;
+        std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId, bool)> setFlag;
+        std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId)> clearProperty;
+        std::function<void()> clearProperties;
+    };
+
+    Shell shell;
+    Performance performance;
+    Tree tree;
+    Properties properties;
 };
 
 void composeDevtoolsUi(core::dsl::Ui& ui, const DevtoolsUiState& state, const DevtoolsUiActions& actions);

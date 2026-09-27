@@ -109,8 +109,8 @@ void revealSelection(const ElementTreeSnapshot& tree,
                 continue;
             }
             if (!isExpanded(expanded, candidate.id)) {
-                if (actions.toggleElementCollapsed) {
-                    actions.toggleElementCollapsed(candidate.id);
+                if (actions.tree.toggleElementCollapsed) {
+                    actions.tree.toggleElementCollapsed(candidate.id);
                 }
                 expanded.push_back(candidate.id);
             }
@@ -120,7 +120,7 @@ void revealSelection(const ElementTreeSnapshot& tree,
 
     // The row can only be off screen once the ancestors above it are open, so the
     // offset is measured against the rows the tree will have when they are.
-    if (listHeight > 0.0f && actions.setElementsScrollOffset) {
+    if (listHeight > 0.0f && actions.tree.setScrollOffset) {
         const std::vector<ElementRow> rows = visibleElementRows(tree, expanded);
         const float rowHeight = devtoolsTheme().elementRowHeight;
         for (std::size_t row = 0; row < rows.size(); ++row) {
@@ -130,15 +130,15 @@ void revealSelection(const ElementTreeSnapshot& tree,
             const float rowTop = static_cast<float>(row) * rowHeight;
             const float offset = state.panelState->elementsScrollOffset;
             if (rowTop < offset) {
-                actions.setElementsScrollOffset(rowTop);
+                actions.tree.setScrollOffset(rowTop);
             } else if (rowTop + rowHeight > offset + listHeight) {
-                actions.setElementsScrollOffset(std::max(0.0f, rowTop + rowHeight - listHeight));
+                actions.tree.setScrollOffset(std::max(0.0f, rowTop + rowHeight - listHeight));
             }
             break;
         }
     }
-    if (actions.setRevealedSelection) {
-        actions.setRevealedSelection(selected);
+    if (actions.tree.setRevealedSelection) {
+        actions.tree.setRevealedSelection(selected);
     }
 }
 
@@ -150,16 +150,16 @@ void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRo
     // The list already owns `id` (the row slot), so the row content lives in its
     // own subtree instead of reusing that element.
     const std::string base = id + ".row";
-    const std::function<void()> select = actions.selectElement
-        ? std::function<void()>([select = actions.selectElement, nodeId] { select(nodeId); })
+    const std::function<void()> select = actions.tree.selectElement
+        ? std::function<void()>([select = actions.tree.selectElement, nodeId] { select(nodeId); })
         : std::function<void()>{};
-    const std::function<void()> toggle = actions.toggleElementCollapsed
-        ? std::function<void()>([toggle = actions.toggleElementCollapsed, nodeId] { toggle(nodeId); })
+    const std::function<void()> toggle = actions.tree.toggleElementCollapsed
+        ? std::function<void()>([toggle = actions.tree.toggleElementCollapsed, nodeId] { toggle(nodeId); })
         : std::function<void()>{};
     // Hovering a row previews that element in the page; leaving it takes the
     // preview back. The row itself is still selected by a click.
-    const std::function<void(bool)> hover = actions.hoverElement
-        ? std::function<void(bool)>([hover = actions.hoverElement, nodeId](bool entered) {
+    const std::function<void(bool)> hover = actions.tree.hoverElement
+        ? std::function<void(bool)>([hover = actions.tree.hoverElement, nodeId](bool entered) {
               hover(nodeId, entered);
           })
         : std::function<void(bool)>{};
@@ -241,6 +241,21 @@ void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRo
         .build();
 }
 
+// Where the divider and the property area go, and the drag limits. They all describe
+// one area, so they travel together instead of as a run of floats a call site can hand
+// over in the wrong order.
+struct PropertyAreaGeometry {
+    float x = 0.0f;
+    float y = 0.0f;
+    float width = 0.0f;
+    float height = 0.0f;
+    float currentHeight = 0.0f;
+    float dragStartHeight = 0.0f;
+    float pixelScale = 1.0f;
+    float minimumHeight = 0.0f;
+    float maximumHeight = 0.0f;
+};
+
 // The divider on the top edge of the property area: dragging it up gives the area
 // more room and dragging it down takes room away, within what the tree can spare. The
 // press records the height the drag works from, so a drag measures the pointer against
@@ -256,37 +271,34 @@ void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRo
 // ever reaching a handler.
 void composeElementPropertyDivider(core::dsl::Ui& ui,
                                    const std::string& id,
-                                   float x,
-                                   float y,
-                                   float width,
-                                   float height,
-                                   float currentHeight,
-                                   float dragStartHeight,
-                                   float pixelScale,
-                                   float minimumHeight,
-                                   float maximumHeight,
+                                   const PropertyAreaGeometry& geometry,
                                    const DevtoolsUiActions& actions) {
     const DevtoolsTheme& theme = devtoolsTheme();
+    const float x = geometry.x;
+    const float y = geometry.y;
+    const float width = geometry.width;
+    const float height = geometry.height;
     ui.rect(id + ".body")
         .position(x, y)
         .size(width, height)
         .states(theme.transparent, theme.propertiesHandleHover, theme.propertiesHandleHover)
         .instantStates()
-        .onPress([begin = actions.beginPropertiesResize, liveHeight = currentHeight,
-                  composedWidth = width](const core::PointerEvent&, const core::Rect& bounds) {
+        .onPress([begin = actions.properties.beginResize, liveHeight = geometry.currentHeight,
+                  composedWidth = geometry.width](const core::PointerEvent&, const core::Rect& bounds) {
             if (begin) {
                 // The bounds come back in framebuffer pixels, so their width against
                 // the width the strip was composed with is the ratio to divide by.
                 begin(liveHeight, static_cast<float>(bounds.width) / std::max(0.001f, composedWidth));
             }
         })
-        .onRelease([end = actions.endPropertiesResize](const core::PointerEvent&, const core::Rect&) {
+        .onRelease([end = actions.properties.endResize](const core::PointerEvent&, const core::Rect&) {
             if (end) {
                 end();
             }
         })
-        .onDrag([resize = actions.setPropertiesHeight, dragStartHeight, pixelScale, minimumHeight,
-                 maximumHeight](const core::dsl::DragEvent& event) {
+        .onDrag([resize = actions.properties.setHeight, dragStartHeight = geometry.dragStartHeight,
+                 pixelScale = geometry.pixelScale, minimumHeight = geometry.minimumHeight,
+                 maximumHeight = geometry.maximumHeight](const core::dsl::DragEvent& event) {
             if (!resize) {
                 return;
             }
@@ -382,7 +394,7 @@ void composeElementsTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const D
             .rowHeight(theme.elementRowHeight)
             .scrollbarGap(0.0f)
             .offset(scrollOffset)
-            .onChange(actions.setElementsScrollOffset)
+            .onChange(actions.tree.setScrollOffset)
             .row([&](core::dsl::Ui& rowUi, const std::string& rowId, std::int64_t index, float width, float height) {
                 if (index < 0 || index >= static_cast<std::int64_t>(rows.size())) {
                     return;
@@ -401,10 +413,17 @@ void composeElementsTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const D
             state.panelState != nullptr && state.panelState->propertiesResizeStartHeight > 0.0f
             ? state.panelState->propertiesResizeStartHeight
             : propertyHeight;
-        composeElementPropertyDivider(ui, "elements.properties.handle", state.panel.x, top + listHeight,
-                                      state.panel.width, handleHeight, propertyHeight, dragStartHeight,
-                                      state.panelState != nullptr ? state.panelState->propertiesResizeScale : 1.0f,
-                                      minimumHeight, maximumPropertyHeight, actions);
+        PropertyAreaGeometry divider;
+        divider.x = state.panel.x;
+        divider.y = top + listHeight;
+        divider.width = state.panel.width;
+        divider.height = handleHeight;
+        divider.currentHeight = propertyHeight;
+        divider.dragStartHeight = dragStartHeight;
+        divider.pixelScale = state.panelState != nullptr ? state.panelState->propertiesResizeScale : 1.0f;
+        divider.minimumHeight = minimumHeight;
+        divider.maximumHeight = maximumPropertyHeight;
+        composeElementPropertyDivider(ui, "elements.properties.handle", divider, actions);
         ElementPropertiesState properties;
         properties.properties = state.properties;
         properties.overrideCount = state.propertyOverrideCount;

@@ -136,7 +136,7 @@ void composePerformanceTab(core::dsl::Ui& ui, const DevtoolsUiState& state, cons
     components::scrollView(ui, "performance.scroll")
         .size(state.panel.width, contentHeight)
         .offset(scrollOffset)
-        .onChange(actions.setPerformanceScrollOffset)
+        .onChange(actions.performance.setScrollOffset)
         .content([&](core::dsl::Ui& contentUi, float contentWidth, float) {
             composePerformanceMetrics(contentUi, snapshot, contentWidth);
         })

@@ -210,7 +210,7 @@ void composeToolbar(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devto
     const DevtoolsTheme& theme = devtoolsTheme();
     const bool moreMenuOpen = state.panelState != nullptr && state.panelState->moreMenuOpen;
     const bool compact = state.panel.width < theme.compactWidth;
-    const std::function<void()> dismissMenu = moreMenuOpen ? actions.dismissMoreMenu : std::function<void()>{};
+    const std::function<void()> dismissMenu = moreMenuOpen ? actions.shell.dismissMoreMenu : std::function<void()>{};
     ui.stack("toolbar")
         .width(core::SizeValue::fill())
         .height(theme.toolbarHeight)
@@ -236,7 +236,7 @@ void composeToolbar(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devto
                                     state.panelState != nullptr && state.panelState->pickingElement;
                                 composeToolbarIcon(ui, "selectElement", theme.iconSelectElement,
                                                    picking ? theme.primaryText : theme.icon,
-                                                   actions.toggleElementPicker);
+                                                   actions.tree.toggleElementPicker);
                                 composeToolbarIcon(ui, "deviceViewport", theme.iconDeviceViewport, theme.icon, dismissMenu);
                             })
                             .build();
@@ -254,7 +254,7 @@ void composeToolbar(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devto
                                 ? state.panelState->activeTab : DevtoolsTab::Performance;
                             for (const TabEntry& entry : kTabs) {
                                 composeToolbarTab(ui, entry.id, entry.label, activeTab == entry.tab,
-                                                  [onSelect = actions.selectTab, tab = entry.tab] {
+                                                  [onSelect = actions.shell.selectTab, tab = entry.tab] {
                                                       onSelect(tab);
                                                   });
                             }
@@ -268,8 +268,8 @@ void composeToolbar(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devto
                             composeToolbarIcon(ui, "settings", theme.iconSettings, theme.icon, dismissMenu);
                             composeToolbarIcon(ui, "more", theme.iconMore,
                                                moreMenuOpen ? theme.primaryText : theme.icon,
-                                               actions.toggleMoreMenu);
-                            composeToolbarIcon(ui, "close", theme.iconClose, theme.icon, actions.close);
+                                               actions.shell.toggleMoreMenu);
+                            composeToolbarIcon(ui, "close", theme.iconClose, theme.icon, actions.shell.close);
                         })
                         .build();
                 })
@@ -320,7 +320,7 @@ void composeDevtoolsUi(core::dsl::Ui& ui, const DevtoolsUiState& state, const De
                         .ignoreLayout()
                         .color(theme.panelBackground)
                         .onClick(state.panelState != nullptr && state.panelState->moreMenuOpen
-                                     ? actions.dismissMoreMenu
+                                     ? actions.shell.dismissMoreMenu
                                      : std::function<void()>{})
                         .build();
                     if (!detached) {
@@ -339,13 +339,13 @@ void composeDevtoolsUi(core::dsl::Ui& ui, const DevtoolsUiState& state, const De
                     .position(panel.x, panel.y + theme.toolbarHeight)
                     .size(panel.width, std::max(0.0f, panel.height - theme.toolbarHeight))
                     .color(theme.dismissSurface)
-                    .onClick(actions.dismissMoreMenu)
+                    .onClick(actions.shell.dismissMoreMenu)
                     .build();
                 composeMoreMenu(ui,
                                 std::max(panel.x + theme.toolbarPadding,
                                          panel.x + panel.width - theme.menuWidth - 36.0f),
                                 panel.y + theme.toolbarHeight + 6.0f, state.dockPosition,
-                                actions.selectDockPosition);
+                                actions.shell.selectDockPosition);
             }
         })
         .build();
