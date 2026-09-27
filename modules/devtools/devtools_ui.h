@@ -2,7 +2,7 @@
 
 #include "core/app/performance_snapshot.h"
 #include "core/dsl.h"
-#include "core/runtime/runtime_inspector.h"
+#include "core/tooling/model.h"
 
 #include <functional>
 #include <string>

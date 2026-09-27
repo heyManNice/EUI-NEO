@@ -1,12 +1,13 @@
 #pragma once
 
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
 
 #include "core/app/performance_snapshot.h"
 #include "core/dsl.h"
 #include "core/input/input_types.h"
 #include "core/render/render_types.h"
-#include "core/runtime/runtime_inspector.h"
+#include "core/tooling/config.h"
+#include "core/tooling/model.h"
 #include "core/window/window_types.h"
 
 #include <functional>

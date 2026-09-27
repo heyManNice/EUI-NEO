@@ -281,7 +281,7 @@ inline std::vector<runtime::ElementSnapshot> Runtime::collectElementStructure() 
     return result;
 }
 
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
 inline runtime::ElementTreeSnapshot Runtime::elementTree(std::size_t maximumNodes) const {
     runtime::ElementTreeSnapshot snapshot;
     snapshot.revision = elementStructureRevision_;

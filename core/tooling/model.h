@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/tooling/config.h"
+
 #include "core/dsl.h"
 #include "core/runtime/runtime_geometry.h"
 
@@ -152,7 +154,7 @@ inline InspectionBand inspectionBand(const Rect& outer, const Rect& inner) {
     return band;
 }
 
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
 // A property a debug tool may edit on a live element. The runtime knows how to read
 // and write every one of them; which of them a tool shows, in what order and with
 // which editor is the tool's business (see modules/devtools).
@@ -400,7 +402,7 @@ inline void applyDebugOverride(Element& element, const DebugElementOverride& ove
 
 class InstanceStore;
 
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
 // Geometry of the inspection overlay for one mark. Both the panel (through
 // `Runtime::debugInspection`) and the renderer read this, so there is one
 // implementation of "where is that element now".

@@ -8,8 +8,8 @@
 #include "core/render/text.h"
 #include "core/runtime/runtime_geometry.h"
 
-#if defined(EUI_DEBUG_BUILD)
-#include "core/runtime/runtime_inspector.h"
+#if EUI_TOOLING_ENABLED
+#include "core/tooling/model.h"
 #endif
 
 #include <cstddef>
@@ -467,7 +467,7 @@ public:
         releasePrimitive(texts);
         releasePrimitive(images);
         releasePrimitive(shaderToys);
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
         if (debugOverlayPrimitiveInitialized && debugOverlayPrimitive) {
             debugOverlayPrimitive->destroy();
             debugOverlayPrimitiveInitialized = false;
@@ -505,7 +505,7 @@ public:
         frameTargets.clear();
         paintBounds.clear();
         retainedLayers.clear();
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
         debugOverlayPrimitive.reset();
         debugOverlayPrimitiveInitialized = false;
         hoveredMark = {};
@@ -530,7 +530,7 @@ public:
     std::unordered_map<std::string, PaintBoundsInstance> paintBounds;
     std::unordered_map<std::string, RetainedLayerInstance> retainedLayers;
 
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     // Debug tools draw transient overlays (element inspection) through one
     // primitive kept alive for the runtime, so they never allocate per frame.
     std::unique_ptr<RoundedRectPrimitive> debugOverlayPrimitive;

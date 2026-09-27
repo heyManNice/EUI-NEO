@@ -34,7 +34,7 @@ namespace app {
 namespace detail {
 
 inline void publishPerformanceSnapshot(const PerformanceSnapshot& snapshot) {
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     detail::OverlayHost* overlay = detail::overlayHost();
     if (overlay != nullptr) {
         overlay->setPerformanceSnapshot(snapshot);
@@ -59,7 +59,7 @@ struct DslAppState {
     bool iconApplied = false;
     float logicalWidth = 0.0f;
     float logicalHeight = 0.0f;
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     std::uint64_t elementTreeRevision = 0;
     double elementTreeRefreshTime = 0.0;
     std::string elementPropertiesId;
@@ -74,7 +74,7 @@ inline DslAppState& dslAppState() {
     return state;
 }
 
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
 // Frame-only changes (animation, scrolling, hover) refresh the published tree at
 // most this often. A structural change always refreshes immediately, so a viewer
 // reacts to the page it inspects without waiting.
@@ -440,7 +440,7 @@ void requestFullPaint() {
 bool initialize(core::window::Handle window) {
     const DslAppConfig& config = dslAppConfig();
     core::TextPrimitive::setDefaultFontFiles(config.textFontFileValue, config.iconFontFileValue);
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     detail::OverlayHost* overlay = detail::overlayHost();
     if (overlay != nullptr) {
         detail::dslRuntime().setInputFilter([overlay](std::vector<core::PointerEvent>& pointerEvents,
@@ -525,7 +525,7 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
     int contentX = 0;
     int contentWidth = windowWidth;
     int contentHeight = windowHeight;
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     detail::OverlayHost* overlay = detail::overlayHost();
     if (overlay != nullptr) {
         const core::Rect content = overlay->contentBounds();
@@ -580,7 +580,7 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
         changed = true;
     }
 
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     if (overlay != nullptr) {
         // One frame of the overlay, in the order the two sides depend on; see
         // driveOverlay for what that order is and why.
@@ -623,7 +623,7 @@ void render(int windowWidth, int windowHeight, float dpiScale) {
 }
 
 void releaseGraphicsResources() {
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     if (detail::OverlayHost* overlay = detail::overlayHost(); overlay != nullptr) {
         overlay->releaseGraphicsResources();
     }
@@ -634,7 +634,7 @@ void releaseGraphicsResources() {
 void shutdown() {
     core::async::shutdown();
     if (dslAppConfig().shutdownHandler) dslAppConfig().shutdownHandler();
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     if (detail::OverlayHost* overlay = detail::overlayHost(); overlay != nullptr) {
         overlay->shutdown();
     }

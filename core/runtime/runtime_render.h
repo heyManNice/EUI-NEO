@@ -49,7 +49,7 @@ private:
                                bool hasScissor,
                                const Rect& scissorRect);
 
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     // Draws the box model overlay for one mark: one translucent fill per region
     // (margin, border, padding, content) and no strokes.
     void renderInspection(core::render::RenderBackend& renderBackend,
@@ -206,7 +206,7 @@ inline void RuntimeRenderer::renderDirect(core::render::RenderBackend& renderBac
     for (const Element* root : roots) {
         renderElement(renderBackend, *root, windowWidth, windowHeight, dpiScale, identity, dirtyRect, hasScissor, scissor);
     }
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     // The hover preview overlay is drawn after the page, so page content (including
     // siblings painted later) never covers it. Its geometry already carries the
     // element's transform and the ancestor clips, so it stays where the element is.
@@ -955,7 +955,7 @@ inline bool RuntimeRenderer::renderRetainedElements(
     return true;
 }
 
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
 inline void RuntimeRenderer::renderInspection(core::render::RenderBackend& renderBackend,
                                               runtime::InspectionMark& mark,
                                               int windowWidth,

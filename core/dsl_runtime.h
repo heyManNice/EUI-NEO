@@ -15,8 +15,8 @@
 #include "core/runtime/runtime_state_bindings.h"
 #include "core/window/window_backend.h"
 
-#if defined(EUI_DEBUG_BUILD)
-#include "core/runtime/runtime_inspector.h"
+#if EUI_TOOLING_ENABLED
+#include "core/tooling/model.h"
 #endif
 
 #include <algorithm>
@@ -42,7 +42,7 @@ public:
         keyEventHandler_ = std::move(handler);
     }
 
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     void setInputFilter(std::function<void(std::vector<PointerEvent>&, ScrollEvent&)> filter) {
         inputFilter_ = std::move(filter);
     }
@@ -86,7 +86,7 @@ public:
 
     void render(int windowWidth, int windowHeight, float dpiScale);
 
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     // Renders this runtime directly on top of the current frame, clipped to its
     // viewport. Overlay runtimes draw outside the app Runtime render pass.
     void renderDirectOverlay(int windowWidth, int windowHeight, float dpiScale, const Rect* dirtyRect = nullptr);
@@ -378,7 +378,7 @@ private:
     std::string hoverTargetCacheId_;
     std::string focusedId_;
     std::function<void(const KeyEvent&)> keyEventHandler_;
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     std::function<void(std::vector<PointerEvent>&, ScrollEvent&)> inputFilter_;
     std::function<void(int, int, float, const Rect*)> overlayRenderer_;
     std::vector<PointerEvent> overlayPointerEvents_;
@@ -404,6 +404,6 @@ private:
 #include "core/runtime/runtime_lifecycle.h"
 #include "core/runtime/runtime_input.h"
 #include "core/runtime/runtime_update.h"
-#if defined(EUI_DEBUG_BUILD)
-#include "core/runtime/runtime_inspection.h"
+#if EUI_TOOLING_ENABLED
+#include "core/tooling/inspect.h"
 #endif

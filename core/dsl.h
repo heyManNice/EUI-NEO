@@ -2,6 +2,7 @@
 
 #include <core/render/shadertoy.h>
 
+#include "core/tooling/config.h"
 #include "core/layout.h"
 #include "core/animation.h"
 #include "core/input/input_types.h"
@@ -1476,7 +1477,7 @@ public:
         return orderedRoots_;
     }
 
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     // Debug tools write properties onto live elements. The pointer stays valid until
     // the next compose, which rebuilds the tree.
     Element* debugFindElement(const std::string& id) {

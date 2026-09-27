@@ -11,7 +11,7 @@ inline bool Runtime::initialize(core::window::Handle window) {
     return true;
 }
 
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
 namespace runtime {
 
 // Values a debug session wrote have to go back on a freshly composed tree before it
@@ -44,7 +44,7 @@ inline void Runtime::compose(const std::string& pageId, const Rect& viewport, Co
 template <typename ComposeFn>
 inline void Runtime::composeViewport(const std::string& pageId, const Rect& viewport, bool clipViewport, ComposeFn&& composeFn) {
     const std::vector<runtime::ElementSnapshot> previousStructure = elementStructure_;
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     // A compose rebuilds every element, so anything that remembered element
     // pointers (the inspection paths) has to forget them.
     ++instances_.composeGeneration;
@@ -56,7 +56,7 @@ inline void Runtime::composeViewport(const std::string& pageId, const Rect& view
     ui_.setFocusedId(focusedId_);
     composeFn(ui_, screen);
     ui_.end();
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     // Debug tools edit properties of composed elements, so their values go back on
     // the fresh tree before it is laid out: everything downstream then reads one
     // value instead of asking whether a debug session replaced it.
@@ -80,7 +80,7 @@ inline void Runtime::composeViewport(const std::string& pageId, const Rect& view
         paintRequested_ = true;
         fullPaintRequested_ = true;
         pruneInstancesRequested_ = true;
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
         // The debug tools read the tree on demand; this tells them when the tree
         // they copied is out of date without comparing snapshots themselves.
         ++elementStructureRevision_;
@@ -103,7 +103,7 @@ inline bool Runtime::update(core::window::Handle window, float deltaSeconds, flo
     }
     if (!inputEnabled) {
         cancelInput(window);
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
         overlayPointerEvents_.clear();
         overlayScrollEvent_ = {};
 #endif
@@ -112,7 +112,7 @@ inline bool Runtime::update(core::window::Handle window, float deltaSeconds, flo
     std::vector<KeyEvent> keyEvents = consumeKeyEvents(window);
     TextInputEvent textInputEvent = consumeTextInput(window);
     ScrollEvent scrollEvent = consumeScrollInput(window);
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     if (window == nullptr) {
         // A host driven overlay runtime has no window of its own. It consumes the
         // input its host pushed on top of the input the null window queue holds.
@@ -136,7 +136,7 @@ inline bool Runtime::update(core::window::Handle window, float deltaSeconds, flo
         textInputEvent = {};
         scrollEvent = {};
     }
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     if (inputFilter_) {
         inputFilter_(pointerEvents, scrollEvent);
     }
@@ -224,7 +224,7 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
     const Rect* viewportClip = clipViewport_ ? &viewportPixels : nullptr;
 
     const bool hasRenderableContent = !ui_.roots().empty();
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     // A debug overlay is part of the cached frame. The render cache is the window
     // backing store, so content drawn outside it would be missing from the next
     // cache blit; the overlay repaints wherever the cache is repainted.
@@ -240,7 +240,7 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
     if (!hasRenderableContent) {
         ++stats.clearCalls;
         renderBackend->clear(clearColor);
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
         drawOverlay(nullptr);
 #endif
         dirtyRects_.clear();
@@ -255,7 +255,7 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
         renderBackend->clear(clearColor);
         ++stats.renderDirectPasses;
         RuntimeRenderer(ui_, instances_, viewportClip).renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale);
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
         drawOverlay(nullptr);
 #endif
         dirtyRects_.clear();
@@ -303,7 +303,7 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
         renderBackend->clear(clearColor);
         ++stats.renderDirectPasses;
         RuntimeRenderer(ui_, instances_, viewportClip).renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale);
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
         drawOverlay(nullptr);
 #endif
     } else {
@@ -313,7 +313,7 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
             renderBackend->clear(clearColor);
             ++stats.renderDirectPasses;
             RuntimeRenderer(ui_, instances_, viewportClip).renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale, &dirty);
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
             drawOverlay(&dirty);
 #endif
         }
@@ -348,7 +348,7 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale) {
     instances_.releaseUnseenRetainedLayers();
 }
 
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
 inline void Runtime::renderDirectOverlay(int windowWidth, int windowHeight, float dpiScale, const Rect* dirtyRect) {
     core::render::RenderBackend* renderBackend = core::render::activeRenderBackend();
     if (renderBackend == nullptr) {
@@ -370,7 +370,7 @@ inline void Runtime::shutdown(bool releaseCachedImageTextures) {
     ui_.end();
     ui_.clearState();
     keyEventHandler_ = {};
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     inputFilter_ = {};
     overlayPointerEvents_.clear();
     overlayScrollEvent_ = {};

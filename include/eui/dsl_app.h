@@ -1,6 +1,7 @@
 #pragma once
 
 #include "eui/app.h"
+#include "core/tooling/config.h"
 #include "eui/async.h"
 
 #include <cmath>
@@ -29,7 +30,7 @@ struct DslAppConfig {
     bool alwaysOnTopValue = false;
     bool maximizedValue = false;
     float uiScaleValue = 1.0f;
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
     bool showDebugStatsInTitleValue = true;
     bool showDebugOverlayValue = true;
 #else

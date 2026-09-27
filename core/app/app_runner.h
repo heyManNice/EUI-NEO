@@ -1,6 +1,7 @@
 #pragma once
 
 #include "eui/app.h"
+#include "core/tooling/config.h"
 #include "core/platform/async.h"
 #include "core/platform/performance_stats.h"
 #include "core/app/performance_snapshot.h"
@@ -197,7 +198,7 @@ struct AppRunner {
 
     template <typename SetTitleFn, typename PublishSnapshotFn>
     void updatePerformanceStats(double now, SetTitleFn&& setTitle, PublishSnapshotFn&& publishSnapshot) {
-#if !defined(EUI_DEBUG_BUILD)
+#if !EUI_TOOLING_ENABLED
         if (!showDebugStatsInTitle()) {
             return;
         }

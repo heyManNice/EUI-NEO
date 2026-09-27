@@ -3,7 +3,7 @@
 #if defined(EUI_DEBUG_BUILD)
 
 #include "core/dsl.h"
-#include "core/runtime/runtime_inspector.h"
+#include "core/tooling/model.h"
 #include "modules/devtools/devtools_ui.h"
 
 #include <cstddef>

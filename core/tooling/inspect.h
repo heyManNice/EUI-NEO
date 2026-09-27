@@ -1,8 +1,10 @@
 #pragma once
 
+#include "core/tooling/config.h"
+
 namespace core::dsl {
 
-#if defined(EUI_DEBUG_BUILD)
+#if EUI_TOOLING_ENABLED
 
 // Element inspection, the parts a debug tool drives.
 //
