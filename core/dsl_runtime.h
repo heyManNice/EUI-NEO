@@ -70,10 +70,11 @@ public:
 
     void pushScrollEvent(const ScrollEvent& event);
 
-    // Writes the values a tool replaced back onto the composed tree. The compose hook
-    // calls it before layout; nothing else may, because after layout the readers would
-    // disagree about the value an element has.
-    void applyToolPatches();
+    // A hook a tool runs between the compose and the layout of every frame: the one moment
+    // the tree, the layout, the element snapshot, the render instances and hit testing can
+    // all agree on one value. A tool that replaces values on the page puts them back here,
+    // because a compose rebuilds every element from the app's code.
+    void setAfterCompose(std::function<void()> hook);
 
     template <typename ComposeFn>
     void compose(const std::string& pageId, float logicalWidth, float logicalHeight, ComposeFn&& composeFn);
@@ -104,6 +105,17 @@ public:
     // the page changes.
     const std::vector<const Element*>& elementRoots() const { return ui_.orderedRoots(); }
 
+    // Looks one element up by the id a tool holds, to read it or to replace values on it.
+    // The walk uses insertion order, so it also works between a compose and the next layout
+    // pass. The element is handed out writable, which is the point of the seam: a tool
+    // replaces values on the live page. What a tool writes must be announced with
+    // `requestElementRefresh()` when it happens outside the compose pass.
+    Element* findElement(const std::string& id) const;
+
+    // The tree was written to from outside the compose pass. The next capture reads every
+    // element instead of skipping a static subtree, and the next frame is painted.
+    void requestElementRefresh();
+
     // Bumped whenever the element structure changes, which lets a tool that builds its own
     // snapshot tell "same tree, new frames" from "the tree itself changed" without
     // diffing. A counter is cheaper than any tool, so the runtime keeps it whether or
@@ -129,22 +141,6 @@ public:
     // point, inside its ancestors' clips. Coordinates are in framebuffer pixels,
     // the space this runtime's own input uses. Empty when the point hits nothing.
     std::string elementIdAt(double x, double y, float dpiScale) const;
-
-    // The values of one element, read on demand for the element a tool shows. Reading a
-    // single element instead of copying every node keeps the element tree snapshot cheap
-    // for big pages. The editable values come back as the field table of
-    // core/tooling/model.h, so a tool that added a field reads it like any other.
-    runtime::ElementValues elementValues(const std::string& id) const;
-
-    // Writes one field on top of an element, for a session that edits the page it is
-    // inspecting. The value survives recomposes, because the runtime applies its patches
-    // again to every freshly composed tree, and it is never written back into app state:
-    // clearing the field is enough to get the element's own value back.
-    void setElementField(const std::string& id, runtime::ElementField field, const runtime::FieldValue& value);
-    void clearElementField(const std::string& id, runtime::ElementField field);
-    void clearElementFields(const std::string& id);
-    void clearElementFields();
-    std::size_t elementPatchCount() const;
 
     void shutdown(bool releaseCachedImageTextures = true);
 

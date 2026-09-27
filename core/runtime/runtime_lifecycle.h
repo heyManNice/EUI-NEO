@@ -169,6 +169,35 @@ inline void Runtime::requestFullPaint() {
     paintRequested_ = true;
 }
 
+inline Element* Runtime::findElement(const std::string& id) const {
+    // Insertion order, not paint order: the walk has to work between a compose and the next
+    // layout pass, when only `children` is filled in.
+    std::vector<Element*> pending;
+    pending.reserve(ui_.roots().size());
+    for (const auto& root : ui_.roots()) {
+        pending.push_back(root.get());
+    }
+    while (!pending.empty()) {
+        Element* element = pending.back();
+        pending.pop_back();
+        if (element->id == id) {
+            return element;
+        }
+        for (const auto& child : element->children) {
+            pending.push_back(child.get());
+        }
+    }
+    return nullptr;
+}
+
+inline void Runtime::requestElementRefresh() {
+    // The per-frame capture walks the tree every frame, but it may skip a static subtree,
+    // so one full tree update is requested as well.
+    fullTreeUpdateRequested_ = true;
+    paintRequested_ = true;
+    fullPaintRequested_ = true;
+}
+
 inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, const Color& clearColor) {
     core::render::RenderBackend* renderBackend = core::render::activeRenderBackend();
     if (renderBackend == nullptr) {

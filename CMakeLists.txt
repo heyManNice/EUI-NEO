@@ -728,14 +728,14 @@ if(EUI_BUILD_TEST_FIXTURES)
         # The panel is an optional module, so its tests only exist while the module
         # does; the rest of the unit tests always build.
         if((unit_name STREQUAL "devtools_host" OR unit_name STREQUAL "devtools_preview"
-            OR unit_name STREQUAL "devtools_tree")
+            OR unit_name STREQUAL "devtools_tree" OR unit_name STREQUAL "devtools_fields")
            AND NOT TARGET eui::module_devtools)
             continue()
         endif()
         add_executable(${unit_name} "${unit_source}")
         target_link_libraries(${unit_name} PRIVATE eui::neo)
         if(unit_name STREQUAL "devtools_host" OR unit_name STREQUAL "devtools_preview"
-           OR unit_name STREQUAL "devtools_tree")
+           OR unit_name STREQUAL "devtools_tree" OR unit_name STREQUAL "devtools_fields")
             target_link_libraries(${unit_name} PRIVATE eui::module_devtools)
         endif()
         eui_apply_compile_options(${unit_name})

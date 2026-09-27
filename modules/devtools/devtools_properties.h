@@ -3,7 +3,7 @@
 #if defined(EUI_DEBUG_BUILD)
 
 #include "core/dsl.h"
-#include "core/tooling/model.h"
+#include "modules/devtools/devtools_fields.h"
 #include "modules/devtools/devtools_ui.h"
 
 #include <cstddef>
@@ -17,16 +17,16 @@ const char* elementKindName(core::dsl::ElementKind kind);
 // Every property the area can edit, in the order it shows them. The area has to
 // cover what the runtime can write, once each, so tests compare this against
 // `kElementFieldCount` instead of trusting the table.
-const std::vector<core::dsl::runtime::ElementField>& elementPropertyIds();
+const std::vector<modules::devtools::ElementField>& elementPropertyIds();
 
 // The properties the area shows for an element of this kind. A row only appears for the
 // kinds it can change something on, so the same element offers more or fewer rows.
-std::vector<core::dsl::runtime::ElementField> elementPropertyIds(core::dsl::ElementKind kind);
+std::vector<modules::devtools::ElementField> elementPropertyIds(core::dsl::ElementKind kind);
 
 // Everything the property area needs for one composition. Values belong to the host,
 // the panel only reads them, like the element tree.
 struct ElementPropertiesState {
-    const core::dsl::runtime::ElementValues* properties = nullptr;
+    const modules::devtools::ElementValues* properties = nullptr;
     std::size_t overrideCount = 0;
 };
 

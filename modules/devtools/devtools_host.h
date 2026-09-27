@@ -34,8 +34,8 @@ public:
     // patch on the page.
     struct ElementPropertyEdit {
         std::string id;
-        core::dsl::runtime::ElementField field = core::dsl::runtime::ElementField::Color;
-        core::dsl::runtime::FieldValue value;
+        modules::devtools::ElementField field = modules::devtools::ElementField::Color;
+        modules::devtools::FieldValue value;
         bool clear = false;
     };
 
@@ -74,7 +74,7 @@ public:
     core::PointerEvent pickedPointer() const;
     void setElementUnderPointer(const std::string& id);
     const std::string& propertiesElement() const;
-    void setElementProperties(const core::dsl::runtime::ElementValues& values);
+    void setElementProperties(const modules::devtools::ElementValues& values);
     bool takeElementPropertyEdit(ElementPropertyEdit& edit);
     void setElementPropertyOverrideCount(std::size_t count);
 
@@ -93,7 +93,7 @@ public:
     const std::string& selectedElement() const;
     const std::vector<std::string>& expandedElements() const;
     const ElementTreeSnapshot& elementTree() const;
-    const core::dsl::runtime::ElementValues& properties() const;
+    const modules::devtools::ElementValues& properties() const;
     std::size_t propertyOverrideCount() const;
 
     // The panel's own element tree. Tests use it to see what the panel composed
@@ -133,6 +133,10 @@ private:
     core::dsl::Runtime* page_ = nullptr;
     app::detail::OverlayWindows windows_;
 
+    // What the panel wrote on the page, and the store that puts it back after every
+    // compose. It is the panel's own state: the framework is never told what a patch is.
+    ElementPatches patches_;
+
     // What the panel asked to be copied and when it was last copied: the tree and the
     // values are rebuilt on a structural change and refreshed at most this often in
     // between, so a hover or an animation does not cost a page-sized walk every frame.
@@ -167,7 +171,7 @@ private:
     DockPosition dockPosition_ = DockPosition::Bottom;
     app::PerformanceSnapshot performanceSnapshot_;
     ElementTreeSnapshot elementTree_;
-    core::dsl::runtime::ElementValues properties_;
+    modules::devtools::ElementValues properties_;
     std::deque<ElementPropertyEdit> propertyEdits_;
     std::size_t propertyOverrideCount_ = 0;
     bool composeRequested_ = true;

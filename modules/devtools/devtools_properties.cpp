@@ -17,9 +17,9 @@ namespace modules::devtools {
 namespace {
 
 using core::dsl::ElementKind;
-using core::dsl::runtime::ElementValues;
-using core::dsl::runtime::ElementField;
-using core::dsl::runtime::FieldKind;
+using modules::devtools::ElementValues;
+using modules::devtools::ElementField;
+using modules::devtools::FieldKind;
 
 // One property the area shows, with the range its editor covers and the kinds of element
 // it can change something on. This table is the whole of the panel's knowledge about a
@@ -267,7 +267,7 @@ std::vector<PropertyRow> buildPropertyRows(const ElementValues& properties,
         row.label = descriptor.label;
         row.field = descriptor.field;
         row.overridden = propertyOverridden(properties, descriptor.field);
-        switch (core::dsl::runtime::fieldKind(descriptor.field)) {
+        switch (fieldKind(descriptor.field)) {
         case FieldKind::Color:
             row.value = formatHex(propertyColor(properties, descriptor.field));
             break;
@@ -284,7 +284,7 @@ std::vector<PropertyRow> buildPropertyRows(const ElementValues& properties,
         // list stays the only thing that scrolls.
         if (panelState == nullptr || !panelState->colorEditorOpen ||
             panelState->colorEditorField != descriptor.field ||
-            core::dsl::runtime::fieldKind(descriptor.field) != FieldKind::Color) {
+            fieldKind(descriptor.field) != FieldKind::Color) {
             continue;
         }
         for (int channel = 0; channel < 4; ++channel) {
@@ -447,7 +447,7 @@ void composePropertyRow(core::dsl::Ui& ui,
     // the value and the way back. The control column is one fixed box that the control is
     // aligned inside, so a slider that fills it, a switch and a colour slot all end on the
     // same line instead of each sitting where its own width leaves it.
-    switch (core::dsl::runtime::fieldKind(row.field)) {
+    switch (fieldKind(row.field)) {
     case FieldKind::Color: {
         if (row.kind == PropertyRowKind::Channel) {
             // A channel of the colour its row above opened: dragged as one number.
@@ -483,7 +483,7 @@ void composePropertyRow(core::dsl::Ui& ui,
                         default: break;
                         }
                         const float alpha = channel == 3 ? normalized : current.a;
-                        set(elementId, field, core::dsl::runtime::fieldValueOf(colorFromHsv(h, s, v, alpha)));
+                        set(elementId, field, fieldValueOf(colorFromHsv(h, s, v, alpha)));
                     })
                     .build();
             });
@@ -526,7 +526,7 @@ void composePropertyRow(core::dsl::Ui& ui,
                 .theme(controlTheme())
                 .onChange([set = actions.properties.setValue, elementId, field = row.field](bool value) {
                     if (set) {
-                        set(elementId, field, core::dsl::runtime::fieldValueOf(value));
+                        set(elementId, field, fieldValueOf(value));
                     }
                 })
                 .build();
@@ -552,7 +552,7 @@ void composePropertyRow(core::dsl::Ui& ui,
                 .onChange([set = actions.properties.setValue, elementId, field = row.field, minimum,
                            range](float normalized) {
                     if (set) {
-                        set(elementId, field, core::dsl::runtime::fieldValueOf(minimum + normalized * range));
+                        set(elementId, field, fieldValueOf(minimum + normalized * range));
                     }
                 })
                 .build();
@@ -612,9 +612,9 @@ void composePropertyFooter(core::dsl::Ui& ui,
 
 } // namespace
 
-const std::vector<core::dsl::runtime::ElementField>& elementPropertyIds() {
-    static const std::vector<core::dsl::runtime::ElementField> ids = [] {
-        std::vector<core::dsl::runtime::ElementField> value;
+const std::vector<ElementField>& elementPropertyIds() {
+    static const std::vector<ElementField> ids = [] {
+        std::vector<ElementField> value;
         value.reserve(propertyDescriptors().size());
         for (const PropertyDescriptor& descriptor : propertyDescriptors()) {
             value.push_back(descriptor.field);
@@ -624,8 +624,8 @@ const std::vector<core::dsl::runtime::ElementField>& elementPropertyIds() {
     return ids;
 }
 
-std::vector<core::dsl::runtime::ElementField> elementPropertyIds(core::dsl::ElementKind kind) {
-    std::vector<core::dsl::runtime::ElementField> value;
+std::vector<ElementField> elementPropertyIds(core::dsl::ElementKind kind) {
+    std::vector<ElementField> value;
     for (const PropertyDescriptor& descriptor : propertyDescriptors()) {
         if ((descriptor.kinds & elementKindBit(kind)) != 0) {
             value.push_back(descriptor.field);

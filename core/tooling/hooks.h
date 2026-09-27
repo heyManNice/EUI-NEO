@@ -19,20 +19,11 @@ inline runtime::ToolingState& Runtime::ensureTooling() {
     return *tooling_;
 }
 
-// Writes the values a tool replaced back onto the freshly composed tree, before it is
-// laid out. This is the one moment the tree, the layout, the element snapshot, the
-// render instances and hit testing can all agree on one value, so the runtime applies
-// them here instead of teaching every reader about two sources.
-inline void Runtime::applyToolPatches() {
-    runtime::ToolingState* state = tooling();
-    if (state == nullptr || state->patches.empty()) {
-        return;
-    }
-    for (const auto& entry : state->patches) {
-        if (Element* element = runtime::findElement(ui_, entry.first)) {
-            runtime::applyElementPatch(*element, entry.second);
-        }
-    }
+// The moment between composing and laying out, where a tool that replaces values on the
+// page puts them back. The runtime owns the moment and the tool owns what happens in it,
+// so nothing here knows what a tool writes or how it remembers it.
+inline void Runtime::setAfterCompose(std::function<void()> hook) {
+    ensureTooling().afterCompose = std::move(hook);
 }
 
 // The four ways a tool attaches itself or feeds a runtime it drives. They live here
@@ -83,7 +74,10 @@ inline void beforeCompose(Runtime& runtime) {
 
 // The values a tool replaced go back on the fresh tree, before it is laid out.
 inline void afterCompose(Runtime& runtime) {
-    runtime.applyToolPatches();
+    runtime::ToolingState* state = runtime.tooling();
+    if (state != nullptr && state->afterCompose) {
+        state->afterCompose();
+    }
 }
 
 // Input is off for this frame, so the events a host pushed for it go with it.
@@ -202,6 +196,8 @@ inline const std::string& Runtime::hoveredElement() const {
 
 inline void Runtime::setHoveredElement(const std::string&) {}
 
+inline void Runtime::setAfterCompose(std::function<void()>) {}
+
 inline runtime::ElementBox Runtime::hoveredBox(float) {
     return {};
 }
@@ -209,17 +205,6 @@ inline runtime::ElementBox Runtime::hoveredBox(float) {
 inline std::string Runtime::elementIdAt(double, double, float) const {
     return {};
 }
-
-inline runtime::ElementValues Runtime::elementValues(const std::string&) const {
-    return {};
-}
-
-inline void Runtime::setElementField(const std::string&, runtime::ElementField, const runtime::FieldValue&) {}
-inline void Runtime::clearElementField(const std::string&, runtime::ElementField) {}
-inline void Runtime::clearElementFields(const std::string&) {}
-inline void Runtime::clearElementFields() {}
-inline void Runtime::setPassRenderer(std::function<void(const runtime::RenderPassContext&)>) {}
-inline std::size_t Runtime::elementPatchCount() const { return 0; }
 #endif
 
 } // namespace core::dsl

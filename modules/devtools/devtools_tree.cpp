@@ -1,5 +1,7 @@
 #include "modules/devtools/devtools_tree.h"
 
+#include "modules/devtools/devtools_fields.h"
+
 #if defined(EUI_DEBUG_BUILD)
 
 #include <utility>
@@ -39,7 +41,7 @@ ElementTreeSnapshot buildElementTree(const core::dsl::Runtime& page, std::size_t
         node.frame = {element.frame.x, element.frame.y, element.frame.width, element.frame.height};
         if (element.kind == core::dsl::ElementKind::Text) {
             // The row shows a prefix of a long label, never the whole string.
-            node.text = core::dsl::runtime::truncateElementText(element.text, kElementTreeTextLimit);
+            node.text = truncateElementText(element.text, kElementTreeTextLimit);
         }
         snapshot.nodes.push_back(std::move(node));
 

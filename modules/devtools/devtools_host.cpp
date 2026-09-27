@@ -89,6 +89,9 @@ void DevtoolsHost::attach(core::dsl::Runtime* page, const app::detail::OverlayWi
     page_->setPassRenderer([this](const core::dsl::runtime::RenderPassContext& pass) {
         renderPageOverlay(pass);
     });
+    // The page rebuilds every element on every compose, so what the panel wrote is put back
+    // on the fresh tree between the compose and its layout.
+    page_->setAfterCompose([this] { patches_.apply(*page_); });
 }
 
 void DevtoolsHost::detach() {
@@ -96,6 +99,7 @@ void DevtoolsHost::detach() {
         page_->setInputFilter(nullptr);
         page_->setOverlayRenderer(nullptr);
         page_->setPassRenderer(nullptr);
+        page_->setAfterCompose(nullptr);
         page_->setHoveredElement(std::string{});
     }
     page_ = nullptr;
@@ -159,28 +163,43 @@ void DevtoolsHost::publishElementProperties() {
     propertiesRevision_ = revision;
     propertiesRefreshTime_ = now;
     propertiesStale_ = false;
-    setElementProperties(page_->elementValues(id));
-    setElementPropertyOverrideCount(page_->elementPatchCount());
+    setElementProperties(readElementValues(*page_, id, patches_.written(id)));
+    setElementPropertyOverrideCount(patches_.count());
 }
 
-// The page is the only writer's target: the panel asks for a change, the host puts it on
-// the page, and the next read shows the result. Nothing is written back into app state.
+// The panel is the only writer, and what it writes is its own business: the values live in
+// its own store, go onto the live element in the same frame, and are put back on every
+// freshly composed tree by the hook the host registered.
 void DevtoolsHost::applyElementPropertyEdits() {
     if (page_ == nullptr) {
         return;
     }
+    bool touched = false;
     ElementPropertyEdit edit;
     while (takeElementPropertyEdit(edit)) {
         if (edit.clear && edit.id.empty()) {
-            page_->clearElementFields();
+            patches_.clearAll();
         } else if (edit.clear) {
-            page_->clearElementField(edit.id, edit.field);
+            patches_.clear(edit.id, edit.field);
         } else {
-            page_->setElementField(edit.id, edit.field, edit.value);
+            patches_.set(edit.id, edit.field, edit.value);
+        }
+        // The value lands on the live element in the same frame; a cleared patch only shows
+        // once the page composes again, because the element keeps what it was built with.
+        if (core::dsl::Element* element = page_->findElement(edit.id)) {
+            if (const ElementPatch* patch = patches_.find(edit.id)) {
+                applyElementPatch(*element, *patch);
+            }
         }
         propertiesStale_ = true;
+        touched = true;
     }
-    setElementPropertyOverrideCount(page_->elementPatchCount());
+    if (touched) {
+        // The page was written to outside its compose pass: the next capture reads every
+        // element, and the next frame is painted.
+        page_->requestElementRefresh();
+    }
+    setElementPropertyOverrideCount(patches_.count());
 }
 
 // A picking panel owns the pointer: the page is asked what is under it, and the answer
@@ -312,7 +331,7 @@ const std::string& DevtoolsHost::propertiesElement() const {
     return panelState_->selectedElement;
 }
 
-void DevtoolsHost::setElementProperties(const core::dsl::runtime::ElementValues& values) {
+void DevtoolsHost::setElementProperties(const modules::devtools::ElementValues& values) {
     properties_ = values;
     if (visible_) {
         requestCompose();
@@ -345,7 +364,7 @@ void DevtoolsHost::queueElementPropertyEdit(const ElementPropertyEdit& edit) {
     requestCompose();
 }
 
-const core::dsl::runtime::ElementValues& DevtoolsHost::properties() const {
+const modules::devtools::ElementValues& DevtoolsHost::properties() const {
     return properties_;
 }
 
@@ -783,7 +802,7 @@ DevtoolsUiActions DevtoolsHost::buildActions(DevtoolsPanelState& state) {
         state.propertiesResizeStartHeight = 0.0f;
         state.propertiesResizeScale = 1.0f;
     };
-    actions.properties.toggleColorEditor = [this, &state](core::dsl::runtime::ElementField field, bool open) {
+    actions.properties.toggleColorEditor = [this, &state](modules::devtools::ElementField field, bool open) {
         if (state.colorEditorOpen && state.colorEditorField == field && open) {
             return;
         }
@@ -793,15 +812,15 @@ DevtoolsUiActions DevtoolsHost::buildActions(DevtoolsPanelState& state) {
     };
     // One command for every edit: the control builds the value, the host queues it and
     // the app layer writes it, so neither side has to enumerate the fields.
-    actions.properties.setValue = [this](const std::string& id, core::dsl::runtime::ElementField field,
-                                         const core::dsl::runtime::FieldValue& value) {
+    actions.properties.setValue = [this](const std::string& id, modules::devtools::ElementField field,
+                                         const modules::devtools::FieldValue& value) {
         ElementPropertyEdit edit;
         edit.id = id;
         edit.field = field;
         edit.value = value;
         queueElementPropertyEdit(edit);
     };
-    actions.properties.clearField = [this](const std::string& id, core::dsl::runtime::ElementField field) {
+    actions.properties.clearField = [this](const std::string& id, modules::devtools::ElementField field) {
         ElementPropertyEdit edit;
         edit.id = id;
         edit.field = field;

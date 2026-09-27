@@ -29,15 +29,15 @@ namespace core::dsl::runtime {
 // The runtime never asks whether tools are part of the build, it asks the seam whether
 // one is attached (core/tooling/hooks.h).
 struct ToolingState {
-    // Element values a tool wrote, keyed by element id. A compose builds every element
-    // from the app's code again, so the seam re-applies these to the fresh tree before
-    // layout runs.
-    std::unordered_map<std::string, ElementPatch> patches;
-
     // The element a tool previews, with the cached path to it. Element pointers only
     // live until the next compose, so the path is keyed by the compose generation.
     ElementMark hovered;
     std::uint64_t composeGeneration = 0;
+
+    // What a tool does between a compose and the layout that follows it: the moment to put
+    // back the values it replaced, before the layout reads them. The tool owns whatever it
+    // remembers; the runtime owns the moment.
+    std::function<void()> afterCompose;
 
     // How a tool draws on top of the page from inside the page render pass. The tool owns
     // whatever graphics objects it draws with, so nothing here has to be released with the

@@ -17,27 +17,6 @@ namespace core::dsl {
 
 namespace runtime {
 
-// Puts a freshly written patch on the live tree and asks for the frame that shows it.
-// The per-frame capture walks the tree every frame, but it may skip a static subtree, so
-// one full tree update is requested as well.
-inline void commitElementPatch(Ui& ui, ToolingState& state, const std::string& id, bool changed,
-                               bool& fullTreeUpdateRequested, bool& paintRequested,
-                               bool& fullPaintRequested) {
-    if (!changed) {
-        return;
-    }
-    const auto entry = state.patches.find(id);
-    if (entry == state.patches.end()) {
-        return;
-    }
-    if (Element* element = findElement(ui, id)) {
-        applyElementPatch(*element, entry->second);
-    }
-    fullTreeUpdateRequested = true;
-    paintRequested = true;
-    fullPaintRequested = true;
-}
-
 inline bool findMarkedPath(Ui& ui, InstanceStore& instances, ElementMark& mark, const Element& element) {
     mark.path.push_back(&element);
     if (element.id == mark.id) {
@@ -130,19 +109,13 @@ inline std::string Runtime::elementIdAt(double x, double y, float dpiScale) cons
     return hitTest(event, dpiScale, [](const Element&) { return true; }, true);
 }
 
-// The two readers a tool uses to see what is marked and what it replaced. They answer
-// "nothing" when no tool ever talked to the runtime.
+// The mark a tool set, and the box it resolves to. They answer "nothing" when no tool
+// ever talked to the runtime.
 inline const std::string& Runtime::hoveredElement() const {
     static const std::string empty;
     const runtime::ToolingState* state = tooling();
     return state != nullptr ? state->hovered.id : empty;
 }
-
-inline std::size_t Runtime::elementPatchCount() const {
-    const runtime::ToolingState* state = tooling();
-    return state != nullptr ? state->patches.size() : 0;
-}
-
 inline void Runtime::setHoveredElement(const std::string& id) {
     runtime::ToolingState& state = ensureTooling();
     if (state.hovered.id == id) {
@@ -163,90 +136,6 @@ inline runtime::ElementBox Runtime::hoveredBox(float dpiScale) {
     return runtime::computeElementBox(ui_, instances_, state->hovered, state->composeGeneration, dpiScale);
 }
 
-// The values of one element, for the single element a tool shows. The field table is
-// walked once, so a field added to the table is read without touching this.
-inline runtime::ElementValues Runtime::elementValues(const std::string& id) const {
-    runtime::ElementValues values;
-    if (id.empty()) {
-        return values;
-    }
-    const Element* element = runtime::findElement(ui_, id);
-    if (element == nullptr) {
-        return values;
-    }
-
-    values.active = true;
-    values.id = element->id;
-    values.kind = element->kind;
-    values.frame = {element->frame.x, element->frame.y, element->frame.width, element->frame.height};
-    values.margin = element->margin;
-    values.padding = element->padding;
-    values.borderWidth = element->border.width;
-    values.zIndex = element->zIndex;
-    values.clip = element->clip;
-    values.interactive = element->interactive;
-    values.disabled = element->disabled;
-    values.text = runtime::truncateElementText(element->text, runtime::kElementValueTextLimit);
-    for (int index = 0; index < runtime::kElementFieldCount; ++index) {
-        const runtime::ElementField field = static_cast<runtime::ElementField>(index);
-        values.fields[static_cast<std::size_t>(index)] = runtime::readElementField(*element, field);
-    }
-
-    if (const runtime::ToolingState* state = tooling()) {
-        const auto patch = state->patches.find(id);
-        if (patch != state->patches.end()) {
-            values.written = patch->second.mask;
-        }
-    }
-    return values;
-}
-
-// The one writing entry point. A tool hands over the value it built, and the patch store
-// decides whether it changed anything: same value written twice is not a new edit.
-inline void Runtime::setElementField(const std::string& id, runtime::ElementField field,
-                                     const runtime::FieldValue& value) {
-    if (id.empty()) {
-        return;
-    }
-    runtime::ToolingState& state = ensureTooling();
-    const bool changed = state.patches[id].set(field, value);
-    runtime::commitElementPatch(ui_, state, id, changed, fullTreeUpdateRequested_, paintRequested_,
-                                fullPaintRequested_);
-}
-
-inline void Runtime::clearElementField(const std::string& id, runtime::ElementField field) {
-    runtime::ToolingState* state = tooling();
-    if (state == nullptr) {
-        return;
-    }
-    const auto found = state->patches.find(id);
-    if (found == state->patches.end()) {
-        return;
-    }
-    found->second.clear(field);
-    if (found->second.mask == 0) {
-        state->patches.erase(found);
-    }
-}
-
-inline void Runtime::clearElementFields(const std::string& id) {
-    if (runtime::ToolingState* state = tooling()) {
-        state->patches.erase(id);
-    }
-}
-
-inline void Runtime::clearElementFields() {
-    runtime::ToolingState* state = tooling();
-    if (state == nullptr || state->patches.empty()) {
-        return;
-    }
-    state->patches.clear();
-    // The elements keep the values they were composed with until the app composes
-    // again, which is also what clears a patch: nothing else has to be undone.
-    fullTreeUpdateRequested_ = true;
-    paintRequested_ = true;
-    fullPaintRequested_ = true;
-}
 
 #endif
 
