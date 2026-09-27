@@ -114,7 +114,7 @@ public:
 
     // Geometry of the preview overlay for the current frame; the renderer draws
     // exactly this, and tests read it without a renderer.
-    runtime::DebugInspection debugHoverInspection(float dpiScale);
+    runtime::DebugInspection hoverInspection(float dpiScale);
 
     // The element the pointer is over, for a tool that picks elements on the page
     // instead of interacting with them. Every element is a candidate, disabled and
@@ -122,25 +122,23 @@ public:
     // than what takes input; the answer is the topmost element that draws at the
     // point, inside its ancestors' clips. Coordinates are in framebuffer pixels,
     // the space this runtime's own input uses. Empty when the point hits nothing.
-    std::string debugElementAt(double x, double y, float dpiScale) const;
+    std::string elementIdAt(double x, double y, float dpiScale) const;
 
-    // Properties of one element, read on demand for the element a debug tool shows.
-    // Reading a single element instead of copying every node keeps the element tree
-    // snapshot cheap for big pages.
-    runtime::DebugElementProperties debugElementProperties(const std::string& id);
+    // The values of one element, read on demand for the element a tool shows. Reading a
+    // single element instead of copying every node keeps the element tree snapshot cheap
+    // for big pages. The editable values come back as the field table of
+    // core/tooling/model.h, so a tool that added a field reads it like any other.
+    runtime::ElementValues elementValues(const std::string& id) const;
 
-    // Writes a property on top of an element, for a debug session that edits the
-    // page it is inspecting. The value survives recomposes, because the runtime
-    // applies its overrides again to every freshly composed tree, and it is never
-    // written back into app state: clearing the override is enough to get the
-    // element's own value back.
-    void setDebugElementOverride(const std::string& id, runtime::DebugPropertyId property, float value);
-    void setDebugElementOverride(const std::string& id, runtime::DebugPropertyId property, const Color& value);
-    void setDebugElementOverride(const std::string& id, runtime::DebugPropertyId property, bool value);
-    void clearDebugElementOverride(const std::string& id, runtime::DebugPropertyId property);
-    void clearDebugElementOverrides(const std::string& id);
-    void clearAllDebugElementOverrides();
-    std::size_t debugElementOverrideCount() const;
+    // Writes one field on top of an element, for a session that edits the page it is
+    // inspecting. The value survives recomposes, because the runtime applies its patches
+    // again to every freshly composed tree, and it is never written back into app state:
+    // clearing the field is enough to get the element's own value back.
+    void setElementField(const std::string& id, runtime::ElementField field, const runtime::FieldValue& value);
+    void clearElementField(const std::string& id, runtime::ElementField field);
+    void clearElementFields(const std::string& id);
+    void clearElementFields();
+    std::size_t elementPatchCount() const;
 
     void shutdown(bool releaseCachedImageTextures = true);
 

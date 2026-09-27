@@ -4,6 +4,7 @@
 #include "core/dsl.h"
 #include "core/runtime/runtime_geometry.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -153,61 +154,242 @@ inline InspectionBand inspectionBand(const Rect& outer, const Rect& inner) {
     return band;
 }
 
-// A property a debug tool may edit on a live element. The runtime knows how to read
-// and write every one of them; which of them a tool shows, in what order and with
-// which editor is the tool's business (see modules/devtools).
-enum class DebugPropertyId {
-    Color,
-    Opacity,
-    Radius,
-    BorderWidth,
-    BorderColor,
-    Blur,
-    ShadowEnabled,
-    ShadowColor,
-    ShadowBlur,
-    ShadowOffsetX,
-    ShadowOffsetY,
-    ShadowSpread,
-    ShadowInset,
-    GradientEnabled,
-    GradientStart,
-    GradientEnd,
-    TextColor
+// The fields a tool may write on a live element, one line each: the name a tool uses for
+// the field, the kind of value it holds, and the element member it reads and writes.
+//
+// This table is the whole of what the core knows about editable values. The core reads a
+// field, writes a field and applies what a tool wrote; it does not know what a tool calls
+// the field, in which order it shows it, what range its editor covers or which control it
+// puts in the row. A new field is one line here plus one row in the tool that presents it
+// (see modules/devtools), and no function in the core grows a branch.
+#define EUI_ELEMENT_FIELD_TABLE(X)                   \
+    X(Color,           Color,  color)                \
+    X(Opacity,         Number, opacity)              \
+    X(Radius,          Number, radius)               \
+    X(BorderWidth,     Number, border.width)         \
+    X(BorderColor,     Color,  border.color)         \
+    X(Blur,            Number, blur)                 \
+    X(ShadowEnabled,   Flag,   shadow.enabled)       \
+    X(ShadowColor,     Color,  shadow.color)         \
+    X(ShadowBlur,      Number, shadow.blur)          \
+    X(ShadowOffsetX,   Number, shadow.offset.x)      \
+    X(ShadowOffsetY,   Number, shadow.offset.y)      \
+    X(ShadowSpread,    Number, shadow.spread)        \
+    X(ShadowInset,     Flag,   shadow.inset)         \
+    X(GradientEnabled, Flag,   gradient.enabled)     \
+    X(GradientStart,   Color,  gradient.start)       \
+    X(GradientEnd,     Color,  gradient.end)         \
+    X(TextColor,       Color,  textColor)
+
+enum class ElementField {
+#define EUI_ELEMENT_FIELD_ID(name, kind, member) name,
+    EUI_ELEMENT_FIELD_TABLE(EUI_ELEMENT_FIELD_ID)
+#undef EUI_ELEMENT_FIELD_ID
+    Count
 };
 
-// How a property is written, which also tells an editor what to put in the row for
-// it: a number field, a colour or a switch.
-enum class DebugPropertyType { Number, Color, Flag };
+inline constexpr int kElementFieldCount = static_cast<int>(ElementField::Count);
 
-inline constexpr int kDebugPropertyCount = static_cast<int>(DebugPropertyId::TextColor) + 1;
+// The kind of value a field holds. It is read from the table above, which is also where an
+// editor learns which control a row needs.
+enum class FieldKind { Number, Color, Flag };
 
-inline std::uint32_t debugPropertyBit(DebugPropertyId property) {
-    return 1u << static_cast<std::uint32_t>(property);
+inline constexpr FieldKind fieldKind(ElementField field) {
+    switch (field) {
+#define EUI_ELEMENT_FIELD_KIND(name, kind, member) \
+    case ElementField::name:                       \
+        return FieldKind::kind;
+        EUI_ELEMENT_FIELD_TABLE(EUI_ELEMENT_FIELD_KIND)
+#undef EUI_ELEMENT_FIELD_KIND
+    case ElementField::Count:
+        break;
+    }
+    return FieldKind::Number;
 }
 
-inline constexpr DebugPropertyType debugPropertyType(DebugPropertyId property) {
-    switch (property) {
-    case DebugPropertyId::Color:
-    case DebugPropertyId::BorderColor:
-    case DebugPropertyId::ShadowColor:
-    case DebugPropertyId::GradientStart:
-    case DebugPropertyId::GradientEnd:
-    case DebugPropertyId::TextColor:
-        return DebugPropertyType::Color;
-    case DebugPropertyId::ShadowEnabled:
-    case DebugPropertyId::ShadowInset:
-    case DebugPropertyId::GradientEnabled:
-        return DebugPropertyType::Flag;
-    default:
-        return DebugPropertyType::Number;
+inline std::uint32_t fieldBit(ElementField field) {
+    return 1u << static_cast<std::uint32_t>(field);
+}
+
+// One value a tool wrote, carried together with the kind it holds. The value travels with
+// its kind so a tool can build one from its own row and hand it over without the runtime
+// knowing what the field means; a value whose kind does not match the field it is written
+// to is dropped instead of landing in the wrong member.
+struct FieldValue {
+    FieldKind kind = FieldKind::Number;
+    float number = 0.0f;
+    Color color = {1.0f, 1.0f, 1.0f, 1.0f};
+    bool flag = false;
+};
+
+inline FieldValue fieldValueOf(float value) {
+    FieldValue result;
+    result.kind = FieldKind::Number;
+    result.number = value;
+    return result;
+}
+
+inline FieldValue fieldValueOf(const Color& value) {
+    FieldValue result;
+    result.kind = FieldKind::Color;
+    result.color = value;
+    return result;
+}
+
+inline FieldValue fieldValueOf(bool value) {
+    FieldValue result;
+    result.kind = FieldKind::Flag;
+    result.flag = value;
+    return result;
+}
+
+inline bool sameFieldValue(const FieldValue& left, const FieldValue& right) {
+    if (left.kind != right.kind) {
+        return false;
+    }
+    switch (left.kind) {
+    case FieldKind::Number: return left.number == right.number;
+    case FieldKind::Color: return closeEnough(left.color, right.color);
+    case FieldKind::Flag: return left.flag == right.flag;
+    }
+    return true;
+}
+
+// Assigns a value to a member of an element or of a patch, picked by the member's own type.
+// The field table names the member, so nothing here has to know which field it is.
+inline void assignField(float& target, const FieldValue& value) {
+    if (value.kind == FieldKind::Number) {
+        target = value.number;
     }
 }
 
-// What one element looks like right now, read on demand for the single element a
-// tool inspects. `overridden` marks the properties a debug session replaced, so the
-// tool can flag them and offer to put them back.
-struct DebugElementProperties {
+inline void assignField(Color& target, const FieldValue& value) {
+    if (value.kind == FieldKind::Color) {
+        target = value.color;
+    }
+}
+
+inline void assignField(bool& target, const FieldValue& value) {
+    if (value.kind == FieldKind::Flag) {
+        target = value.flag;
+    }
+}
+
+inline FieldValue readField(float value) { return fieldValueOf(value); }
+inline FieldValue readField(const Color& value) { return fieldValueOf(value); }
+inline FieldValue readField(bool value) { return fieldValueOf(value); }
+
+// A field that only shows while another one is on. Writing the first switches the second
+// on, or a tool would write a value nothing draws; the switch then reports itself as
+// written, so the tool can offer to put it back. The table has the shape of the field
+// table, so a field that needs a switch brings its own row along.
+#define EUI_ELEMENT_FIELD_REQUIRES(X) \
+    X(ShadowColor, ShadowEnabled)     \
+    X(ShadowBlur, ShadowEnabled)      \
+    X(ShadowOffsetX, ShadowEnabled)   \
+    X(ShadowOffsetY, ShadowEnabled)   \
+    X(ShadowSpread, ShadowEnabled)    \
+    X(GradientStart, GradientEnabled) \
+    X(GradientEnd, GradientEnabled)
+
+// The values a tool wrote over the elements of a page, with the mask of which fields it
+// wrote. A compose rebuilds every element from the app's code, so the store is applied
+// again to the freshly composed tree before layout runs: that is what makes an edit survive
+// the app, and what keeps the app's own state untouched.
+struct ElementPatch {
+    std::uint32_t mask = 0;
+    std::array<FieldValue, kElementFieldCount> values{};
+
+    bool has(ElementField field) const { return (mask & fieldBit(field)) != 0u; }
+
+    FieldValue get(ElementField field) const {
+        return has(field) ? values[static_cast<std::size_t>(field)] : FieldValue{};
+    }
+
+    // Writes one value and says whether that changed the patch. Writing a field also
+    // switches on the field it needs, if it has one.
+    bool set(ElementField field, const FieldValue& value) {
+        if (value.kind != fieldKind(field)) {
+            return false;
+        }
+        const std::size_t index = static_cast<std::size_t>(field);
+        const bool changed = !has(field) || !sameFieldValue(values[index], value);
+        values[index] = value;
+        mask |= fieldBit(field);
+        switch (field) {
+#define EUI_ELEMENT_FIELD_NEEDS(name, other)                                    \
+    case ElementField::name: {                                                  \
+        const std::size_t needed = static_cast<std::size_t>(ElementField::other); \
+        values[needed] = fieldValueOf(true);                                    \
+        mask |= fieldBit(ElementField::other);                                  \
+        break;                                                                  \
+    }
+            EUI_ELEMENT_FIELD_REQUIRES(EUI_ELEMENT_FIELD_NEEDS)
+#undef EUI_ELEMENT_FIELD_NEEDS
+        default:
+            break;
+        }
+        return changed;
+    }
+
+    void clear(ElementField field) { mask &= ~fieldBit(field); }
+};
+
+// The value of one field of a live element.
+inline FieldValue readElementField(const Element& element, ElementField field) {
+    switch (field) {
+#define EUI_ELEMENT_FIELD_READ(name, kind, member) \
+    case ElementField::name:                       \
+        return readField(element.member);
+        EUI_ELEMENT_FIELD_TABLE(EUI_ELEMENT_FIELD_READ)
+#undef EUI_ELEMENT_FIELD_READ
+    case ElementField::Count:
+        break;
+    }
+    return {};
+}
+
+// Writes one field of a live element, and says whether the field took the value.
+inline bool writeElementField(Element& element, ElementField field, const FieldValue& value) {
+    if (value.kind != fieldKind(field)) {
+        return false;
+    }
+    switch (field) {
+#define EUI_ELEMENT_FIELD_WRITE(name, kind, member) \
+    case ElementField::name:                        \
+        assignField(element.member, value);         \
+        break;
+        EUI_ELEMENT_FIELD_TABLE(EUI_ELEMENT_FIELD_WRITE)
+#undef EUI_ELEMENT_FIELD_WRITE
+    case ElementField::Count:
+        return false;
+    }
+    return true;
+}
+
+// Applies a patch to a composed element. Everything downstream (layout, the element tree
+// snapshot, the render instances, hit testing) then sees the written values, which is why
+// the runtime applies the store right after composing instead of teaching every field how
+// to read from two places. The loop walks the field table instead of a hand-written list,
+// so a field added above is applied without touching this.
+inline void applyElementPatch(Element& element, const ElementPatch& patch) {
+    if (patch.mask == 0) {
+        return;
+    }
+    for (int index = 0; index < kElementFieldCount; ++index) {
+        const ElementField field = static_cast<ElementField>(index);
+        if (patch.has(field)) {
+            writeElementField(element, field, patch.values[static_cast<std::size_t>(index)]);
+        }
+    }
+}
+
+// What one element looks like right now, read on demand for the single element a tool
+// inspects. The geometry and the facts about the element are named; the values a tool can
+// write live in `fields`, indexed by field, so a tool that added a row reads it back
+// without the core knowing which fields it added. `written` marks the fields a tool
+// replaced, so the tool can flag them and offer to put them back.
+struct ElementValues {
     bool active = false;
     std::string id;
     ElementKind kind = ElementKind::Stack;
@@ -220,189 +402,22 @@ struct DebugElementProperties {
     bool interactive = false;
     bool disabled = false;
     std::string text;
-    Color color = {1.0f, 1.0f, 1.0f, 1.0f};
-    float opacity = 1.0f;
-    float radius = 0.0f;
-    Color borderColor = {1.0f, 1.0f, 1.0f, 1.0f};
-    float blur = 0.0f;
-    Shadow shadow;
-    Gradient gradient;
-    Color textColor = {1.0f, 1.0f, 1.0f, 1.0f};
-    std::uint32_t overridden = 0;
+    std::array<FieldValue, kElementFieldCount> fields{};
+    std::uint32_t written = 0;
+
+    FieldValue field(ElementField which) const { return fields[static_cast<std::size_t>(which)]; }
+    void setField(ElementField which, const FieldValue& value) {
+        fields[static_cast<std::size_t>(which)] = value;
+    }
+    bool wasWritten(ElementField which) const { return (written & fieldBit(which)) != 0u; }
 };
-
-// The values a debug session wrote on top of an element. A compose rebuilds every
-// element from the app's own code, so the store is applied again to the freshly
-// composed tree before layout runs; the mask is what a tool reads back.
-struct DebugElementOverride {
-    std::uint32_t mask = 0;
-    Color color = {1.0f, 1.0f, 1.0f, 1.0f};
-    float opacity = 1.0f;
-    float radius = 0.0f;
-    float borderWidth = 0.0f;
-    Color borderColor = {1.0f, 1.0f, 1.0f, 1.0f};
-    float blur = 0.0f;
-    bool shadowEnabled = false;
-    Color shadowColor = {0.0f, 0.0f, 0.0f, 1.0f};
-    float shadowBlur = 0.0f;
-    float shadowOffsetX = 0.0f;
-    float shadowOffsetY = 0.0f;
-    float shadowSpread = 0.0f;
-    bool shadowInset = false;
-    bool gradientEnabled = false;
-    Color gradientStart = {1.0f, 1.0f, 1.0f, 1.0f};
-    Color gradientEnd = {1.0f, 1.0f, 1.0f, 1.0f};
-    Color textColor = {1.0f, 1.0f, 1.0f, 1.0f};
-};
-
-// Editing one shadow field of an element whose shadow is switched off would show
-// nothing, so any shadow override also switches the shadow on and records that: the
-// switch in the tool then tells the truth and can be put back. A gradient works the same
-// way, for the same reason.
-inline void markDebugShadowEnabled(DebugElementOverride& override) {
-    override.mask |= debugPropertyBit(DebugPropertyId::ShadowEnabled);
-    override.shadowEnabled = true;
-}
-
-inline void markDebugGradientEnabled(DebugElementOverride& override) {
-    override.mask |= debugPropertyBit(DebugPropertyId::GradientEnabled);
-    override.gradientEnabled = true;
-}
-
-inline bool setDebugOverrideFloat(DebugElementOverride& override, DebugPropertyId property, float value) {
-    float* target = nullptr;
-    switch (property) {
-    case DebugPropertyId::Opacity: target = &override.opacity; break;
-    case DebugPropertyId::Radius: target = &override.radius; break;
-    case DebugPropertyId::BorderWidth: target = &override.borderWidth; break;
-    case DebugPropertyId::Blur: target = &override.blur; break;
-    case DebugPropertyId::ShadowBlur: target = &override.shadowBlur; break;
-    case DebugPropertyId::ShadowOffsetX: target = &override.shadowOffsetX; break;
-    case DebugPropertyId::ShadowOffsetY: target = &override.shadowOffsetY; break;
-    case DebugPropertyId::ShadowSpread: target = &override.shadowSpread; break;
-    default: return false;
-    }
-    const bool changed = (override.mask & debugPropertyBit(property)) == 0 || *target != value;
-    *target = value;
-    override.mask |= debugPropertyBit(property);
-    switch (property) {
-    case DebugPropertyId::ShadowBlur:
-    case DebugPropertyId::ShadowOffsetX:
-    case DebugPropertyId::ShadowOffsetY:
-    case DebugPropertyId::ShadowSpread:
-        markDebugShadowEnabled(override);
-        break;
-    default:
-        break;
-    }
-    return changed;
-}
-
-inline bool setDebugOverrideColor(DebugElementOverride& override, DebugPropertyId property, const Color& value) {
-    Color* target = nullptr;
-    switch (property) {
-    case DebugPropertyId::Color: target = &override.color; break;
-    case DebugPropertyId::BorderColor: target = &override.borderColor; break;
-    case DebugPropertyId::ShadowColor: target = &override.shadowColor; break;
-    case DebugPropertyId::GradientStart: target = &override.gradientStart; break;
-    case DebugPropertyId::GradientEnd: target = &override.gradientEnd; break;
-    case DebugPropertyId::TextColor: target = &override.textColor; break;
-    default: return false;
-    }
-    const bool changed = (override.mask & debugPropertyBit(property)) == 0 || !closeEnough(*target, value);
-    *target = value;
-    override.mask |= debugPropertyBit(property);
-    if (property == DebugPropertyId::ShadowColor) {
-        markDebugShadowEnabled(override);
-    }
-    if (property == DebugPropertyId::GradientStart || property == DebugPropertyId::GradientEnd) {
-        markDebugGradientEnabled(override);
-    }
-    return changed;
-}
-
-inline bool setDebugOverrideFlag(DebugElementOverride& override, DebugPropertyId property, bool value) {
-    bool* target = nullptr;
-    switch (property) {
-    case DebugPropertyId::ShadowEnabled: target = &override.shadowEnabled; break;
-    case DebugPropertyId::ShadowInset: target = &override.shadowInset; break;
-    case DebugPropertyId::GradientEnabled: target = &override.gradientEnabled; break;
-    default: return false;
-    }
-    const bool changed = (override.mask & debugPropertyBit(property)) == 0 || *target != value;
-    *target = value;
-    override.mask |= debugPropertyBit(property);
-    return changed;
-}
-
-// Writes an override onto a composed element. Everything downstream (layout, the
-// element tree snapshot, the render instances, hit testing) then sees it, which is
-// why the runtime applies the store right after composing instead of teaching every
-// property how to read from two places.
-inline void applyDebugOverride(Element& element, const DebugElementOverride& override) {
-    const std::uint32_t mask = override.mask;
-    if (mask == 0) {
-        return;
-    }
-    if (mask & debugPropertyBit(DebugPropertyId::Color)) {
-        element.color = override.color;
-    }
-    if (mask & debugPropertyBit(DebugPropertyId::Opacity)) {
-        element.opacity = override.opacity;
-    }
-    if (mask & debugPropertyBit(DebugPropertyId::Radius)) {
-        element.radius = override.radius;
-    }
-    if (mask & debugPropertyBit(DebugPropertyId::BorderWidth)) {
-        element.border.width = override.borderWidth;
-    }
-    if (mask & debugPropertyBit(DebugPropertyId::BorderColor)) {
-        element.border.color = override.borderColor;
-    }
-    if (mask & debugPropertyBit(DebugPropertyId::Blur)) {
-        element.blur = override.blur;
-    }
-    if (mask & debugPropertyBit(DebugPropertyId::ShadowEnabled)) {
-        element.shadow.enabled = override.shadowEnabled;
-    }
-    if (mask & debugPropertyBit(DebugPropertyId::ShadowColor)) {
-        element.shadow.color = override.shadowColor;
-    }
-    if (mask & debugPropertyBit(DebugPropertyId::ShadowBlur)) {
-        element.shadow.blur = override.shadowBlur;
-    }
-    if (mask & debugPropertyBit(DebugPropertyId::ShadowOffsetX)) {
-        element.shadow.offset.x = override.shadowOffsetX;
-    }
-    if (mask & debugPropertyBit(DebugPropertyId::ShadowOffsetY)) {
-        element.shadow.offset.y = override.shadowOffsetY;
-    }
-    if (mask & debugPropertyBit(DebugPropertyId::ShadowSpread)) {
-        element.shadow.spread = override.shadowSpread;
-    }
-    if (mask & debugPropertyBit(DebugPropertyId::ShadowInset)) {
-        element.shadow.inset = override.shadowInset;
-    }
-    if (mask & debugPropertyBit(DebugPropertyId::GradientEnabled)) {
-        element.gradient.enabled = override.gradientEnabled;
-    }
-    if (mask & debugPropertyBit(DebugPropertyId::GradientStart)) {
-        element.gradient.start = override.gradientStart;
-    }
-    if (mask & debugPropertyBit(DebugPropertyId::GradientEnd)) {
-        element.gradient.end = override.gradientEnd;
-    }
-    if (mask & debugPropertyBit(DebugPropertyId::TextColor)) {
-        element.textColor = override.textColor;
-    }
-}
 
 class InstanceStore;
 
 // Looks an element up by the id a tool holds. The walk uses `children`, not
 // `orderedChildren`, so it also works between a compose and the next layout pass, and
 // it hands out a writable element: a tool writes the values it replaced on it.
-inline Element* findDebugElement(const Ui& ui, const std::string& id) {
+inline Element* findElement(const Ui& ui, const std::string& id) {
     std::vector<Element*> pending;
     pending.reserve(ui.roots().size());
     for (const auto& root : ui.roots()) {

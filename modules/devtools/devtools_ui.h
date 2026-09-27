@@ -59,7 +59,7 @@ struct DevtoolsPanelState {
     // The colour whose channels are open under its row; one at a time keeps the
     // property list flat and short.
     bool colorEditorOpen = false;
-    core::dsl::runtime::DebugPropertyId colorEditorProperty = core::dsl::runtime::DebugPropertyId::Color;
+    core::dsl::runtime::ElementField colorEditorField = core::dsl::runtime::ElementField::Color;
     // Elements the user opened. The tree itself comes from the app, so the panel
     // only remembers what the user expanded inside it: every node with children
     // starts collapsed, which keeps a deep page readable from the first frame.
@@ -78,7 +78,7 @@ struct DevtoolsUiState {
     const app::PerformanceSnapshot* performance = nullptr;
     const core::dsl::runtime::ElementTreeSnapshot* elementTree = nullptr;
     // Values of the selected element, owned by the host and read once per refresh.
-    const core::dsl::runtime::DebugElementProperties* properties = nullptr;
+    const core::dsl::runtime::ElementValues* properties = nullptr;
     std::size_t propertyOverrideCount = 0;
 };
 
@@ -132,12 +132,13 @@ struct DevtoolsUiActions {
         // height the panel is at then instead of the one an earlier drag left behind.
         std::function<void(float, float)> beginResize;
         std::function<void()> endResize;
-        std::function<void(core::dsl::runtime::DebugPropertyId, bool)> toggleColorEditor;
-        std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId, float)> setNumber;
-        std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId, const core::Color&)> setColor;
-        std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId, bool)> setFlag;
-        std::function<void(const std::string&, core::dsl::runtime::DebugPropertyId)> clearProperty;
-        std::function<void()> clearProperties;
+        std::function<void(core::dsl::runtime::ElementField, bool)> toggleColorEditor;
+        // Every edit travels as a field plus the value the control built, so the panel
+        // does not have to know how the runtime writes it.
+        std::function<void(const std::string&, core::dsl::runtime::ElementField,
+                           const core::dsl::runtime::FieldValue&)> setValue;
+        std::function<void(const std::string&, core::dsl::runtime::ElementField)> clearField;
+        std::function<void()> clearFields;
     };
 
     Shell shell;

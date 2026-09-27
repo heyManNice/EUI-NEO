@@ -33,7 +33,7 @@ public:
     core::PointerEvent pickedPointer() const override;
     void setElementUnderPointer(const std::string& id) override;
     const std::string& propertiesElement() const override;
-    void setElementProperties(const core::dsl::runtime::DebugElementProperties& properties) override;
+    void setElementProperties(const core::dsl::runtime::ElementValues& values) override;
     bool takeElementPropertyEdit(ElementPropertyEdit& edit) override;
     void setElementPropertyOverrideCount(std::size_t count) override;
     void releaseGraphicsResources() override;
@@ -53,7 +53,7 @@ public:
     const std::string& selectedElement() const;
     const std::vector<std::string>& expandedElements() const;
     const core::dsl::runtime::ElementTreeSnapshot& elementTree() const;
-    const core::dsl::runtime::DebugElementProperties& properties() const;
+    const core::dsl::runtime::ElementValues& properties() const;
     std::size_t propertyOverrideCount() const;
 
     // The panel's own element tree. Tests use it to see what the panel composed
@@ -104,7 +104,7 @@ private:
     DockPosition dockPosition_ = DockPosition::Bottom;
     app::PerformanceSnapshot performanceSnapshot_;
     core::dsl::runtime::ElementTreeSnapshot elementTree_;
-    core::dsl::runtime::DebugElementProperties properties_;
+    core::dsl::runtime::ElementValues properties_;
     std::deque<ElementPropertyEdit> propertyEdits_;
     std::size_t propertyOverrideCount_ = 0;
     std::function<void()> detachedWindowOpener_;

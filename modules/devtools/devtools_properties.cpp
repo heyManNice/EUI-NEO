@@ -17,16 +17,17 @@ namespace modules::devtools {
 namespace {
 
 using core::dsl::ElementKind;
-using core::dsl::runtime::DebugElementProperties;
-using core::dsl::runtime::DebugPropertyId;
-using core::dsl::runtime::DebugPropertyType;
+using core::dsl::runtime::ElementValues;
+using core::dsl::runtime::ElementField;
+using core::dsl::runtime::FieldKind;
 
 // One property the area shows, with the range its editor covers and the kinds of element
-// it can change something on. The table is the single place that knows how a property is
-// presented: the runtime only knows how to read and write it, so adding a property is a
-// row here plus a case there.
+// it can change something on. This table is the whole of the panel's knowledge about a
+// property: its label, its range and the kinds it applies to. The runtime only knows the
+// field itself (core/tooling/model.h), so adding a property is one row here and one row
+// there.
 struct PropertyDescriptor {
-    DebugPropertyId id;
+    ElementField field;
     const char* label;
     float minimum;
     float maximum;
@@ -59,32 +60,32 @@ constexpr std::uint32_t kBlurKinds = kindsOf(ElementKind::Rect, ElementKind::Ima
 
 const std::vector<PropertyDescriptor>& propertyDescriptors() {
     static const std::vector<PropertyDescriptor> descriptors{
-        {DebugPropertyId::Color, "Color", 0.0f, 1.0f, kColorKinds},
-        {DebugPropertyId::Opacity, "Opacity", 0.0f, 1.0f, kEveryKind},
-        {DebugPropertyId::Radius, "Radius", 0.0f, 64.0f, kRadiusKinds},
-        {DebugPropertyId::BorderWidth, "Border", 0.0f, 16.0f, kBoxKinds},
-        {DebugPropertyId::BorderColor, "Border color", 0.0f, 1.0f, kBoxKinds},
-        {DebugPropertyId::Blur, "Blur", 0.0f, 64.0f, kBlurKinds},
-        {DebugPropertyId::ShadowEnabled, "Shadow", 0.0f, 1.0f, kBoxKinds},
-        {DebugPropertyId::ShadowColor, "Shadow color", 0.0f, 1.0f, kBoxKinds},
-        {DebugPropertyId::ShadowBlur, "Shadow blur", 0.0f, 64.0f, kBoxKinds},
-        {DebugPropertyId::ShadowSpread, "Shadow spread", 0.0f, 64.0f, kBoxKinds},
-        {DebugPropertyId::ShadowOffsetX, "Shadow X", -64.0f, 64.0f, kBoxKinds},
-        {DebugPropertyId::ShadowOffsetY, "Shadow Y", -64.0f, 64.0f, kBoxKinds},
-        {DebugPropertyId::ShadowInset, "Shadow inset", 0.0f, 1.0f, kBoxKinds},
-        {DebugPropertyId::GradientEnabled, "Gradient", 0.0f, 1.0f, kBoxKinds},
-        {DebugPropertyId::GradientStart, "Gradient from", 0.0f, 1.0f, kBoxKinds},
-        {DebugPropertyId::GradientEnd, "Gradient to", 0.0f, 1.0f, kBoxKinds},
-        {DebugPropertyId::TextColor, "Text color", 0.0f, 1.0f, kindsOf(ElementKind::Text)},
+        {ElementField::Color, "Color", 0.0f, 1.0f, kColorKinds},
+        {ElementField::Opacity, "Opacity", 0.0f, 1.0f, kEveryKind},
+        {ElementField::Radius, "Radius", 0.0f, 64.0f, kRadiusKinds},
+        {ElementField::BorderWidth, "Border", 0.0f, 16.0f, kBoxKinds},
+        {ElementField::BorderColor, "Border color", 0.0f, 1.0f, kBoxKinds},
+        {ElementField::Blur, "Blur", 0.0f, 64.0f, kBlurKinds},
+        {ElementField::ShadowEnabled, "Shadow", 0.0f, 1.0f, kBoxKinds},
+        {ElementField::ShadowColor, "Shadow color", 0.0f, 1.0f, kBoxKinds},
+        {ElementField::ShadowBlur, "Shadow blur", 0.0f, 64.0f, kBoxKinds},
+        {ElementField::ShadowSpread, "Shadow spread", 0.0f, 64.0f, kBoxKinds},
+        {ElementField::ShadowOffsetX, "Shadow X", -64.0f, 64.0f, kBoxKinds},
+        {ElementField::ShadowOffsetY, "Shadow Y", -64.0f, 64.0f, kBoxKinds},
+        {ElementField::ShadowInset, "Shadow inset", 0.0f, 1.0f, kBoxKinds},
+        {ElementField::GradientEnabled, "Gradient", 0.0f, 1.0f, kBoxKinds},
+        {ElementField::GradientStart, "Gradient from", 0.0f, 1.0f, kBoxKinds},
+        {ElementField::GradientEnd, "Gradient to", 0.0f, 1.0f, kBoxKinds},
+        {ElementField::TextColor, "Text color", 0.0f, 1.0f, kindsOf(ElementKind::Text)},
     };
     return descriptors;
 }
 
-const PropertyDescriptor* findDescriptor(DebugPropertyId property) {
+const PropertyDescriptor* findDescriptor(ElementField field) {
     const std::vector<PropertyDescriptor>& descriptors = propertyDescriptors();
     const auto found = std::find_if(descriptors.begin(), descriptors.end(),
-                                    [property](const PropertyDescriptor& descriptor) {
-                                        return descriptor.id == property;
+                                    [field](const PropertyDescriptor& descriptor) {
+                                        return descriptor.field == field;
                                     });
     return found != descriptors.end() ? &*found : nullptr;
 }
@@ -111,33 +112,24 @@ core::Transition controlTransition() {
     return core::Transition::make(0.16f, core::Ease::OutCubic);
 }
 
-float propertyNumber(const DebugElementProperties& properties, DebugPropertyId property) {
-    switch (property) {
-    case DebugPropertyId::Opacity: return properties.opacity;
-    case DebugPropertyId::Radius: return properties.radius;
-    case DebugPropertyId::BorderWidth: return properties.borderWidth;
-    case DebugPropertyId::Blur: return properties.blur;
-    case DebugPropertyId::ShadowBlur: return properties.shadow.blur;
-    case DebugPropertyId::ShadowOffsetY: return properties.shadow.offset.y;
-    default: return 0.0f;
-    }
+// The runtime hands every editable value over as the field table it was built from
+// (core/tooling/model.h), so the area reads a field it added without a switch of its own:
+// a row knows which kind it shows, and the value is already in that kind. The three
+// readers are here so a row reads like the kind it is rather than like the union.
+float propertyNumber(const ElementValues& values, ElementField field) {
+    return values.field(field).number;
 }
 
-core::Color propertyColor(const DebugElementProperties& properties, DebugPropertyId property) {
-    switch (property) {
-    case DebugPropertyId::BorderColor: return properties.borderColor;
-    case DebugPropertyId::ShadowColor: return properties.shadow.color;
-    case DebugPropertyId::TextColor: return properties.textColor;
-    default: return properties.color;
-    }
+core::Color propertyColor(const ElementValues& values, ElementField field) {
+    return values.field(field).color;
 }
 
-bool propertyFlag(const DebugElementProperties& properties, DebugPropertyId property) {
-    return property == DebugPropertyId::ShadowEnabled ? properties.shadow.enabled : false;
+bool propertyFlag(const ElementValues& values, ElementField field) {
+    return values.field(field).flag;
 }
 
-bool propertyOverridden(const DebugElementProperties& properties, DebugPropertyId property) {
-    return (properties.overridden & core::dsl::runtime::debugPropertyBit(property)) != 0;
+bool propertyOverridden(const ElementValues& values, ElementField field) {
+    return values.wasWritten(field);
 }
 
 // The colour editor exposes the channels a picker would, so a colour can be built
@@ -212,7 +204,7 @@ struct PropertyRow {
     PropertyRowKind kind = PropertyRowKind::Summary;
     const char* label = "";
     std::string value;
-    DebugPropertyId property = DebugPropertyId::Color;
+    ElementField field = ElementField::Color;
     int channel = 0;
     bool overridden = false;
     bool copyable = false;
@@ -228,7 +220,7 @@ void appendSummary(std::vector<PropertyRow>& rows, const char* label, std::strin
     rows.push_back(std::move(row));
 }
 
-std::vector<PropertyRow> buildPropertyRows(const DebugElementProperties& properties,
+std::vector<PropertyRow> buildPropertyRows(const ElementValues& properties,
                                            const DevtoolsPanelState* panelState) {
     std::vector<PropertyRow> rows;
     rows.reserve(propertyDescriptors().size() + 10);
@@ -273,17 +265,17 @@ std::vector<PropertyRow> buildPropertyRows(const DebugElementProperties& propert
         PropertyRow row;
         row.kind = PropertyRowKind::Property;
         row.label = descriptor.label;
-        row.property = descriptor.id;
-        row.overridden = propertyOverridden(properties, descriptor.id);
-        switch (core::dsl::runtime::debugPropertyType(descriptor.id)) {
-        case DebugPropertyType::Color:
-            row.value = formatHex(propertyColor(properties, descriptor.id));
+        row.field = descriptor.field;
+        row.overridden = propertyOverridden(properties, descriptor.field);
+        switch (core::dsl::runtime::fieldKind(descriptor.field)) {
+        case FieldKind::Color:
+            row.value = formatHex(propertyColor(properties, descriptor.field));
             break;
-        case DebugPropertyType::Flag:
-            row.value = propertyFlag(properties, descriptor.id) ? "on" : "off";
+        case FieldKind::Flag:
+            row.value = propertyFlag(properties, descriptor.field) ? "on" : "off";
             break;
-        case DebugPropertyType::Number:
-            row.value = formatNumber(propertyNumber(properties, descriptor.id));
+        case FieldKind::Number:
+            row.value = formatNumber(propertyNumber(properties, descriptor.field));
             break;
         }
         rows.push_back(std::move(row));
@@ -291,15 +283,15 @@ std::vector<PropertyRow> buildPropertyRows(const DebugElementProperties& propert
         // The channels of the colour being edited sit right under their row, so the
         // list stays the only thing that scrolls.
         if (panelState == nullptr || !panelState->colorEditorOpen ||
-            panelState->colorEditorProperty != descriptor.id ||
-            core::dsl::runtime::debugPropertyType(descriptor.id) != DebugPropertyType::Color) {
+            panelState->colorEditorField != descriptor.field ||
+            core::dsl::runtime::fieldKind(descriptor.field) != FieldKind::Color) {
             continue;
         }
         for (int channel = 0; channel < 4; ++channel) {
             PropertyRow channelRow;
             channelRow.kind = PropertyRowKind::Channel;
             channelRow.label = kColorChannelLabels[channel];
-            channelRow.property = descriptor.id;
+            channelRow.field = descriptor.field;
             channelRow.channel = channel;
             rows.push_back(std::move(channelRow));
         }
@@ -307,10 +299,10 @@ std::vector<PropertyRow> buildPropertyRows(const DebugElementProperties& propert
     return rows;
 }
 
-// The way back to the element's own value. It only exists while the property is
-// overridden, so the row says what a debug session changed by itself.
+// The way back to the element's own value. It only exists while the field is written,
+// so the row says what a debug session changed by itself.
 void composeRevertButton(core::dsl::Ui& ui, const std::string& id, const std::string& elementId,
-                         DebugPropertyId property, const DevtoolsUiActions& actions) {
+                         ElementField field, const DevtoolsUiActions& actions) {
     const DevtoolsTheme& theme = devtoolsTheme();
     ui.text(id + ".revert")
         .size(theme.propertyRevertWidth, theme.elementRowHeight)
@@ -320,9 +312,9 @@ void composeRevertButton(core::dsl::Ui& ui, const std::string& id, const std::st
         .color(theme.accent)
         .horizontalAlign(core::HorizontalAlign::Center)
         .verticalAlign(core::VerticalAlign::Center)
-        .onClick([clear = actions.properties.clearProperty, elementId, property] {
+        .onClick([clear = actions.properties.clearField, elementId, field] {
             if (clear) {
-                clear(elementId, property);
+                clear(elementId, field);
             }
         })
         .build();
@@ -332,7 +324,7 @@ void composeRevertButton(core::dsl::Ui& ui, const std::string& id, const std::st
 // Both live in the element that takes the click, because the caret is the state of the
 // swatch rather than a second button beside it.
 void composeColorSwatch(core::dsl::Ui& ui, const std::string& id, const std::string& elementId,
-                        DebugPropertyId property, const core::Color& color, bool open,
+                        ElementField field, const core::Color& color, bool open,
                         const DevtoolsUiActions& actions) {
     const DevtoolsTheme& theme = devtoolsTheme();
     // The swatch box ends where the sliders and the switch tracks of the neighbouring rows
@@ -365,9 +357,9 @@ void composeColorSwatch(core::dsl::Ui& ui, const std::string& id, const std::str
                 .animate(core::AnimProperty::Color | core::AnimProperty::Border)
                 .build();
         })
-        .onClick([toggle = actions.properties.toggleColorEditor, property, open] {
+        .onClick([toggle = actions.properties.toggleColorEditor, field, open] {
             if (toggle) {
-                toggle(property, !open);
+                toggle(field, !open);
             }
         })
         .build();
@@ -455,8 +447,8 @@ void composePropertyRow(core::dsl::Ui& ui,
     // the value and the way back. The control column is one fixed box that the control is
     // aligned inside, so a slider that fills it, a switch and a colour slot all end on the
     // same line instead of each sitting where its own width leaves it.
-    switch (core::dsl::runtime::debugPropertyType(row.property)) {
-    case DebugPropertyType::Color: {
+    switch (core::dsl::runtime::fieldKind(row.field)) {
+    case FieldKind::Color: {
         if (row.kind == PropertyRowKind::Channel) {
             // A channel of the colour its row above opened: dragged as one number.
             float hue = 0.0f;
@@ -464,7 +456,7 @@ void composePropertyRow(core::dsl::Ui& ui,
             float value = 0.0f;
             core::Color current{1.0f, 1.0f, 1.0f, 1.0f};
             if (state.panelState != nullptr) {
-                current = propertyColor(*properties.properties, state.panelState->colorEditorProperty);
+                current = propertyColor(*properties.properties, state.panelState->colorEditorField);
             }
             colorToHsv(current, hue, saturation, value);
             const float channels[4] = {hue / 360.0f, saturation, value, current.a};
@@ -475,7 +467,7 @@ void composePropertyRow(core::dsl::Ui& ui,
                     .size(sliderWidth, theme.elementRowHeight)
                     .value(channelValue)
                     .theme(controlTheme())
-                    .onChange([set = actions.properties.setColor, elementId, property = row.property,
+                    .onChange([set = actions.properties.setValue, elementId, field = row.field,
                                channel = row.channel, current](float normalized) {
                         if (!set) {
                             return;
@@ -491,7 +483,7 @@ void composePropertyRow(core::dsl::Ui& ui,
                         default: break;
                         }
                         const float alpha = channel == 3 ? normalized : current.a;
-                        set(elementId, property, colorFromHsv(h, s, v, alpha));
+                        set(elementId, field, core::dsl::runtime::fieldValueOf(colorFromHsv(h, s, v, alpha)));
                     })
                     .build();
             });
@@ -509,10 +501,10 @@ void composePropertyRow(core::dsl::Ui& ui,
             if (properties.properties == nullptr || state.panelState == nullptr) {
                 return;
             }
-            composeColorSwatch(ui, id, elementId, row.property,
-                               propertyColor(*properties.properties, row.property),
+            composeColorSwatch(ui, id, elementId, row.field,
+                               propertyColor(*properties.properties, row.field),
                                state.panelState->colorEditorOpen &&
-                                   state.panelState->colorEditorProperty == row.property,
+                                   state.panelState->colorEditorField == row.field,
                                actions);
         });
         ui.text(id + ".value")
@@ -525,16 +517,16 @@ void composePropertyRow(core::dsl::Ui& ui,
             .build();
         break;
     }
-    case DebugPropertyType::Flag: {
+    case FieldKind::Flag: {
         composeControlSlot(ui, id + ".control", editorWidth, core::Align::END, [&] {
             components::toggleSwitch(ui, id + ".switch")
                 .size(switchWidth, theme.elementRowHeight)
                 .checked(row.value == "on")
                 .trackSize(theme.propertySwitchTrackWidth, theme.propertySwitchTrackHeight)
                 .theme(controlTheme())
-                .onChange([set = actions.properties.setFlag, elementId, property = row.property](bool value) {
+                .onChange([set = actions.properties.setValue, elementId, field = row.field](bool value) {
                     if (set) {
-                        set(elementId, property, value);
+                        set(elementId, field, core::dsl::runtime::fieldValueOf(value));
                     }
                 })
                 .build();
@@ -544,23 +536,23 @@ void composePropertyRow(core::dsl::Ui& ui,
         ui.stack(id + ".valueSpacer").width(theme.propertyValueWidth).height(theme.elementRowHeight).build();
         break;
     }
-    case DebugPropertyType::Number: {
-        const PropertyDescriptor* descriptor = findDescriptor(row.property);
+    case FieldKind::Number: {
+        const PropertyDescriptor* descriptor = findDescriptor(row.field);
         const float minimum = descriptor != nullptr ? descriptor->minimum : 0.0f;
         const float maximum = descriptor != nullptr ? descriptor->maximum : 1.0f;
         const float range = maximum - minimum;
         const float current = properties.properties != nullptr
-            ? propertyNumber(*properties.properties, row.property)
+            ? propertyNumber(*properties.properties, row.field)
             : 0.0f;
         composeControlSlot(ui, id + ".control", editorWidth, core::Align::CENTER, [&] {
             components::slider(ui, id + ".slider")
                 .size(sliderWidth, theme.elementRowHeight)
                 .value(range > 0.0f ? (current - minimum) / range : 0.0f)
                 .theme(controlTheme())
-                .onChange([set = actions.properties.setNumber, elementId, property = row.property, minimum,
+                .onChange([set = actions.properties.setValue, elementId, field = row.field, minimum,
                            range](float normalized) {
                     if (set) {
-                        set(elementId, property, minimum + normalized * range);
+                        set(elementId, field, core::dsl::runtime::fieldValueOf(minimum + normalized * range));
                     }
                 })
                 .build();
@@ -571,7 +563,7 @@ void composePropertyRow(core::dsl::Ui& ui,
     }
 
     if (hasRevert) {
-        composeRevertButton(ui, id, elementId, row.property, actions);
+        composeRevertButton(ui, id, elementId, row.field, actions);
     } else {
         // The way back is a column of its own, so every row reserves it: without the
         // placeholder the value column would move as the pointer moves around.
@@ -610,7 +602,7 @@ void composePropertyFooter(core::dsl::Ui& ui,
         .color(theme.accent)
         .horizontalAlign(core::HorizontalAlign::Center)
         .verticalAlign(core::VerticalAlign::Center)
-        .onClick([clear = actions.properties.clearProperties] {
+        .onClick([clear = actions.properties.clearFields] {
             if (clear) {
                 clear();
             }
@@ -620,23 +612,23 @@ void composePropertyFooter(core::dsl::Ui& ui,
 
 } // namespace
 
-const std::vector<core::dsl::runtime::DebugPropertyId>& elementPropertyIds() {
-    static const std::vector<core::dsl::runtime::DebugPropertyId> ids = [] {
-        std::vector<core::dsl::runtime::DebugPropertyId> value;
+const std::vector<core::dsl::runtime::ElementField>& elementPropertyIds() {
+    static const std::vector<core::dsl::runtime::ElementField> ids = [] {
+        std::vector<core::dsl::runtime::ElementField> value;
         value.reserve(propertyDescriptors().size());
         for (const PropertyDescriptor& descriptor : propertyDescriptors()) {
-            value.push_back(descriptor.id);
+            value.push_back(descriptor.field);
         }
         return value;
     }();
     return ids;
 }
 
-std::vector<core::dsl::runtime::DebugPropertyId> elementPropertyIds(core::dsl::ElementKind kind) {
-    std::vector<core::dsl::runtime::DebugPropertyId> value;
+std::vector<core::dsl::runtime::ElementField> elementPropertyIds(core::dsl::ElementKind kind) {
+    std::vector<core::dsl::runtime::ElementField> value;
     for (const PropertyDescriptor& descriptor : propertyDescriptors()) {
         if ((descriptor.kinds & elementKindBit(kind)) != 0) {
-            value.push_back(descriptor.id);
+            value.push_back(descriptor.field);
         }
     }
     return value;

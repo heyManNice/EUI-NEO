@@ -94,25 +94,27 @@ public:
     // frame of a pick, so leaving the picker clears it.
     virtual void setElementUnderPointer(const std::string& id) { static_cast<void>(id); }
 
-    // One property edit the overlay asks for. `clear` puts the element's own value
-    // back instead of writing one, and an empty id clears every override on the page.
+    // One field edit the overlay asks for. The value carries the kind it holds, so the
+    // app layer hands it to the runtime without knowing which field the overlay edited.
+    // `clear` puts the element's own value back instead of writing one, and an empty id
+    // clears every patch on the page.
     struct ElementPropertyEdit {
         std::string id;
-        core::dsl::runtime::DebugPropertyId property = core::dsl::runtime::DebugPropertyId::Color;
-        float number = 0.0f;
-        core::Color color = {1.0f, 1.0f, 1.0f, 1.0f};
-        bool flag = false;
+        core::dsl::runtime::ElementField field = core::dsl::runtime::ElementField::Color;
+        core::dsl::runtime::FieldValue value;
         bool clear = false;
     };
 
-    // The element whose properties the overlay shows, empty when it shows none. The
-    // app layer reads them for that one element and hands them back through
+    // The element whose values the overlay shows, empty when it shows none. The app
+    // layer reads them for that one element and hands them back through
     // `setElementProperties`.
     virtual const std::string& propertiesElement() const {
         static const std::string empty;
         return empty;
     }
-    virtual void setElementProperties(const core::dsl::runtime::DebugElementProperties& properties) {}
+    virtual void setElementProperties(const core::dsl::runtime::ElementValues& values) {
+        static_cast<void>(values);
+    }
 
     // Pulls one edit the overlay made, in order, until it returns false. The app
     // layer is the only writer: the panel asks for a change, the app layer applies
@@ -122,8 +124,8 @@ public:
         return false;
     }
 
-    // How many properties the debug session replaced on the page, so the overlay
-    // can tell the user the page no longer matches its code.
+    // How many elements the debug session wrote values on, so the overlay can tell the
+    // user the page no longer matches its code.
     virtual void setElementPropertyOverrideCount(std::size_t count) { static_cast<void>(count); }
 
     virtual void releaseGraphicsResources() = 0;

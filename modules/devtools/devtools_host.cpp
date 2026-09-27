@@ -149,8 +149,8 @@ const std::string& DevtoolsHost::propertiesElement() const {
     return panelState_->selectedElement;
 }
 
-void DevtoolsHost::setElementProperties(const core::dsl::runtime::DebugElementProperties& properties) {
-    properties_ = properties;
+void DevtoolsHost::setElementProperties(const core::dsl::runtime::ElementValues& values) {
+    properties_ = values;
     if (visible_) {
         requestCompose();
     }
@@ -182,7 +182,7 @@ void DevtoolsHost::queueElementPropertyEdit(const ElementPropertyEdit& edit) {
     requestCompose();
 }
 
-const core::dsl::runtime::DebugElementProperties& DevtoolsHost::properties() const {
+const core::dsl::runtime::ElementValues& DevtoolsHost::properties() const {
     return properties_;
 }
 
@@ -619,49 +619,35 @@ DevtoolsUiActions DevtoolsHost::buildActions(DevtoolsPanelState& state) {
         state.propertiesResizeStartHeight = 0.0f;
         state.propertiesResizeScale = 1.0f;
     };
-    actions.properties.toggleColorEditor = [this, &state](core::dsl::runtime::DebugPropertyId property, bool open) {
-        if (state.colorEditorOpen && state.colorEditorProperty == property && open) {
+    actions.properties.toggleColorEditor = [this, &state](core::dsl::runtime::ElementField field, bool open) {
+        if (state.colorEditorOpen && state.colorEditorField == field && open) {
             return;
         }
         state.colorEditorOpen = open;
-        state.colorEditorProperty = property;
+        state.colorEditorField = field;
         requestCompose();
     };
-    actions.properties.setNumber = [this](const std::string& id, core::dsl::runtime::DebugPropertyId property,
-                                          float value) {
+    // One command for every edit: the control builds the value, the host queues it and
+    // the app layer writes it, so neither side has to enumerate the fields.
+    actions.properties.setValue = [this](const std::string& id, core::dsl::runtime::ElementField field,
+                                         const core::dsl::runtime::FieldValue& value) {
         ElementPropertyEdit edit;
         edit.id = id;
-        edit.property = property;
-        edit.number = value;
+        edit.field = field;
+        edit.value = value;
         queueElementPropertyEdit(edit);
     };
-    actions.properties.setColor = [this](const std::string& id, core::dsl::runtime::DebugPropertyId property,
-                                         const core::Color& value) {
+    actions.properties.clearField = [this](const std::string& id, core::dsl::runtime::ElementField field) {
         ElementPropertyEdit edit;
         edit.id = id;
-        edit.property = property;
-        edit.color = value;
-        queueElementPropertyEdit(edit);
-    };
-    actions.properties.setFlag = [this](const std::string& id, core::dsl::runtime::DebugPropertyId property,
-                                        bool value) {
-        ElementPropertyEdit edit;
-        edit.id = id;
-        edit.property = property;
-        edit.flag = value;
-        queueElementPropertyEdit(edit);
-    };
-    actions.properties.clearProperty = [this](const std::string& id, core::dsl::runtime::DebugPropertyId property) {
-        ElementPropertyEdit edit;
-        edit.id = id;
-        edit.property = property;
+        edit.field = field;
         edit.clear = true;
         queueElementPropertyEdit(edit);
         // Putting a value back means the element has to be built from the app's
-        // code again: the override was written onto the composed element.
+        // code again: the patch was written onto the composed element.
         core::platform::requestUiUpdate();
     };
-    actions.properties.clearProperties = [this] {
+    actions.properties.clearFields = [this] {
         // An empty id with `clear` puts every element on the page back, which is
         // what the property footer offers once a debug session changed something.
         ElementPropertyEdit edit;

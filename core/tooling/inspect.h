@@ -17,21 +17,21 @@ namespace core::dsl {
 
 namespace runtime {
 
-// Puts a freshly written override on the live tree and asks for the frame that
-// shows it. The per-frame capture walks the tree every frame, but it may skip a
-// static subtree, so one full tree update is requested as well.
-inline void commitDebugElementOverride(Ui& ui, ToolingState& state, const std::string& id, bool changed,
-                                        bool& fullTreeUpdateRequested, bool& paintRequested,
-                                        bool& fullPaintRequested) {
+// Puts a freshly written patch on the live tree and asks for the frame that shows it.
+// The per-frame capture walks the tree every frame, but it may skip a static subtree, so
+// one full tree update is requested as well.
+inline void commitElementPatch(Ui& ui, ToolingState& state, const std::string& id, bool changed,
+                               bool& fullTreeUpdateRequested, bool& paintRequested,
+                               bool& fullPaintRequested) {
     if (!changed) {
         return;
     }
-    const auto entry = state.overrides.find(id);
-    if (entry == state.overrides.end()) {
+    const auto entry = state.patches.find(id);
+    if (entry == state.patches.end()) {
         return;
     }
-    if (Element* element = findDebugElement(ui, id)) {
-        applyDebugOverride(*element, entry->second);
+    if (Element* element = findElement(ui, id)) {
+        applyElementPatch(*element, entry->second);
     }
     fullTreeUpdateRequested = true;
     paintRequested = true;
@@ -119,7 +119,9 @@ inline DebugInspection computeInspection(Ui& ui, InstanceStore& instances, Inspe
 
 } // namespace runtime
 
-inline std::string Runtime::debugElementAt(double x, double y, float dpiScale) const {
+// The id of the element drawn at a point, from the page's own hit test. Asking the page
+// keeps the answer in the same space as the frame the user is looking at.
+inline std::string Runtime::elementIdAt(double x, double y, float dpiScale) const {
     PointerEvent event;
     event.x = x;
     event.y = y;
@@ -181,9 +183,9 @@ inline const std::string& Runtime::hoveredElement() const {
     return state != nullptr ? state->hoveredMark.id : empty;
 }
 
-inline std::size_t Runtime::debugElementOverrideCount() const {
+inline std::size_t Runtime::elementPatchCount() const {
     const runtime::ToolingState* state = tooling();
-    return state != nullptr ? state->overrides.size() : 0;
+    return state != nullptr ? state->patches.size() : 0;
 }
 
 inline void Runtime::setHoveredElement(const std::string& id) {
@@ -198,7 +200,7 @@ inline void Runtime::setHoveredElement(const std::string& id) {
     paintRequested_ = true;
 }
 
-inline runtime::DebugInspection Runtime::debugHoverInspection(float dpiScale) {
+inline runtime::DebugInspection Runtime::hoverInspection(float dpiScale) {
     runtime::ToolingState* state = tooling();
     if (state == nullptr) {
         return {};
@@ -206,109 +208,86 @@ inline runtime::DebugInspection Runtime::debugHoverInspection(float dpiScale) {
     return runtime::computeInspection(ui_, instances_, state->hoveredMark, state->composeGeneration, dpiScale);
 }
 
-inline runtime::DebugElementProperties Runtime::debugElementProperties(const std::string& id) {
-    runtime::DebugElementProperties properties;
+// The values of one element, for the single element a tool shows. The field table is
+// walked once, so a field added to the table is read without touching this.
+inline runtime::ElementValues Runtime::elementValues(const std::string& id) const {
+    runtime::ElementValues values;
     if (id.empty()) {
-        return properties;
+        return values;
     }
-    const Element* element = runtime::findDebugElement(ui_, id);
+    const Element* element = runtime::findElement(ui_, id);
     if (element == nullptr) {
-        return properties;
+        return values;
     }
 
-    properties.active = true;
-    properties.id = element->id;
-    properties.kind = element->kind;
-    properties.frame = {element->frame.x, element->frame.y, element->frame.width, element->frame.height};
-    properties.margin = element->margin;
-    properties.padding = element->padding;
-    properties.borderWidth = element->border.width;
-    properties.zIndex = element->zIndex;
-    properties.clip = element->clip;
-    properties.interactive = element->interactive;
-    properties.disabled = element->disabled;
-    properties.text = runtime::truncateElementText(element->text, runtime::kElementTreeTextLimit);
-    properties.color = element->color;
-    properties.opacity = element->opacity;
-    properties.radius = element->radius;
-    properties.borderColor = element->border.color;
-    properties.blur = element->blur;
-    properties.shadow = element->shadow;
-    properties.gradient = element->gradient;
-    properties.textColor = element->textColor;
+    values.active = true;
+    values.id = element->id;
+    values.kind = element->kind;
+    values.frame = {element->frame.x, element->frame.y, element->frame.width, element->frame.height};
+    values.margin = element->margin;
+    values.padding = element->padding;
+    values.borderWidth = element->border.width;
+    values.zIndex = element->zIndex;
+    values.clip = element->clip;
+    values.interactive = element->interactive;
+    values.disabled = element->disabled;
+    values.text = runtime::truncateElementText(element->text, runtime::kElementTreeTextLimit);
+    for (int index = 0; index < runtime::kElementFieldCount; ++index) {
+        const runtime::ElementField field = static_cast<runtime::ElementField>(index);
+        values.fields[static_cast<std::size_t>(index)] = runtime::readElementField(*element, field);
+    }
 
     if (const runtime::ToolingState* state = tooling()) {
-        const auto override = state->overrides.find(id);
-        if (override != state->overrides.end()) {
-            properties.overridden = override->second.mask;
+        const auto patch = state->patches.find(id);
+        if (patch != state->patches.end()) {
+            values.written = patch->second.mask;
         }
     }
-    return properties;
+    return values;
 }
 
-inline void Runtime::setDebugElementOverride(const std::string& id, runtime::DebugPropertyId property, float value) {
+// The one writing entry point. A tool hands over the value it built, and the patch store
+// decides whether it changed anything: same value written twice is not a new edit.
+inline void Runtime::setElementField(const std::string& id, runtime::ElementField field,
+                                     const runtime::FieldValue& value) {
     if (id.empty()) {
         return;
     }
     runtime::ToolingState& state = ensureTooling();
-    runtime::DebugElementOverride& override = state.overrides[id];
-    const bool changed = runtime::setDebugOverrideFloat(override, property, value);
-    runtime::commitDebugElementOverride(ui_, state, id, changed, fullTreeUpdateRequested_, paintRequested_,
-                                        fullPaintRequested_);
+    const bool changed = state.patches[id].set(field, value);
+    runtime::commitElementPatch(ui_, state, id, changed, fullTreeUpdateRequested_, paintRequested_,
+                                fullPaintRequested_);
 }
 
-inline void Runtime::setDebugElementOverride(const std::string& id, runtime::DebugPropertyId property,
-                                             const Color& value) {
-    if (id.empty()) {
-        return;
-    }
-    runtime::ToolingState& state = ensureTooling();
-    runtime::DebugElementOverride& override = state.overrides[id];
-    const bool changed = runtime::setDebugOverrideColor(override, property, value);
-    runtime::commitDebugElementOverride(ui_, state, id, changed, fullTreeUpdateRequested_, paintRequested_,
-                                        fullPaintRequested_);
-}
-
-inline void Runtime::setDebugElementOverride(const std::string& id, runtime::DebugPropertyId property, bool value) {
-    if (id.empty()) {
-        return;
-    }
-    runtime::ToolingState& state = ensureTooling();
-    runtime::DebugElementOverride& override = state.overrides[id];
-    const bool changed = runtime::setDebugOverrideFlag(override, property, value);
-    runtime::commitDebugElementOverride(ui_, state, id, changed, fullTreeUpdateRequested_, paintRequested_,
-                                        fullPaintRequested_);
-}
-
-inline void Runtime::clearDebugElementOverride(const std::string& id, runtime::DebugPropertyId property) {
+inline void Runtime::clearElementField(const std::string& id, runtime::ElementField field) {
     runtime::ToolingState* state = tooling();
     if (state == nullptr) {
         return;
     }
-    const auto found = state->overrides.find(id);
-    if (found == state->overrides.end()) {
+    const auto found = state->patches.find(id);
+    if (found == state->patches.end()) {
         return;
     }
-    found->second.mask &= ~runtime::debugPropertyBit(property);
+    found->second.clear(field);
     if (found->second.mask == 0) {
-        state->overrides.erase(found);
+        state->patches.erase(found);
     }
 }
 
-inline void Runtime::clearDebugElementOverrides(const std::string& id) {
+inline void Runtime::clearElementFields(const std::string& id) {
     if (runtime::ToolingState* state = tooling()) {
-        state->overrides.erase(id);
+        state->patches.erase(id);
     }
 }
 
-inline void Runtime::clearAllDebugElementOverrides() {
+inline void Runtime::clearElementFields() {
     runtime::ToolingState* state = tooling();
-    if (state == nullptr || state->overrides.empty()) {
+    if (state == nullptr || state->patches.empty()) {
         return;
     }
-    state->overrides.clear();
+    state->patches.clear();
     // The elements keep the values they were composed with until the app composes
-    // again, which is also what clears an override: nothing else has to be undone.
+    // again, which is also what clears a patch: nothing else has to be undone.
     fullTreeUpdateRequested_ = true;
     paintRequested_ = true;
     fullPaintRequested_ = true;

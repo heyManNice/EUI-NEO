@@ -77,28 +77,28 @@ int main() {
     core::dsl::Runtime& pageRuntime = runtime;
 
     // Nothing is previewed until a tool asks for an element.
-    assert(!pageRuntime.debugHoverInspection(1.0f).active);
+    assert(!pageRuntime.hoverInspection(1.0f).active);
     assert(pageRuntime.hoveredElement().empty());
 
     // Picking looks at what is drawn at the pointer instead of what would take input
     // there: none of these elements are interactive, and one of them is disabled.
     {
         // The deepest element under the point wins.
-        assert(pageRuntime.debugElementAt(30.0, 40.0, 1.0f) == "page.card");
+        assert(pageRuntime.elementIdAt(30.0, 40.0, 1.0f) == "page.card");
         // A disabled element is still inspectable.
-        assert(pageRuntime.debugElementAt(310.0, 260.0, 1.0f) == "page.blocked");
+        assert(pageRuntime.elementIdAt(310.0, 260.0, 1.0f) == "page.blocked");
         // An ancestor's clip decides: below the clipped list, the point belongs to the
         // page root rather than to anything the list hides.
-        assert(pageRuntime.debugElementAt(150.0, 200.0, 1.0f) == "page.root");
+        assert(pageRuntime.elementIdAt(150.0, 200.0, 1.0f) == "page.root");
         // Outside the page there is nothing to pick.
-        assert(pageRuntime.debugElementAt(450.0, 280.0, 1.0f).empty());
+        assert(pageRuntime.elementIdAt(450.0, 280.0, 1.0f).empty());
     }
 
     pageRuntime.setHoveredElement("page.card");
     assert(pageRuntime.hoveredElement() == "page.card");
     settle(pageRuntime);
 
-    const core::dsl::runtime::DebugInspection card = pageRuntime.debugHoverInspection(1.0f);
+    const core::dsl::runtime::DebugInspection card = pageRuntime.hoverInspection(1.0f);
     assert(card.active);
     // Layout frame: the card sits inside the list at its own layout position.
     assert(card.frame.x == 20.0f);
@@ -121,7 +121,7 @@ int main() {
 
     pageRuntime.setHoveredElement("page.padded");
     settle(pageRuntime);
-    const core::dsl::runtime::DebugInspection padded = pageRuntime.debugHoverInspection(1.0f);
+    const core::dsl::runtime::DebugInspection padded = pageRuntime.hoverInspection(1.0f);
     assert(padded.active);
     assert(padded.margin.left == 6.0f && padded.margin.top == 6.0f);
     assert(padded.padding.left == 10.0f && padded.padding.bottom == 10.0f);
@@ -147,7 +147,7 @@ int main() {
             settle(pageRuntime);
         }
     }
-    const core::dsl::runtime::DebugInspection scrolled = pageRuntime.debugHoverInspection(1.0f);
+    const core::dsl::runtime::DebugInspection scrolled = pageRuntime.hoverInspection(1.0f);
     assert(scrolled.active);
     assert(scrolled.frame.y == 30.0f);                              // layout is unchanged
     const float scrollShift = scrolled.transform.matrix.ty - card.transform.matrix.ty;
@@ -160,7 +160,7 @@ int main() {
     // only one element is ever previewed at a time.
     pageRuntime.setHoveredElement("page.list");
     settle(pageRuntime);
-    const core::dsl::runtime::DebugInspection hovered = pageRuntime.debugHoverInspection(1.0f);
+    const core::dsl::runtime::DebugInspection hovered = pageRuntime.hoverInspection(1.0f);
     assert(hovered.active);
     assert(hovered.frame.x == 20.0f);
     assert(hovered.frame.width == 200.0f);
@@ -170,19 +170,19 @@ int main() {
     pageRuntime.setHoveredElement("");
     assert(pageRuntime.hoveredElement().empty());
     settle(pageRuntime);
-    assert(!pageRuntime.debugHoverInspection(1.0f).active);
+    assert(!pageRuntime.hoverInspection(1.0f).active);
 
     // A page that no longer contains the element simply stops drawing the overlay.
     pageRuntime.setHoveredElement("page.missing");
     settle(pageRuntime);
-    assert(!pageRuntime.debugHoverInspection(1.0f).active);
+    assert(!pageRuntime.hoverInspection(1.0f).active);
 
     // Recomposing rebuilds every element; the preview follows the new tree instead
     // of remembering pointers into the old one.
     pageRuntime.setHoveredElement("page.card");
     composePage(pageRuntime);
     settle(pageRuntime);
-    const core::dsl::runtime::DebugInspection recomposed = pageRuntime.debugHoverInspection(1.0f);
+    const core::dsl::runtime::DebugInspection recomposed = pageRuntime.hoverInspection(1.0f);
     assert(recomposed.active);
     assert(recomposed.frame.width == 160.0f);
 

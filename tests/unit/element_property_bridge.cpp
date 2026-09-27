@@ -55,7 +55,7 @@ public:
     void detachedWindowClosed() override {}
 
     const std::string& propertiesElement() const override { return element; }
-    void setElementProperties(const core::dsl::runtime::DebugElementProperties& value) override {
+    void setElementProperties(const core::dsl::runtime::ElementValues& value) override {
         properties = value;
         ++publishCount;
     }
@@ -74,7 +74,7 @@ public:
     void setElementUnderPointer(const std::string& id) override { underPointer = id; }
 
     std::string element;
-    core::dsl::runtime::DebugElementProperties properties;
+    core::dsl::runtime::ElementValues properties;
     std::vector<ElementPropertyEdit> pending;
     int publishCount = 0;
     std::size_t overrideCount = 0;
@@ -91,7 +91,8 @@ void composePage() {
 } // namespace
 
 int main() {
-    using core::dsl::runtime::DebugPropertyId;
+    using core::dsl::runtime::ElementField;
+    using core::dsl::runtime::fieldValueOf;
     using Edit = app::detail::OverlayHost::ElementPropertyEdit;
 
     core::dsl::Runtime& page = app::detail::dslRuntime();
@@ -111,8 +112,8 @@ int main() {
     assert(overlay.publishCount == 1);
     assert(overlay.properties.active);
     assert(overlay.properties.id == "page.panel");
-    assert(overlay.properties.radius == 3.0f);
-    assert(overlay.properties.color.r == 0.2f);
+    assert(overlay.properties.field(ElementField::Radius).number == 3.0f);
+    assert(overlay.properties.field(ElementField::Color).color.r == 0.2f);
     assert(overlay.overrideCount == 0);
     app::tooling::publishElementProperties(page, overlay);
     assert(overlay.publishCount == 1);
@@ -121,59 +122,60 @@ int main() {
     // same frame instead of waiting for the throttle, and the count it shows follows.
     Edit edit;
     edit.id = "page.panel";
-    edit.property = DebugPropertyId::Radius;
-    edit.number = 12.0f;
+    edit.field = ElementField::Radius;
+    edit.value = fieldValueOf(12.0f);
     overlay.pending.push_back(edit);
     app::tooling::applyElementPropertyEdits(page, overlay);
-    assert(page.debugElementOverrideCount() == 1);
-    assert(page.debugElementProperties("page.panel").radius == 12.0f);
+    assert(page.elementPatchCount() == 1);
+    assert(page.elementValues("page.panel").field(ElementField::Radius).number == 12.0f);
     assert(overlay.overrideCount == 1);
     // The app layer publishes again right after an edit, so the tool never shows the
     // value it just changed away from.
     app::tooling::publishElementProperties(page, overlay);
     assert(overlay.publishCount == 2);
-    assert(overlay.properties.radius == 12.0f);
+    assert(overlay.properties.field(ElementField::Radius).number == 12.0f);
 
-    // Colours and flags take their own overload, and the read reports which property
-    // a debug session replaced.
-    edit.property = DebugPropertyId::Color;
-    edit.color = core::Color{0.9f, 0.1f, 0.2f, 1.0f};
-    edit.number = 0.0f;
+    // A colour and a flag are the same shape of edit: the value carries its own kind, so
+    // the app layer writes it without knowing which field it is. The read reports which
+    // fields a session wrote.
+    edit.field = ElementField::Color;
+    edit.value = fieldValueOf(core::Color{0.9f, 0.1f, 0.2f, 1.0f});
     overlay.pending.push_back(edit);
-    edit.property = DebugPropertyId::ShadowEnabled;
-    edit.flag = true;
+    edit.field = ElementField::ShadowEnabled;
+    edit.value = fieldValueOf(true);
     overlay.pending.push_back(edit);
     app::tooling::applyElementPropertyEdits(page, overlay);
     app::tooling::publishElementProperties(page, overlay);
-    const core::dsl::runtime::DebugElementProperties edited = page.debugElementProperties("page.panel");
-    assert(edited.color.r == 0.9f && edited.color.b == 0.2f);
-    assert(edited.shadow.enabled);
-    assert((edited.overridden & core::dsl::runtime::debugPropertyBit(DebugPropertyId::Color)) != 0);
-    assert(overlay.properties.color.r == 0.9f);
+    const core::dsl::runtime::ElementValues edited = page.elementValues("page.panel");
+    assert(edited.field(ElementField::Color).color.r == 0.9f);
+    assert(edited.field(ElementField::Color).color.b == 0.2f);
+    assert(edited.field(ElementField::ShadowEnabled).flag);
+    assert(edited.wasWritten(ElementField::Color));
+    assert(overlay.properties.field(ElementField::Color).color.r == 0.9f);
 
-    // Putting one property back gives the element its own value again, which is the
-    // app's value: the override was never written into app state.
+    // Putting one field back gives the element its own value again, which is the app's
+    // value: the patch was never written into app state.
     edit = {};
     edit.id = "page.panel";
-    edit.property = DebugPropertyId::Radius;
+    edit.field = ElementField::Radius;
     edit.clear = true;
     overlay.pending.push_back(edit);
     app::tooling::applyElementPropertyEdits(page, overlay);
     composePage();
-    assert(page.debugElementProperties("page.panel").radius == 3.0f);
+    assert(page.elementValues("page.panel").field(ElementField::Radius).number == 3.0f);
 
     // An empty id with `clear` puts every element on the page back.
     edit = {};
     edit.clear = true;
     overlay.pending.push_back(edit);
     app::tooling::applyElementPropertyEdits(page, overlay);
-    assert(page.debugElementOverrideCount() == 0);
+    assert(page.elementPatchCount() == 0);
     assert(overlay.overrideCount == 0);
     composePage();
-    const core::dsl::runtime::DebugElementProperties restored = page.debugElementProperties("page.panel");
-    assert(restored.color.r == 0.2f);
-    assert(!restored.shadow.enabled);
-    assert(restored.overridden == 0);
+    const core::dsl::runtime::ElementValues restored = page.elementValues("page.panel");
+    assert(restored.field(ElementField::Color).color.r == 0.2f);
+    assert(!restored.field(ElementField::ShadowEnabled).flag);
+    assert(restored.written == 0);
 
     // A picking overlay owns the pointer: the page is asked what is under it, and the
     // answer comes from the page's own hit test, so it is the element the frame drew

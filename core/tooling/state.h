@@ -32,7 +32,7 @@ struct ToolingState {
     // Element values a tool wrote, keyed by element id. A compose builds every element
     // from the app's code again, so the seam re-applies these to the fresh tree before
     // layout runs.
-    std::unordered_map<std::string, DebugElementOverride> overrides;
+    std::unordered_map<std::string, ElementPatch> patches;
 
     // The element a tool previews, with the cached path to it. Element pointers only
     // live until the next compose, so the path is keyed by the compose generation.

@@ -25,12 +25,12 @@ inline runtime::ToolingState& Runtime::ensureTooling() {
 // them here instead of teaching every reader about two sources.
 inline void Runtime::applyToolPatches() {
     runtime::ToolingState* state = tooling();
-    if (state == nullptr || state->overrides.empty()) {
+    if (state == nullptr || state->patches.empty()) {
         return;
     }
-    for (const auto& entry : state->overrides) {
-        if (Element* element = runtime::findDebugElement(ui_, entry.first)) {
-            runtime::applyDebugOverride(*element, entry.second);
+    for (const auto& entry : state->patches) {
+        if (Element* element = runtime::findElement(ui_, entry.first)) {
+            runtime::applyElementPatch(*element, entry.second);
         }
     }
 }
@@ -182,25 +182,23 @@ inline const std::string& Runtime::hoveredElement() const {
 
 inline void Runtime::setHoveredElement(const std::string&) {}
 
-inline runtime::DebugInspection Runtime::debugHoverInspection(float) {
+inline runtime::DebugInspection Runtime::hoverInspection(float) {
     return {};
 }
 
-inline std::string Runtime::debugElementAt(double, double, float) const {
+inline std::string Runtime::elementIdAt(double, double, float) const {
     return {};
 }
 
-inline runtime::DebugElementProperties Runtime::debugElementProperties(const std::string&) {
+inline runtime::ElementValues Runtime::elementValues(const std::string&) const {
     return {};
 }
 
-inline void Runtime::setDebugElementOverride(const std::string&, runtime::DebugPropertyId, float) {}
-inline void Runtime::setDebugElementOverride(const std::string&, runtime::DebugPropertyId, const Color&) {}
-inline void Runtime::setDebugElementOverride(const std::string&, runtime::DebugPropertyId, bool) {}
-inline void Runtime::clearDebugElementOverride(const std::string&, runtime::DebugPropertyId) {}
-inline void Runtime::clearDebugElementOverrides(const std::string&) {}
-inline void Runtime::clearAllDebugElementOverrides() {}
-inline std::size_t Runtime::debugElementOverrideCount() const { return 0; }
+inline void Runtime::setElementField(const std::string&, runtime::ElementField, const runtime::FieldValue&) {}
+inline void Runtime::clearElementField(const std::string&, runtime::ElementField) {}
+inline void Runtime::clearElementFields(const std::string&) {}
+inline void Runtime::clearElementFields() {}
+inline std::size_t Runtime::elementPatchCount() const { return 0; }
 #endif
 
 } // namespace core::dsl

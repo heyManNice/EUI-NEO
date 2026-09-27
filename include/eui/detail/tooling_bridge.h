@@ -133,36 +133,27 @@ inline void publishElementProperties(core::dsl::Runtime& runtime, detail::Overla
     state.propertiesRevision = revision;
     state.propertiesRefreshTime = now;
     state.propertiesStale = false;
-    overlay.setElementProperties(runtime.debugElementProperties(id));
-    overlay.setElementPropertyOverrideCount(runtime.debugElementOverrideCount());
+    overlay.setElementProperties(runtime.elementValues(id));
+    overlay.setElementPropertyOverrideCount(runtime.elementPatchCount());
 }
 
 // Applies the edits a tool made to the page. This is the only direction that writes: the
 // runtime keeps them on top of the app's own values until they are cleared, and the app
-// state the page is built from is never touched.
+// state the page is built from is never touched. The edit carries the value it built, so
+// this layer never enumerates the fields a tool can edit.
 inline void applyElementPropertyEdits(core::dsl::Runtime& runtime, detail::OverlayHost& overlay) {
     detail::OverlayHost::ElementPropertyEdit edit;
     while (overlay.takeElementPropertyEdit(edit)) {
         if (edit.clear && edit.id.empty()) {
-            runtime.clearAllDebugElementOverrides();
+            runtime.clearElementFields();
         } else if (edit.clear) {
-            runtime.clearDebugElementOverride(edit.id, edit.property);
+            runtime.clearElementField(edit.id, edit.field);
         } else {
-            switch (core::dsl::runtime::debugPropertyType(edit.property)) {
-            case core::dsl::runtime::DebugPropertyType::Number:
-                runtime.setDebugElementOverride(edit.id, edit.property, edit.number);
-                break;
-            case core::dsl::runtime::DebugPropertyType::Color:
-                runtime.setDebugElementOverride(edit.id, edit.property, edit.color);
-                break;
-            case core::dsl::runtime::DebugPropertyType::Flag:
-                runtime.setDebugElementOverride(edit.id, edit.property, edit.flag);
-                break;
-            }
+            runtime.setElementField(edit.id, edit.field, edit.value);
         }
         publishState().propertiesStale = true;
     }
-    overlay.setElementPropertyOverrideCount(runtime.debugElementOverrideCount());
+    overlay.setElementPropertyOverrideCount(runtime.elementPatchCount());
 }
 
 // A tool that picks elements owns the pointer: the page is told the pointer left, and
@@ -175,7 +166,7 @@ inline void publishPickedElement(core::dsl::Runtime& runtime, detail::OverlayHos
         return;
     }
     const core::PointerEvent pointer = overlay.pickedPointer();
-    overlay.setElementUnderPointer(runtime.debugElementAt(pointer.x, pointer.y, dpiScale));
+    overlay.setElementUnderPointer(runtime.elementIdAt(pointer.x, pointer.y, dpiScale));
 }
 
 inline detail::OverlayHost* host() {

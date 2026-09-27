@@ -405,7 +405,7 @@ int main() {
         assert(host.propertiesElement() == "page.root");
         assert(!host.properties().active);
         assert(!hasPanelElement(host, "elements.properties.footer.inner.text"));
-        core::dsl::runtime::DebugElementProperties values;
+        core::dsl::runtime::ElementValues values;
         values.active = true;
         values.id = "page.root";
         // A rect is the element that carries the whole box, so the rows a rect offers are
@@ -413,13 +413,14 @@ int main() {
         // the other kinds below.
         values.kind = core::dsl::ElementKind::Rect;
         values.frame = {0.0f, 0.0f, 800.0f, 600.0f};
-        values.color = {0.2f, 0.4f, 0.6f, 1.0f};
-        values.opacity = 0.5f;
-        values.radius = 6.0f;
+        values.setField(core::dsl::runtime::ElementField::Color,
+                        core::dsl::runtime::fieldValueOf(core::Color{0.2f, 0.4f, 0.6f, 1.0f}));
+        values.setField(core::dsl::runtime::ElementField::Opacity, core::dsl::runtime::fieldValueOf(0.5f));
+        values.setField(core::dsl::runtime::ElementField::Radius, core::dsl::runtime::fieldValueOf(6.0f));
         host.setElementProperties(values);
         frame();
         assert(host.properties().active);
-        assert(host.properties().radius == 6.0f);
+        assert(host.properties().field(core::dsl::runtime::ElementField::Radius).number == 6.0f);
         assert(hasPanelElement(host, "elements.properties.footer.inner.text"));
         assert(!hasPanelElement(host, "elements.properties.footer.inner.reset"));
 
@@ -437,34 +438,34 @@ int main() {
 
         // Every property the runtime can write has exactly one row the panel can show.
         {
-            const std::vector<core::dsl::runtime::DebugPropertyId>& ids = elementPropertyIds();
-            assert(ids.size() == static_cast<std::size_t>(core::dsl::runtime::kDebugPropertyCount));
-            std::vector<core::dsl::runtime::DebugPropertyId> sorted = ids;
+            const std::vector<core::dsl::runtime::ElementField>& ids = elementPropertyIds();
+            assert(ids.size() == static_cast<std::size_t>(core::dsl::runtime::kElementFieldCount));
+            std::vector<core::dsl::runtime::ElementField> sorted = ids;
             std::sort(sorted.begin(), sorted.end());
             assert(std::adjacent_find(sorted.begin(), sorted.end()) == sorted.end());
 
             // A row only appears for the kinds the property can change something on: a
             // rect carries the box, a text element carries its own colour instead, and a
             // layout container paints nothing but its opacity.
-            const auto has = [](const std::vector<core::dsl::runtime::DebugPropertyId>& list,
-                                core::dsl::runtime::DebugPropertyId id) {
+            const auto has = [](const std::vector<core::dsl::runtime::ElementField>& list,
+                                core::dsl::runtime::ElementField id) {
                 return std::find(list.begin(), list.end(), id) != list.end();
             };
-            const std::vector<core::dsl::runtime::DebugPropertyId> box =
+            const std::vector<core::dsl::runtime::ElementField> box =
                 elementPropertyIds(core::dsl::ElementKind::Rect);
-            const std::vector<core::dsl::runtime::DebugPropertyId> text =
+            const std::vector<core::dsl::runtime::ElementField> text =
                 elementPropertyIds(core::dsl::ElementKind::Text);
-            const std::vector<core::dsl::runtime::DebugPropertyId> container =
+            const std::vector<core::dsl::runtime::ElementField> container =
                 elementPropertyIds(core::dsl::ElementKind::Column);
-            assert(container.size() == 1 && has(container, core::dsl::runtime::DebugPropertyId::Opacity));
-            assert(text.size() == 2 && has(text, core::dsl::runtime::DebugPropertyId::TextColor));
-            assert(!has(text, core::dsl::runtime::DebugPropertyId::BorderWidth));
-            assert(box.size() == static_cast<std::size_t>(core::dsl::runtime::kDebugPropertyCount) - 1);
-            assert(has(box, core::dsl::runtime::DebugPropertyId::BorderWidth));
-            assert(has(box, core::dsl::runtime::DebugPropertyId::ShadowSpread));
-            assert(has(box, core::dsl::runtime::DebugPropertyId::GradientStart));
-            assert(!has(box, core::dsl::runtime::DebugPropertyId::TextColor));
-            for (core::dsl::runtime::DebugPropertyId id : box) {
+            assert(container.size() == 1 && has(container, core::dsl::runtime::ElementField::Opacity));
+            assert(text.size() == 2 && has(text, core::dsl::runtime::ElementField::TextColor));
+            assert(!has(text, core::dsl::runtime::ElementField::BorderWidth));
+            assert(box.size() == static_cast<std::size_t>(core::dsl::runtime::kElementFieldCount) - 1);
+            assert(has(box, core::dsl::runtime::ElementField::BorderWidth));
+            assert(has(box, core::dsl::runtime::ElementField::ShadowSpread));
+            assert(has(box, core::dsl::runtime::ElementField::GradientStart));
+            assert(!has(box, core::dsl::runtime::ElementField::TextColor));
+            for (core::dsl::runtime::ElementField id : box) {
                 assert(has(ids, id));
             }
         }
@@ -474,7 +475,7 @@ int main() {
         {
             assert(hasPanelElement(host, ".swatch"));
             assert(hasPanelElement(host, ".switch"));
-            core::dsl::runtime::DebugElementProperties container = values;
+            core::dsl::runtime::ElementValues container = values;
             container.kind = core::dsl::ElementKind::Column;
             host.setElementProperties(container);
             frame();
@@ -532,9 +533,10 @@ int main() {
             DevtoolsHost::ElementPropertyEdit edit;
             assert(takeLastElementPropertyEdit(host, edit));
             assert(edit.id == "page.root");
-            assert(edit.property == core::dsl::runtime::DebugPropertyId::Opacity);
+            assert(edit.field == core::dsl::runtime::ElementField::Opacity);
             assert(!edit.clear);
-            assert(edit.number >= 0.0f && edit.number <= 1.0f);
+            assert(edit.value.kind == core::dsl::runtime::FieldKind::Number);
+            assert(edit.value.number >= 0.0f && edit.value.number <= 1.0f);
         }
 
         // A colour row opens its channels under itself, and dragging a channel queues a
@@ -551,8 +553,9 @@ int main() {
             DevtoolsHost::ElementPropertyEdit edit;
             assert(takeLastElementPropertyEdit(host, edit));
             assert(edit.id == "page.root");
-            assert(edit.property == core::dsl::runtime::DebugPropertyId::Color);
+            assert(edit.field == core::dsl::runtime::ElementField::Color);
             assert(!edit.clear);
+            assert(edit.value.kind == core::dsl::runtime::FieldKind::Color);
         }
 
         // The footer counts what a debug session replaced and offers to put it all back.
@@ -900,23 +903,25 @@ static_assert(sizeof(core::dsl::runtime::ToolingState) <= sizeof(void*),
 static_assert(!core::dsl::tooling::kToolingEnabled, "This configuration has no tooling");
 
 int main() {
-    using core::dsl::runtime::DebugPropertyId;
+    using core::dsl::runtime::ElementField;
+
+    using core::dsl::runtime::fieldValueOf;
 
     core::dsl::Runtime runtime;
     assert(runtime.tooling() == nullptr);
     assert(runtime.elementStructureRevision() == 0);
     assert(runtime.hoveredElement().empty());
     assert(runtime.elementTree().nodes.empty());
-    assert(!runtime.debugElementProperties("page.root").active);
-    assert(runtime.debugElementAt(0.0, 0.0, 1.0f).empty());
-    assert(runtime.debugElementOverrideCount() == 0);
+    assert(!runtime.elementValues("page.root").active);
+    assert(runtime.elementIdAt(0.0, 0.0, 1.0f).empty());
+    assert(runtime.elementPatchCount() == 0);
 
     // Every entry point is inert, and none of them allocates the state the seam would
     // keep: a build without tooling pays one pointer and nothing else.
     runtime.setHoveredElement("page.root");
-    runtime.setDebugElementOverride("page.root", DebugPropertyId::Radius, 4.0f);
-    runtime.clearDebugElementOverride("page.root", DebugPropertyId::Radius);
-    runtime.clearAllDebugElementOverrides();
+    runtime.setElementField("page.root", ElementField::Radius, fieldValueOf(4.0f));
+    runtime.clearElementField("page.root", ElementField::Radius);
+    runtime.clearElementFields();
     assert(runtime.hoveredElement().empty());
     assert(runtime.tooling() == nullptr);
     return 0;
