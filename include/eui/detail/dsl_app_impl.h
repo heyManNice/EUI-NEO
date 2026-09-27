@@ -1,8 +1,7 @@
 #pragma once
 
 #include "eui/dsl_app.h"
-#include "eui/detail/overlay_host.h"
-#include "eui/detail/tooling_bridge.h"
+#include "eui/detail/overlay_hooks.h"
 #include "eui/network.h"
 
 #include "3rd/stb_image.h"
@@ -35,7 +34,7 @@ namespace app {
 namespace detail {
 
 inline void publishPerformanceSnapshot(const PerformanceSnapshot& snapshot) {
-    tooling::publishPerformance(snapshot);
+    overlayPerformance(snapshot);
 }
 
 inline core::dsl::Runtime& dslRuntime() {
@@ -292,12 +291,55 @@ void requestFullPaint() {
 
 } // namespace detail
 
+// The window services the app layer offers a tool. The app layer owns the window manager,
+// so a tool that wants a window of its own describes it here instead of opening one; the
+// window is closed when the tool asks, when the user closes it, or when the app goes away.
+inline detail::OverlayWindows makeOverlayWindows() {
+    const auto handle = std::make_shared<DslWindowHandle>();
+    const auto generation = std::make_shared<unsigned int>(0);
+    detail::OverlayWindows windows;
+    windows.open = [handle, generation](const detail::OverlayWindowRequest& request) {
+        // A window from an earlier open must not report a close into the current tool.
+        const unsigned int current = ++*generation;
+        *handle = openWindow(DslWindowConfig{}
+                .title(request.title)
+                .pageId("eui.overlay.detached")
+                .clearColor(request.clearColor)
+                .windowSize(request.width, request.height)
+                .onKeyEvent([](const eui::KeyEvent& key) {
+                    detail::overlayHandleKey(key);
+                })
+                .onClosed([generation, current, closed = request.closed] {
+                    if (*generation == current && closed) {
+                        closed();
+                    }
+                }),
+            request.compose);
+    };
+    windows.close = [handle] { handle->requestClose(); };
+    return windows;
+}
+
 bool initialize(core::window::Handle window) {
     const DslAppConfig& config = dslAppConfig();
     core::TextPrimitive::setDefaultFontFiles(config.textFontFileValue, config.iconFontFileValue);
-    // A tool gets its hooks here, and the page keeps its own key handler when none is
-    // attached; the loop does not ask which configuration this is.
-    tooling::wireHost(detail::dslRuntime(), config);
+    // A tool attaches itself with the frame and the windows the app layer owns; the page
+    // keeps its own key handler when none is attached, so the loop asks no configuration.
+    detail::OverlayHooks* hooks = detail::overlayHooks();
+    if (hooks != nullptr && hooks->attach) {
+        hooks->attach(detail::dslRuntime(), makeOverlayWindows());
+        detail::dslRuntime().setKeyEventHandler(
+            [appKeyHandler = config.keyEventHandler](const eui::KeyEvent& key) {
+                if (detail::overlayHandleKey(key)) {
+                    return;
+                }
+                if (appKeyHandler) {
+                    appKeyHandler(key);
+                }
+            });
+    } else {
+        detail::dslRuntime().setKeyEventHandler(config.keyEventHandler);
+    }
 
     detail::DslAppState& state = detail::dslAppState();
     if (!state.iconApplied) {
@@ -326,8 +368,7 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
     const float effectiveScale = dpiScale * uiScale();
     // A tool that reserved part of the window leaves the page the rest of it; without a
     // tool the page gets all of it.
-    const core::Rect toolContent =
-        tooling::contentBounds(static_cast<float>(windowWidth), static_cast<float>(windowHeight));
+    const core::Rect toolContent = detail::overlayContentBounds(windowWidth, windowHeight, effectiveScale);
     int contentX = static_cast<int>(toolContent.x);
     int contentWidth = static_cast<int>(toolContent.width);
     int contentHeight = static_cast<int>(toolContent.height);
@@ -377,19 +418,20 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
         changed = true;
     }
 
-    // One frame of the tool, in the order the two sides depend on; see the bridge for
-    // what that order is and why.
-    const tooling::FrameResult toolFrame =
-        tooling::driveFrame(detail::dslRuntime(), windowWidth, windowHeight, effectiveScale, deltaSeconds);
-    changed = toolFrame.repainted || changed;
+    // One frame of the tool, after the page was updated and before it is rendered. The
+    // tool reads and writes the page itself; the loop only says when, and reacts when the
+    // room the tool wants changed.
+    changed = detail::overlayUpdate(windowWidth, windowHeight, effectiveScale, deltaSeconds) || changed;
     // A tool that took or gave back room changes where the page is composed, so the
     // frame is composed again into what is left.
-    if (contentX != static_cast<int>(toolFrame.contentBounds.x) ||
-        contentWidth != static_cast<int>(toolFrame.contentBounds.width) ||
-        contentHeight != static_cast<int>(toolFrame.contentBounds.height)) {
-        contentX = static_cast<int>(toolFrame.contentBounds.x);
-        contentWidth = static_cast<int>(toolFrame.contentBounds.width);
-        contentHeight = static_cast<int>(toolFrame.contentBounds.height);
+    const core::Rect toolContentAfter =
+        detail::overlayContentBounds(windowWidth, windowHeight, effectiveScale);
+    if (contentX != static_cast<int>(toolContentAfter.x) ||
+        contentWidth != static_cast<int>(toolContentAfter.width) ||
+        contentHeight != static_cast<int>(toolContentAfter.height)) {
+        contentX = static_cast<int>(toolContentAfter.x);
+        contentWidth = static_cast<int>(toolContentAfter.width);
+        contentHeight = static_cast<int>(toolContentAfter.height);
         logicalWidth = static_cast<float>(contentWidth) / effectiveScale;
         logicalHeight = static_cast<float>(contentHeight) / effectiveScale;
         detail::dslRuntime().requestFullPaint();
@@ -416,14 +458,14 @@ void render(int windowWidth, int windowHeight, float dpiScale) {
 }
 
 void releaseGraphicsResources() {
-    tooling::releaseGraphics();
+    detail::overlayReleaseGraphics();
     detail::dslRuntime().releaseGraphicsResources();
 }
 
 void shutdown() {
     core::async::shutdown();
     if (dslAppConfig().shutdownHandler) dslAppConfig().shutdownHandler();
-    tooling::shutdown();
+    detail::overlayDetach();
     detail::dslRuntime().shutdown();
     eui::network::shutdown();
 }

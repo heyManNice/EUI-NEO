@@ -68,8 +68,7 @@ bool hasPanelElement(const modules::devtools::DevtoolsHost& host, const std::str
 
 // Row slots of the element tree list. A slot is named `...slot.<n>`; the row it
 // composes lives below it.
-int countPanelRows(const modules::devtools::DevtoolsHost& host) {
-    const std::string prefix = "elements.list.slot.";
+int countPanelRows(const modules::devtools::DevtoolsHost& host) {    const std::string prefix = "elements.list.slot.";
     int count = 0;
     for (const core::dsl::runtime::ElementTreeNode& node : host.panelElementTree().nodes) {
         const std::size_t at = node.id.find(prefix);
@@ -82,6 +81,24 @@ int countPanelRows(const modules::devtools::DevtoolsHost& host) {
         }
     }
     return count;
+}
+
+// The row slot of the property with this label, read from the composed panel itself: a
+// test that wants a row finds it by its name instead of counting rows, because which rows
+// are on screen depends on what the panel is showing.
+int panelPropertySlot(const modules::devtools::DevtoolsHost& host, const std::string& label) {
+    const std::string prefix = "elements.properties.list.slot.";
+    for (const core::dsl::runtime::ElementTreeNode& node : host.panelElementTree().nodes) {
+        if (node.kind != core::dsl::ElementKind::Text || node.text != label) {
+            continue;
+        }
+        const std::size_t at = node.id.find(prefix);
+        if (at == std::string::npos || node.id.find(".label") == std::string::npos) {
+            continue;
+        }
+        return std::atoi(node.id.substr(at + prefix.size()).c_str());
+    }
+    return -1;
 }
 
 // Frames of the composed panel elements whose id contains `part`, in composition
@@ -126,13 +143,17 @@ int main() {
     DevtoolsHost host;
     int detachedOpens = 0;
     int detachedCloses = 0;
-    host.setDetachedWindowOpener([&] { ++detachedOpens; });
-    host.setDetachedWindowCloser([&] { ++detachedCloses; });
+    // The panel is attached to no page here: this test drives the panel itself, and the
+    // window services the app layer would provide are recorded instead.
+    app::detail::OverlayWindows windows;
+    windows.open = [&](const app::detail::OverlayWindowRequest&) { ++detachedOpens; };
+    windows.close = [&] { ++detachedCloses; };
+    host.attach(nullptr, windows);
 
     // One app frame for the window the panel is docked into. A test that needs a
     // differently scaled window drives the host with its own factor.
     const auto frame = [&](float dpiScale = kDpiScale) {
-        return host.update(kWindowWidth, kWindowHeight, dpiScale, kFrameSeconds);
+        return host.frame(kWindowWidth, kWindowHeight, dpiScale, kFrameSeconds);
     };
 
     // A hidden panel leaves the whole window to the page.
@@ -140,9 +161,9 @@ int main() {
     assert(!host.visible());
     assert(!host.wantsElementTree());
     assert(host.hoveredElement().empty());
-    assert(host.contentBounds().x == 0.0f);
-    assert(host.contentBounds().width == static_cast<float>(kWindowWidth));
-    assert(host.contentBounds().height == static_cast<float>(kWindowHeight));
+    assert(host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).x == 0.0f);
+    assert(host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).width == static_cast<float>(kWindowWidth));
+    assert(host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).height == static_cast<float>(kWindowHeight));
     assert(host.contentHeight() == kWindowHeight);
 
     // The hotkey toggles the panel and only reacts to presses.
@@ -286,7 +307,7 @@ int main() {
     // update makes the app layer recompose the page and repaint the whole window.
     core::platform::consumeFrameRequest();
     core::platform::consumeUiUpdate();
-    clickPanel(kWindowWidth - 48.0, host.contentBounds().height + 16.0);
+    clickPanel(kWindowWidth - 48.0, host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).height + 16.0);
     assert(core::platform::consumeFrameRequest());
     assert(!core::platform::consumeUiUpdate());
 
@@ -298,11 +319,11 @@ int main() {
     const bool presentedAfterInteraction = frame() || frame();
     assert(presentedAfterInteraction);
 
-    clickPanel(kWindowWidth - 48.0, host.contentBounds().height + 16.0);
+    clickPanel(kWindowWidth - 48.0, host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).height + 16.0);
 
     // The more menu moves the panel to another edge.
     const auto chooseDock = [&](int row) {
-        const core::Rect content = host.contentBounds();
+        const core::Rect content = host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale);
         const bool side = host.dockPosition() != DockPosition::Bottom;
         const double panelX = side && host.dockPosition() == DockPosition::Right ? content.width : 0.0;
         const double panelY = side ? 0.0 : content.height;
@@ -317,14 +338,14 @@ int main() {
     assert(host.dockPosition() == DockPosition::Bottom);
     chooseDock(1);
     assert(host.dockPosition() == DockPosition::Left);
-    assert(host.contentBounds().x == 300.0f);
-    assert(host.contentBounds().width == 500.0f);
-    assert(host.contentBounds().height == static_cast<float>(kWindowHeight));
+    assert(host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).x == 300.0f);
+    assert(host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).width == 500.0f);
+    assert(host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).height == static_cast<float>(kWindowHeight));
 
     chooseDock(3);
     assert(host.dockPosition() == DockPosition::Right);
-    assert(host.contentBounds().x == 0.0f);
-    assert(host.contentBounds().width == 500.0f);
+    assert(host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).x == 0.0f);
+    assert(host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).width == 500.0f);
 
     // A side panel resizes along x.
     core::PointerEvent sideResize = pressAt(502.0, 200.0);
@@ -336,7 +357,7 @@ int main() {
     sideResize.button = core::PointerButton::None;
     sideResize.x = 452.0;
     assert(routePointer(sideResize, sideScroll).x < 0.0);
-    assert(host.contentBounds().width == 450.0f);
+    assert(host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).width == 450.0f);
     frame();
 
     sideResize.action = core::PointerAction::Release;
@@ -347,12 +368,12 @@ int main() {
 
     chooseDock(2);
     assert(host.dockPosition() == DockPosition::Bottom);
-    assert(host.contentBounds().height < static_cast<float>(kWindowHeight));
+    assert(host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).height < static_cast<float>(kWindowHeight));
 
     // The panel asks the app layer for the element tree only while it shows the tab
     // that displays it. The toolbar tabs are hit where a user would click them.
     {
-        const double tabY = static_cast<double>(host.contentBounds().height) + 16.0;
+        const double tabY = static_cast<double>(host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).height) + 16.0;
         assert(!host.wantsElementTree());
         clickPanel(120.0, tabY);
         assert(host.activeTab() == DevtoolsTab::Performance);
@@ -394,7 +415,7 @@ int main() {
 
         // Clicking a row selects that element and shows its properties. A panel state
         // change lands on the frame after the click, so the frame is run first.
-        const double rowY = host.contentBounds().height + theme.toolbarHeight + 1.0 +
+        const double rowY = host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).height + theme.toolbarHeight + 1.0 +
                             theme.elementRowHeight * 0.5;
         clickPanel(200.0, rowY);
         assert(host.selectedElement() == "page.root");
@@ -792,8 +813,8 @@ int main() {
     // A floating panel leaves the whole window to the page and opens its window.
     chooseDock(0);
     assert(host.dockPosition() == DockPosition::Floating);
-    assert(host.contentBounds().width == static_cast<float>(kWindowWidth));
-    assert(host.contentBounds().height == static_cast<float>(kWindowHeight));
+    assert(host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).width == static_cast<float>(kWindowWidth));
+    assert(host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).height == static_cast<float>(kWindowHeight));
     assert(detachedOpens == 1);
 
     // The detached window composes the same panel and can dock it back.
@@ -885,6 +906,143 @@ int main() {
     host.detachedWindowClosed();
     assert(!host.visible());
     assert(host.contentHeight() == kWindowHeight);
+
+    // The panel against a real page. Nothing is injected here, so this is the data path end
+    // to end: the panel copies what it shows from the page runtime, and what the user edits
+    // lands on the page — with no framework interface and no bridge in between.
+    {
+        core::dsl::Runtime page;
+        page.compose("page", 300.0f, 200.0f, [](core::dsl::Ui& ui, const core::dsl::Screen&) {
+            ui.rect("page.panel")
+                .size(160.0f, 90.0f)
+                .color(core::Color{0.2f, 0.4f, 0.6f, 1.0f})
+                .radius(4.0f)
+                .build();
+        });
+        page.update(nullptr, kFrameSeconds, 1.0f, 1.0f);
+
+        host.detach();
+        // Forget what the sections above injected: from here on the panel has no data of
+        // its own, so everything it shows can only have come from the page.
+        host.setElementTree({});
+        host.setElementProperties({});
+        host.attach(&page, {});
+
+        // A hidden panel copies nothing, and marks nothing on the page.
+        frame();
+        assert(host.elementTree().nodes.empty());
+        assert(!host.properties().active);
+        assert(page.hoveredElement().empty());
+
+        // Shown and docked at the bottom, on the Elements tab, one frame copies the page's
+        // own tree. The section above left the panel floating, so it is docked again first.
+        assert(host.handleHotkey(F12Key(core::KeyAction::Press)));
+        frame();
+        clickDetached(detachedMoreX, 16.0);
+        clickDetached(detachedMenuX, detachedRowY);
+        assert(host.dockPosition() == DockPosition::Bottom);
+        frame();
+        const double pageTabY =
+            static_cast<double>(host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).height) + 16.0;
+        clickPanel(180.0, pageTabY);
+        assert(host.activeTab() == DevtoolsTab::Elements);
+        frame();
+        assert(host.elementTree().nodes.size() == 1);
+        assert(host.elementTree().nodes[0].id == "page.panel");
+        assert(countPanelRows(host) == 1);
+
+        // Selecting the row reads that element's values from the page.
+        const double pageRowY =
+            host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).height + theme.toolbarHeight + 1.0 +
+            theme.elementRowHeight * 0.5;
+        clickPanel(200.0, pageRowY);
+        assert(host.selectedElement() == "page.panel");
+        frame();
+        assert(host.properties().active);
+        assert(host.properties().field(core::dsl::runtime::ElementField::Radius).number == 4.0f);
+        assert(host.properties().field(core::dsl::runtime::ElementField::Opacity).number == 1.0f);
+
+        // Hovering the row marks the element on the page, and the page resolves its own
+        // geometry for the preview: the panel never computes where an element is. The
+        // pointer is moved away first: a motion into the position it already holds is not a
+        // hover.
+        core::ScrollEvent hoverScroll;
+        core::PointerEvent away = pressAt(200.0, pageRowY + theme.elementRowHeight * 4.0);
+        away.action = core::PointerAction::Move;
+        away.button = core::PointerButton::None;
+        away.buttons = {};
+        routePointer(away, hoverScroll);
+        frame();
+        assert(host.hoveredElement().empty());
+
+        core::PointerEvent overRow = pressAt(200.0, pageRowY);
+        overRow.action = core::PointerAction::Move;
+        overRow.button = core::PointerButton::None;
+        overRow.buttons = {};
+        routePointer(overRow, hoverScroll);
+        frame();
+        assert(host.hoveredElement() == "page.panel");
+        // The page hears about it on the frame after the panel state changed: the panel's
+        // own hover is routed during its update, and the next frame is what tells the page.
+        frame();
+        assert(page.hoveredElement() == "page.panel");
+        assert(page.hoveredBox(kDpiScale).active);
+
+        // A drag on the first number row writes that field on the page, which is the only
+        // writer there is: the panel asked, and the page holds the value. The property area
+        // is grown first: the row list is virtualized, so a row is only composed while it
+        // has room on screen.
+        const core::Rect handle = panelElementFrame(host, "elements.properties.handle");
+        dragPanel(handle.x + handle.width * 0.5, handle.y + handle.height * 0.5,
+                  handle.x + handle.width * 0.5, handle.y + handle.height * 0.5 - 300.0);
+        frame();
+        const int opacitySlot = panelPropertySlot(host, "Opacity");
+        assert(opacitySlot >= 0);
+        // The control column of that row: the slider fills it, so a drag across the column
+        // is a drag across the slider.
+        const core::Rect slider = panelElementFrame(
+            host, "elements.properties.list.slot." + std::to_string(opacitySlot) + ".control");
+        assert(slider.width > 0.0f && slider.height > 0.0f);
+        dragPanel(slider.x + slider.width * 0.9, slider.y + slider.height * 0.5,
+                  slider.x + slider.width * 0.15, slider.y + slider.height * 0.5);
+        assert(page.elementPatchCount() == 1);
+        assert(page.elementValues("page.panel").field(core::dsl::runtime::ElementField::Opacity).number < 1.0f);
+
+        // The panel shows what its own edit did, in the same frame, and offers the way back.
+        frame();
+        assert(host.properties().field(core::dsl::runtime::ElementField::Opacity).number < 1.0f);
+        assert(host.properties().wasWritten(core::dsl::runtime::ElementField::Opacity));
+        assert(host.propertyOverrideCount() == 1);
+
+        // Reset drops the patch; the page keeps the written value until it composes again,
+        // which is the app's own frame and the only thing that can put it back.
+        const core::Rect reset = panelElementFrame(host, "elements.properties.footer.inner.reset");
+        clickPanel(reset.x + reset.width * 0.5, reset.y + reset.height * 0.5);
+        frame();
+        assert(page.elementPatchCount() == 0);
+        page.compose("page", 300.0f, 200.0f, [](core::dsl::Ui& ui, const core::dsl::Screen&) {
+            ui.rect("page.panel")
+                .size(160.0f, 90.0f)
+                .color(core::Color{0.2f, 0.4f, 0.6f, 1.0f})
+                .radius(4.0f)
+                .build();
+        });
+        page.update(nullptr, kFrameSeconds, 1.0f, 1.0f);
+        assert(page.elementValues("page.panel").field(core::dsl::runtime::ElementField::Opacity).number == 1.0f);
+
+        // Detaching lets go of the page: the mark goes with the panel, and the panel stops
+        // touching the page it inspected.
+        host.detach();
+        assert(page.hoveredElement().empty());
+        page.update(nullptr, kFrameSeconds, 1.0f, 1.0f);
+        assert(page.hoveredElement().empty());
+        page.shutdown(false);
+        host.attach(nullptr, {});
+        // The panel is still shown; with no page behind it, the hotkey still closes it.
+        assert(host.visible());
+        assert(host.handleHotkey(F12Key(core::KeyAction::Press)));
+        assert(!host.visible());
+    }
 
     detachedRuntime.shutdown(false);
     host.shutdown();

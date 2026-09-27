@@ -26,13 +26,174 @@ bool isHotkey(const core::KeyEvent& key) {
 
 } // namespace
 
-void attachDevtoolsHost() {
+namespace {
+
+// The panel host lives as long as the module does, so the hooks can point at it without
+// capturing anything that could go away.
+DevtoolsHost& devtoolsHost() {
     static DevtoolsHost host;
-    app::detail::setOverlayHost(&host);
+    return host;
+}
+
+} // namespace
+
+void attachDevtoolsHost() {
+    // The framework's side of the panel: the app loop asks these, and the panel answers.
+    // Everything the panel reads and writes it does on the page runtime it is handed in
+    // `attach`, so nothing here is stored in the framework.
+    static app::detail::OverlayHooks hooks = [] {
+        app::detail::OverlayHooks value;
+        value.attach = [](core::dsl::Runtime& page, const app::detail::OverlayWindows& windows) {
+            devtoolsHost().attach(&page, windows);
+        };
+        value.detach = [] { devtoolsHost().detach(); };
+        value.contentBounds = [](int windowWidth, int windowHeight, float dpiScale) {
+            return devtoolsHost().contentBounds(windowWidth, windowHeight, dpiScale);
+        };
+        value.handleKey = [](const core::KeyEvent& key) { return devtoolsHost().handleHotkey(key); };
+        value.update = [](int windowWidth, int windowHeight, float dpiScale, float deltaSeconds) {
+            return devtoolsHost().frame(windowWidth, windowHeight, dpiScale, deltaSeconds);
+        };
+        value.render = [](int windowWidth, int windowHeight, float dpiScale, const core::Rect* dirtyRect) {
+            devtoolsHost().render(windowWidth, windowHeight, dpiScale, dirtyRect);
+        };
+        value.performance = [](const app::PerformanceSnapshot& snapshot) {
+            devtoolsHost().setPerformanceSnapshot(snapshot);
+        };
+        value.releaseGraphics = [] { devtoolsHost().releaseGraphicsResources(); };
+        return value;
+    }();
+    app::detail::setOverlayHooks(&hooks);
 }
 
 void detachDevtoolsHost() {
-    app::detail::setOverlayHost(nullptr);
+    app::detail::setOverlayHooks(nullptr);
+}
+
+void DevtoolsHost::attach(core::dsl::Runtime* page, const app::detail::OverlayWindows& windows) {
+    page_ = page;
+    windows_ = windows;
+    if (page_ == nullptr) {
+        return;
+    }
+    // The panel owns what it does to the page: the pointer it takes, the frame it draws,
+    // and the preview. All three are runtime hooks, so there is no framework layer in
+    // between the panel and the page.
+    page_->setInputFilter([this](std::vector<core::PointerEvent>& pointerEvents, core::ScrollEvent& scrollEvent) {
+        filterInput(pointerEvents, scrollEvent);
+    });
+    page_->setOverlayRenderer([this](int width, int height, float dpiScale, const core::Rect* dirtyRect) {
+        render(width, height, dpiScale, dirtyRect);
+    });
+    page_->setPassRenderer([this](const core::dsl::runtime::RenderPassContext& pass) {
+        renderPageOverlay(pass);
+    });
+}
+
+void DevtoolsHost::detach() {
+    if (page_ != nullptr) {
+        page_->setInputFilter(nullptr);
+        page_->setOverlayRenderer(nullptr);
+        page_->setPassRenderer(nullptr);
+        page_->setHoveredElement(std::string{});
+    }
+    page_ = nullptr;
+    windows_ = {};
+    // What the panel knew about the page is stale the moment the page goes away.
+    propertiesStale_ = true;
+    treeRevision_ = 0;
+    propertiesId_.clear();
+}
+
+bool DevtoolsHost::frame(int framebufferWidth, int framebufferHeight, float dpiScale, float deltaSeconds) {
+    // One frame of the panel, in the order the two sides depend on:
+    //
+    //   1. the tree of this frame, so the panel composes against what the user sees
+    //   2. the edits the panel made, read back before the values below, so an edit shows
+    //      its result in the same frame instead of the next one
+    //   3. the values of the element it shows
+    //   4. the element a picker points at, before the preview, so the page marks what the
+    //      pointer is on in the frame it moved
+    //   5. the preview it asked for, and then the panel itself
+    if (page_ != nullptr) {
+        publishElementTree();
+        applyElementPropertyEdits();
+        publishElementProperties();
+        publishPickedElement();
+        page_->setHoveredElement(hoveredElement());
+    }
+    return updatePanel(framebufferWidth, framebufferHeight, dpiScale, deltaSeconds);
+}
+
+void DevtoolsHost::publishElementTree() {
+    if (page_ == nullptr || !wantsElementTree()) {
+        return;
+    }
+    const std::uint64_t revision = page_->elementStructureRevision();
+    const double now = core::window::timeSeconds();
+    if (revision == treeRevision_ && now - treeRefreshTime_ < kRefreshSeconds) {
+        return;
+    }
+    treeRevision_ = revision;
+    treeRefreshTime_ = now;
+    setElementTree(page_->elementTree());
+}
+
+void DevtoolsHost::publishElementProperties() {
+    if (page_ == nullptr) {
+        return;
+    }
+    const std::string& id = propertiesElement();
+    if (id.empty()) {
+        return;
+    }
+    const std::uint64_t revision = page_->elementStructureRevision();
+    const double now = core::window::timeSeconds();
+    const bool sameElement = id == propertiesId_;
+    const bool throttled = revision == propertiesRevision_ && now - propertiesRefreshTime_ < kRefreshSeconds;
+    if (sameElement && !propertiesStale_ && throttled) {
+        return;
+    }
+    propertiesId_ = id;
+    propertiesRevision_ = revision;
+    propertiesRefreshTime_ = now;
+    propertiesStale_ = false;
+    setElementProperties(page_->elementValues(id));
+    setElementPropertyOverrideCount(page_->elementPatchCount());
+}
+
+// The page is the only writer's target: the panel asks for a change, the host puts it on
+// the page, and the next read shows the result. Nothing is written back into app state.
+void DevtoolsHost::applyElementPropertyEdits() {
+    if (page_ == nullptr) {
+        return;
+    }
+    ElementPropertyEdit edit;
+    while (takeElementPropertyEdit(edit)) {
+        if (edit.clear && edit.id.empty()) {
+            page_->clearElementFields();
+        } else if (edit.clear) {
+            page_->clearElementField(edit.id, edit.field);
+        } else {
+            page_->setElementField(edit.id, edit.field, edit.value);
+        }
+        propertiesStale_ = true;
+    }
+    setElementPropertyOverrideCount(page_->elementPatchCount());
+}
+
+// A picking panel owns the pointer: the page is asked what is under it, and the answer
+// comes from the page's own hit test, so it is the element the frame drew there.
+void DevtoolsHost::publishPickedElement() {
+    if (page_ == nullptr) {
+        return;
+    }
+    if (!pickingElement()) {
+        setElementUnderPointer(std::string{});
+        return;
+    }
+    const core::PointerEvent pointer = pickedPointer();
+    setElementUnderPointer(page_->elementIdAt(pointer.x, pointer.y, dpiScale_));
 }
 
 bool DevtoolsHost::handleHotkey(const core::KeyEvent& key) {
@@ -284,25 +445,20 @@ void DevtoolsHost::selectDockPosition(DockPosition position) {
     requestCompose();
 }
 
-void DevtoolsHost::describeDetachedWindow(app::detail::DetachedWindowOptions& options) const {
-    options.title = "EUI DevTools";
-    options.clearColor = devtoolsTheme().panelBackground;
-    options.width = 640;
-    options.height = 420;
-}
-
-void DevtoolsHost::setDetachedWindowOpener(std::function<void()> opener) {
-    detachedWindowOpener_ = std::move(opener);
-}
-
-void DevtoolsHost::setDetachedWindowCloser(std::function<void()> closer) {
-    detachedWindowCloser_ = std::move(closer);
-}
-
 void DevtoolsHost::openDetachedWindow() {
-    if (detachedWindowOpener_) {
-        detachedWindowOpener_();
+    if (!windows_.open) {
+        return;
     }
+    app::detail::OverlayWindowRequest request;
+    request.title = "EUI DevTools";
+    request.clearColor = devtoolsTheme().panelBackground;
+    request.width = 640;
+    request.height = 420;
+    request.compose = [this](core::dsl::Ui& ui, const core::dsl::Screen& screen) {
+        composeDetached(ui, screen);
+    };
+    request.closed = [this] { detachedWindowClosed(); };
+    windows_.open(request);
 }
 
 void DevtoolsHost::detachedWindowClosed() {
@@ -315,8 +471,8 @@ void DevtoolsHost::detachedWindowClosed() {
 }
 
 void DevtoolsHost::closeDetachedWindow() {
-    if (detachedWindowCloser_) {
-        detachedWindowCloser_();
+    if (windows_.close) {
+        windows_.close();
     }
 }
 
@@ -365,10 +521,16 @@ core::Rect DevtoolsHost::panelBounds() const {
     return {};
 }
 
-core::Rect DevtoolsHost::contentBounds() const {
-    const float width = static_cast<float>(framebufferWidth_);
-    const float height = static_cast<float>(framebufferHeight_);
+core::Rect DevtoolsHost::contentBounds(int windowWidth, int windowHeight, float dpiScale) const {
+    (void)dpiScale;
+    const float width = static_cast<float>(windowWidth);
+    const float height = static_cast<float>(windowHeight);
     if (!visible_ || dockPosition_ == DockPosition::Floating) {
+        return {0.0f, 0.0f, width, height};
+    }
+    // The panel is measured in the window that was last driven, so a differently sized
+    // window has to be driven once before its content bounds mean anything.
+    if (windowWidth != framebufferWidth_ || windowHeight != framebufferHeight_) {
         return {0.0f, 0.0f, width, height};
     }
     const core::Rect panel = panelBounds();
@@ -382,7 +544,7 @@ core::Rect DevtoolsHost::contentBounds() const {
 }
 
 int DevtoolsHost::contentHeight() const {
-    return static_cast<int>(contentBounds().height);
+    return static_cast<int>(contentBounds(framebufferWidth_, framebufferHeight_, dpiScale_).height);
 }
 
 float DevtoolsHost::performanceScrollOffset() const {
@@ -664,7 +826,7 @@ void DevtoolsHost::composeDetached(core::dsl::Ui& ui, const core::dsl::Screen& s
     composeUi(ui, screen.width, screen.height, {0.0f, 0.0f, screen.width, screen.height}, true);
 }
 
-bool DevtoolsHost::update(int framebufferWidth, int framebufferHeight, float dpiScale, float deltaSeconds) {
+bool DevtoolsHost::updatePanel(int framebufferWidth, int framebufferHeight, float dpiScale, float deltaSeconds) {
     if (framebufferWidth != framebufferWidth_ || framebufferHeight != framebufferHeight_ ||
         dpiScale != dpiScale_) {
         requestCompose();
@@ -767,8 +929,6 @@ void DevtoolsHost::shutdown() {
     visible_ = false;
     dockPosition_ = DockPosition::Bottom;
     performanceSnapshot_ = {};
-    detachedWindowOpener_ = {};
-    detachedWindowCloser_ = {};
     resizing_ = false;
     panelEdgeActive_ = false;
     pickCommitPending_ = false;

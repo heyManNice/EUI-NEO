@@ -60,7 +60,8 @@ void compose(eui::Ui& ui, const eui::Screen& screen) {
 - 工具栏左侧的箭头开启拾取：开启后指针归面板所有，页面收到的是“指针已离开”，面板把指针位置交给应用层，由**页面自己的命中测试**回答（变换、祖先裁剪、绘制顺序都与画出来的一致），元素随指针预览（复用树上悬浮那套盒模型高亮）。点击时把元素作为选中交给树，这次点击不会传给页面；拾取一次后自动关闭，再点箭头或按 Esc 也可关闭。面板停靠在窗口里或独立成窗时都一样工作。
 - 树会把新来的选中显示出来：展开藏住它的祖先、必要时滚到那一行，每个选中只做一次，之后手动折叠或滚动不会被抢回。
 - 拾取不改变光标（面板不碰窗口光标），也不在页面上留常驻高亮：页面上只出现跟随指针的那一次预览。
-- 输入过滤、内容区预留、页面上层绘制（`renderPageOverlay`）、独立窗口由 `app::detail::OverlayHost` 这个框架接缝完成，面板不依赖业务组件和核心流程的特例。面板自己持有的图元（预览用）由面板在 `releaseGraphicsResources()` 里释放，框架不替工具管图形资源。
+- 输入过滤、内容区预留、页面上层绘制（`renderPageOverlay`）、独立窗口由 `app::detail::OverlayHooks` / `OverlayWindows` 这层小接缝完成（见 `include/eui/detail/overlay_hooks.h`），面板不依赖业务组件和核心流程的特例。面板自己持有的图元（预览用）由面板在 `releaseGraphicsResources()` 里释放，框架不替工具管图形资源。
+- 面板读页面数据、写页面值都**直接调页面 Runtime**（`elementTree` / `elementValues` / `setElementField` / `elementIdAt` / `hoveredBox` / `setHoveredElement`），框架不替工具保管数据、也不保管发布状态：什么时候拷、拷什么、节流多久都是面板自己的事（`DevtoolsHost::frame`）。
 - 属性区的尺寸是主题度量（`devtools_theme.h` 的 `propertiesInitialFraction`、`propertiesMinimumHeight`、`propertiesMinimumTreeHeight`、`propertiesHandleHeight`），高度本身存在面板状态里，不写回应用。
 
 ## 标签页与计划
@@ -88,7 +89,7 @@ void compose(eui::Ui& ui, const eui::Screen& screen) {
 
 ## 与框架文档的差异
 
-- 热键：面板先于 `DslAppConfig::onKeyEvent` 拿到按键（走 `OverlayHost::handleHotkey`），所以 F12 / Ctrl+Shift+I 被面板消费时应用收不到。这是“面板优先”的取舍，与 `docs/事件.md` 里“按键未消费才交给 `onKeyEvent`”的传递顺序不同。
+- 热键：面板先于 `DslAppConfig::onKeyEvent` 拿到按键（走 `OverlayHooks::handleKey`），所以 F12 / Ctrl+Shift+I 被面板消费时应用收不到。这是“面板优先”的取舍，与 `docs/事件.md` 里“按键未消费才交给 `onKeyEvent`” 的传递顺序不同。
 - 独立窗口：面板用 `openWindow` 的返回值（`DslWindowHandle`）管理生命周期，因此该入口的返回类型相对 main 从 `void` 改成了句柄（源码兼容、ABI 不兼容）。
 
 ## 测试
