@@ -565,6 +565,37 @@ int main() {
         frame();
         assert(countPanelRows(host) == 1);
 
+        // The tree list spans the whole panel, so its scrollbar ends on the panel edge
+        // and a row highlight reaches it instead of stopping a gap short, the way the
+        // property list already behaves. The numbers keep the inset the row content
+        // reserves for them, so they stop short of the scrollbar themselves.
+        {
+            const core::dsl::runtime::ElementTreeSnapshot narrow = host.elementTree();
+            core::dsl::runtime::ElementTreeSnapshot wide;
+            wide.revision = narrow.revision + 1;
+            for (int index = 0; index < 40; ++index) {
+                wide.nodes.push_back({"page.row" + std::to_string(index), core::dsl::ElementKind::Rect, {}, 0, 0,
+                                      false, false, false, {0.0f, 0.0f, 10.0f, 10.0f}});
+            }
+            host.setElementTree(wide);
+            frame();
+
+            const core::Rect list = panelElementFrame(host, "elements.list");
+            const core::Rect scroll = panelElementFrame(host, "elements.list.scroll");
+            assert(countPanelRows(host) > 0);
+            assert(std::fabs((scroll.x + scroll.width) - (list.x + list.width)) < 0.5f);
+
+            const core::Rect highlight = panelElementFrame(host, "elements.list.slot.0.row.background");
+            assert(std::fabs((highlight.x + highlight.width) - scroll.x) < 0.5f);
+
+            const core::Rect numbers = panelElementFrame(host, "elements.list.slot.0.row.size");
+            assert(std::fabs((numbers.x + numbers.width) - (scroll.x - theme.elementDetailsPadding)) < 0.5f);
+            assert(numbers.x + numbers.width < highlight.x + highlight.width);
+
+            host.setElementTree(narrow);
+            frame();
+        }
+
         clickPanel(120.0, tabY);
         assert(host.activeTab() == DevtoolsTab::Performance);
         assert(!host.wantsElementTree());

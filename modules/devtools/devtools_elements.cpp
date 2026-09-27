@@ -177,8 +177,11 @@ void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRo
                 .onClick(select)
                 .onHover(hover)
                 .build();
+            // The highlight above spans the whole row, so the content keeps the inset
+            // the numbers need: without it the size column would touch the scrollbar.
             ui.row(base + ".content")
                 .fill()
+                .padding(0.0f, 0.0f, theme.elementDetailsPadding, 0.0f)
                 .content([&] {
                     if (node.depth > 0) {
                         ui.stack(base + ".indent")
@@ -368,11 +371,16 @@ void composeElementsTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const D
             state.panelState != nullptr ? state.panelState->expandedElements : noExpansions;
         const std::vector<ElementRow> rows = visibleElementRows(*tree, expanded);
         const float scrollOffset = state.panelState != nullptr ? state.panelState->elementsScrollOffset : 0.0f;
+        // The list spans the whole panel, so its scrollbar sits on the panel edge and a
+        // row highlight reaches it instead of stopping a gap short. That gap is what the
+        // list reserves for the scrollbar, which the row content replaces with its own
+        // right inset.
         components::virtualList(ui, "elements.list")
             .position(state.panel.x, top)
             .size(state.panel.width, listHeight)
             .itemCount(static_cast<std::int64_t>(rows.size()))
             .rowHeight(theme.elementRowHeight)
+            .scrollbarGap(0.0f)
             .offset(scrollOffset)
             .onChange(actions.setElementsScrollOffset)
             .row([&](core::dsl::Ui& rowUi, const std::string& rowId, std::int64_t index, float width, float height) {
