@@ -441,6 +441,37 @@ int main() {
             assert(std::adjacent_find(sorted.begin(), sorted.end()) == sorted.end());
         }
 
+        // Every property row puts its control in the same column and ends it on the same
+        // line: the slider of a number row, the track of a switch, the box of a colour and
+        // the value text beside them. A smaller scale factor gives the panel a taller
+        // logical area, which is what brings the rows far enough down the list — the first
+        // switch is the shadow flag — into the composed window.
+        {
+            frame(0.5f);
+            // The colour row is the first property the panel declares and the number row
+            // under it is opacity; the summaries and the section header take slots 0 to 5.
+            const core::Rect colourColumn = panelElementFrame(host, "elements.properties.list.slot.6.control");
+            const core::Rect numberColumn = panelElementFrame(host, "elements.properties.list.slot.7.control");
+            assert(std::fabs(colourColumn.x - numberColumn.x) < 0.5f);
+            assert(std::fabs(colourColumn.width - numberColumn.width) < 0.5f);
+
+            const core::Rect slider = panelElementFrame(host, ".slider");
+            const core::Rect track = panelElementFrame(host, ".switch.track");
+            const core::Rect swatch = panelElementFrame(host, ".swatch.box");
+            const float columnRight = numberColumn.x + numberColumn.width;
+            assert(slider.x + slider.width < columnRight);      // the slider is inset inside it
+            assert(std::fabs((slider.x + slider.width) - (track.x + track.width)) < 1.5f);
+            assert(std::fabs((slider.x + slider.width) - (swatch.x + swatch.width)) < 1.5f);
+
+            // The value column is one line as well, and it starts to the right of the
+            // controls: the hex of the colour and the number of the slider end together.
+            const core::Rect hex = panelElementFrame(host, "elements.properties.list.slot.6.value");
+            const core::Rect number = panelElementFrame(host, "elements.properties.list.slot.7.value");
+            assert(std::fabs((hex.x + hex.width) - (number.x + number.width)) < 0.5f);
+            assert(hex.x > swatch.x + swatch.width);
+            frame();
+        }
+
         // A drag on a number editor queues one edit for the app layer to write. The
         // first slider row is the first number property the panel declares, opacity.
         {

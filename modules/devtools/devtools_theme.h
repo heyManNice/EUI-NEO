@@ -71,12 +71,16 @@ struct DevtoolsTheme {
     float elementDetailsPadding = 10.0f;
     float elementDetailsLabelWidth = 56.0f;
     float propertyLabelWidth = 78.0f;
-    float propertyValueWidth = 46.0f;
+    // Wide enough for a `#RRGGBB` value at elementRowFontSize, which is the longest value
+    // a row prints.
+    float propertyValueWidth = 58.0f;
     float propertyRevertWidth = 20.0f;
-    float propertySwatchWidth = 24.0f;
+    // The caret a colour row shows while its channels are open, and the swatch beside it.
+    float propertyIndicatorWidth = 16.0f;
     float propertySwatchSize = 14.0f;
     float propertyResetWidth = 52.0f;
-    float propertySwitchWidth = 40.0f;
+    // The switch draws its track inside its own box: the row derives the box from the
+    // track plus both insets, so both are what the component theme uses.
     float propertySwitchTrackWidth = 32.0f;
     float propertySwitchTrackHeight = 18.0f;
     float propertyColumnGap = 6.0f;
@@ -98,8 +102,10 @@ struct DevtoolsTheme {
     unsigned int iconDockLeft = 0xF060;
     unsigned int iconDockDown = 0xF063;
     unsigned int iconDockRight = 0xF061;
-    unsigned int iconElementExpanded = 0xF0D7;
-    unsigned int iconElementCollapsed = 0xF0DA;
+    // The caret a disclosure control shows: the tree rows that hide a subtree, and the
+    // colour row whose channels are open.
+    unsigned int iconDisclosureExpanded = 0xF0D7;
+    unsigned int iconDisclosureCollapsed = 0xF0DA;
     unsigned int iconElementLayout = 0xF0C9;
     unsigned int iconElementShape = 0xF0C8;
     unsigned int iconElementText = 0xF031;

@@ -296,18 +296,35 @@ void composeRevertButton(core::dsl::Ui& ui, const std::string& id, const std::st
         .build();
 }
 
+// The colour slot: the caret that says whether the channels are open, then the swatch.
+// Both live in the element that takes the click, because the caret is the state of the
+// swatch rather than a second button beside it.
 void composeColorSwatch(core::dsl::Ui& ui, const std::string& id, const std::string& elementId,
                         DebugPropertyId property, const core::Color& color, bool open,
                         const DevtoolsUiActions& actions) {
     const DevtoolsTheme& theme = devtoolsTheme();
+    // The swatch box ends where the sliders and the switch tracks of the neighbouring rows
+    // end, which is the control inset inside the column, and the caret sits in front of it.
+    const float inset = controlTheme().metrics.spacing.control;
+    const float slotWidth =
+        theme.propertyIndicatorWidth + theme.metricGap + theme.propertySwatchSize + inset;
     core::Color swatch = color;
     swatch.a = 1.0f;
     ui.stack(id + ".swatch")
-        .size(theme.propertySwatchWidth, theme.elementRowHeight)
+        .size(slotWidth, theme.elementRowHeight)
         .content([&] {
+            ui.text(id + ".swatch.indicator")
+                .size(theme.propertyIndicatorWidth, theme.elementRowHeight)
+                .icon(open ? theme.iconDisclosureExpanded : theme.iconDisclosureCollapsed)
+                .fontSize(theme.elementFontSize)
+                .lineHeight(theme.elementRowHeight)
+                .color(open ? theme.primaryText : theme.mutedText)
+                .horizontalAlign(core::HorizontalAlign::Center)
+                .verticalAlign(core::VerticalAlign::Center)
+                .build();
             ui.rect(id + ".swatch.box")
                 .size(theme.propertySwatchSize, theme.propertySwatchSize)
-                .position((theme.propertySwatchWidth - theme.propertySwatchSize) * 0.5f,
+                .position(theme.propertyIndicatorWidth + theme.metricGap,
                           (theme.elementRowHeight - theme.propertySwatchSize) * 0.5f)
                 .color(swatch)
                 .radius(2.0f)
@@ -321,6 +338,22 @@ void composeColorSwatch(core::dsl::Ui& ui, const std::string& id, const std::str
                 toggle(property, !open);
             }
         })
+        .build();
+}
+
+// The control column of a row: one fixed box on every row, with the control aligned
+// inside it, so a slider that fills the column, a switch and a colour slot all start and
+// end on the same two lines instead of each sitting where its own width leaves it.
+template <typename ComposeControl>
+void composeControlSlot(core::dsl::Ui& ui,
+                        const std::string& id,
+                        float width,
+                        core::Align side,
+                        ComposeControl&& compose) {
+    ui.stack(id)
+        .size(std::max(24.0f, width), devtoolsTheme().elementRowHeight)
+        .align(core::Align::CENTER, side)
+        .content([&] { compose(); })
         .build();
 }
 
@@ -348,10 +381,17 @@ void composePropertyRow(core::dsl::Ui& ui,
                         const DevtoolsUiActions& actions) {
     const DevtoolsTheme& theme = devtoolsTheme();
     const bool hasRevert = row.kind == PropertyRowKind::Property && row.overridden;
+    // A switch draws its track inset inside its own box by the component theme's control
+    // spacing, so its box is that track plus both insets. The control column aligns that
+    // box, and the sliders get the same inset at both ends of the column, which is what
+    // puts a switch and a slider on the same two lines.
+    const float controlInset = controlTheme().metrics.spacing.control;
     const float editorWidth = std::max(
         24.0f,
         state.panel.width - theme.propertyLabelWidth - theme.propertyValueWidth - theme.propertyRevertWidth -
             theme.elementDetailsPadding * 2.0f);
+    const float switchWidth = theme.propertySwitchTrackWidth + controlInset * 2.0f;
+    const float sliderWidth = std::max(24.0f, editorWidth - controlInset * 2.0f);
 
     ui.text(id + ".label")
         .size(theme.propertyLabelWidth, theme.elementRowHeight)
@@ -379,85 +419,97 @@ void composePropertyRow(core::dsl::Ui& ui,
         return;
     }
 
-    if (row.kind == PropertyRowKind::Channel) {
-        float hue = 0.0f;
-        float saturation = 0.0f;
-        float value = 0.0f;
-        core::Color current{1.0f, 1.0f, 1.0f, 1.0f};
-        if (state.panelState != nullptr) {
-            current = propertyColor(*properties.properties, state.panelState->colorEditorProperty);
-        }
-        colorToHsv(current, hue, saturation, value);
-        const float channels[4] = {hue / 360.0f, saturation, value, current.a};
-        const float channelValue = channels[row.channel];
-
-        components::slider(ui, id + ".slider")
-            .size(std::max(24.0f, editorWidth), theme.elementRowHeight)
-            .value(channelValue)
-            .theme(controlTheme())
-            .onChange([set = actions.properties.setColor, elementId, property = row.property,
-                       channel = row.channel, current](float normalized) {
-                if (!set) {
-                    return;
-                }
-                float h = 0.0f;
-                float s = 0.0f;
-                float v = 0.0f;
-                colorToHsv(current, h, s, v);
-                switch (channel) {
-                case 0: h = normalized * 360.0f; break;
-                case 1: s = normalized; break;
-                case 2: v = normalized; break;
-                default: break;
-                }
-                const float alpha = channel == 3 ? normalized : current.a;
-                set(elementId, property, colorFromHsv(h, s, v, alpha));
-            })
-            .build();
-        ui.text(id + ".value")
-            .size(theme.propertyValueWidth, theme.elementRowHeight)
-            .text(formatNumber(row.channel == 0 ? channelValue * 360.0f : channelValue))
-            .fontSize(theme.elementRowFontSize)
-            .color(theme.metricValue)
-            .horizontalAlign(core::HorizontalAlign::Right)
-            .verticalAlign(core::VerticalAlign::Center)
-            .build();
-        return;
-    }
-
-    const DebugPropertyType type = core::dsl::runtime::debugPropertyType(row.property);
-    switch (type) {
+    // Every row from here down is the same four columns: the label, the control column,
+    // the value and the way back. The control column is one fixed box that the control is
+    // aligned inside, so a slider that fills it, a switch and a colour slot all end on the
+    // same line instead of each sitting where its own width leaves it.
+    switch (core::dsl::runtime::debugPropertyType(row.property)) {
     case DebugPropertyType::Color: {
-        if (properties.properties != nullptr && state.panelState != nullptr) {
+        if (row.kind == PropertyRowKind::Channel) {
+            // A channel of the colour its row above opened: dragged as one number.
+            float hue = 0.0f;
+            float saturation = 0.0f;
+            float value = 0.0f;
+            core::Color current{1.0f, 1.0f, 1.0f, 1.0f};
+            if (state.panelState != nullptr) {
+                current = propertyColor(*properties.properties, state.panelState->colorEditorProperty);
+            }
+            colorToHsv(current, hue, saturation, value);
+            const float channels[4] = {hue / 360.0f, saturation, value, current.a};
+            const float channelValue = channels[row.channel];
+
+            composeControlSlot(ui, id + ".control", editorWidth, core::Align::CENTER, [&] {
+                components::slider(ui, id + ".slider")
+                    .size(sliderWidth, theme.elementRowHeight)
+                    .value(channelValue)
+                    .theme(controlTheme())
+                    .onChange([set = actions.properties.setColor, elementId, property = row.property,
+                               channel = row.channel, current](float normalized) {
+                        if (!set) {
+                            return;
+                        }
+                        float h = 0.0f;
+                        float s = 0.0f;
+                        float v = 0.0f;
+                        colorToHsv(current, h, s, v);
+                        switch (channel) {
+                        case 0: h = normalized * 360.0f; break;
+                        case 1: s = normalized; break;
+                        case 2: v = normalized; break;
+                        default: break;
+                        }
+                        const float alpha = channel == 3 ? normalized : current.a;
+                        set(elementId, property, colorFromHsv(h, s, v, alpha));
+                    })
+                    .build();
+            });
+            ui.text(id + ".value")
+                .size(theme.propertyValueWidth, theme.elementRowHeight)
+                .text(formatNumber(row.channel == 0 ? channelValue * 360.0f : channelValue))
+                .fontSize(theme.elementRowFontSize)
+                .color(theme.metricValue)
+                .horizontalAlign(core::HorizontalAlign::Right)
+                .verticalAlign(core::VerticalAlign::Center)
+                .build();
+            break;
+        }
+        composeControlSlot(ui, id + ".control", editorWidth, core::Align::END, [&] {
+            if (properties.properties == nullptr || state.panelState == nullptr) {
+                return;
+            }
             composeColorSwatch(ui, id, elementId, row.property,
                                propertyColor(*properties.properties, row.property),
                                state.panelState->colorEditorOpen &&
                                    state.panelState->colorEditorProperty == row.property,
                                actions);
-        }
-        ui.text(id + ".hex")
-            .width(core::SizeValue::fill())
-            .height(theme.elementRowHeight)
+        });
+        ui.text(id + ".value")
+            .size(theme.propertyValueWidth, theme.elementRowHeight)
             .text(row.value)
             .fontSize(theme.elementRowFontSize)
             .color(theme.mutedText)
+            .horizontalAlign(core::HorizontalAlign::Right)
             .verticalAlign(core::VerticalAlign::Center)
             .build();
         break;
     }
     case DebugPropertyType::Flag: {
-        components::toggleSwitch(ui, id + ".switch")
-            .size(theme.propertySwitchWidth, theme.elementRowHeight)
-            .checked(row.value == "on")
-            .trackSize(theme.propertySwitchTrackWidth, theme.propertySwitchTrackHeight)
-            .theme(controlTheme())
-            .onChange([set = actions.properties.setFlag, elementId, property = row.property](bool value) {
-                if (set) {
-                    set(elementId, property, value);
-                }
-            })
-            .build();
-        ui.stack(id + ".spacer").width(core::SizeValue::fill()).height(theme.elementRowHeight).build();
+        composeControlSlot(ui, id + ".control", editorWidth, core::Align::END, [&] {
+            components::toggleSwitch(ui, id + ".switch")
+                .size(switchWidth, theme.elementRowHeight)
+                .checked(row.value == "on")
+                .trackSize(theme.propertySwitchTrackWidth, theme.propertySwitchTrackHeight)
+                .theme(controlTheme())
+                .onChange([set = actions.properties.setFlag, elementId, property = row.property](bool value) {
+                    if (set) {
+                        set(elementId, property, value);
+                    }
+                })
+                .build();
+        });
+        // A switch is its own value, so nothing is printed beside it; the column is
+        // composed all the same, which is what keeps the rows in the same place.
+        ui.stack(id + ".valueSpacer").width(theme.propertyValueWidth).height(theme.elementRowHeight).build();
         break;
     }
     case DebugPropertyType::Number: {
@@ -468,31 +520,29 @@ void composePropertyRow(core::dsl::Ui& ui,
         const float current = properties.properties != nullptr
             ? propertyNumber(*properties.properties, row.property)
             : 0.0f;
-        components::slider(ui, id + ".slider")
-            .size(std::max(24.0f, editorWidth), theme.elementRowHeight)
-            .value(range > 0.0f ? (current - minimum) / range : 0.0f)
-            .theme(controlTheme())
-            .onChange([set = actions.properties.setNumber, elementId, property = row.property, minimum,
-                       range](float normalized) {
-                if (set) {
-                    set(elementId, property, minimum + normalized * range);
-                }
-            })
-            .build();
+        composeControlSlot(ui, id + ".control", editorWidth, core::Align::CENTER, [&] {
+            components::slider(ui, id + ".slider")
+                .size(sliderWidth, theme.elementRowHeight)
+                .value(range > 0.0f ? (current - minimum) / range : 0.0f)
+                .theme(controlTheme())
+                .onChange([set = actions.properties.setNumber, elementId, property = row.property, minimum,
+                           range](float normalized) {
+                    if (set) {
+                        set(elementId, property, minimum + normalized * range);
+                    }
+                })
+                .build();
+        });
         composeValueText(ui, id, row);
-        if (!hasRevert) {
-            return;
-        }
-        composeRevertButton(ui, id, elementId, row.property, actions);
-        return;
+        break;
     }
     }
 
     if (hasRevert) {
         composeRevertButton(ui, id, elementId, row.property, actions);
     } else {
-        // A colour row keeps its value text aligned with the rows that have a revert
-        // button, so the columns do not jump while the pointer moves around.
+        // The way back is a column of its own, so every row reserves it: without the
+        // placeholder the value column would move as the pointer moves around.
         ui.stack(id + ".revertSpacer").width(theme.propertyRevertWidth).height(theme.elementRowHeight).build();
     }
 }

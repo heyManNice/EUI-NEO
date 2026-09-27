@@ -198,7 +198,7 @@ void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRo
                             }
                             ui.text(base + ".disclosure.icon")
                                 .size(theme.elementDisclosureSize, theme.elementDisclosureSize)
-                                .icon(row.collapsed ? theme.iconElementCollapsed : theme.iconElementExpanded)
+                                .icon(row.collapsed ? theme.iconDisclosureCollapsed : theme.iconDisclosureExpanded)
                                 .fontSize(theme.elementFontSize)
                                 .lineHeight(theme.elementDisclosureSize)
                                 .color(theme.mutedText)
