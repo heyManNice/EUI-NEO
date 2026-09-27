@@ -1,6 +1,6 @@
 #include "modules/devtools/devtools_host.h"
 
-#if defined(EUI_DEBUG_BUILD)
+#if defined(EUI_TOOLING)
 
 #include "modules/devtools/devtools_preview.h"
 #include "modules/devtools/devtools_theme.h"

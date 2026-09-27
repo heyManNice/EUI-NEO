@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(EUI_DEBUG_BUILD)
+#if defined(EUI_TOOLING)
 
 #include "modules/devtools/devtools_ui.h"
 

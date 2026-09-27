@@ -2,7 +2,7 @@
 
 #include "modules/devtools/devtools_fields.h"
 
-#if defined(EUI_DEBUG_BUILD)
+#if defined(EUI_TOOLING)
 
 #include <utility>
 

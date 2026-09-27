@@ -1,29 +1,34 @@
 # DevTools panel module.
 #
-# The panel implementation is compiled for Debug configurations only, so a
-# Release build links a module with no DevTools code in it. Applications opt in
-# by keeping a modules::devtools::Session alive; see README.md.
+# The panel implementation is compiled where the tooling seam exists: in debug
+# configurations, or wherever EUI_TOOLING is turned on. A build without the seam
+# links a module with no DevTools code in it. Applications opt in by keeping a
+# modules::devtools::Session alive; see README.md.
+
+# The panel sources follow the tooling seam, not the configuration: the same switch
+# that gives the core its seam builds the tool that uses it.
+set(EUI_DEVTOOLS_PANEL "$<OR:$<CONFIG:Debug>,$<BOOL:${EUI_TOOLING}>>")
 
 add_library(eui_neo_module_devtools
     devtools.h
     devtools.cpp
     devtools_theme.h
-    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_host.cpp>
-    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_host.h>
-    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_ui.cpp>
-    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_ui.h>
-    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_elements.cpp>
-    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_elements.h>
-    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_properties.cpp>
-    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_properties.h>
-    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_performance.cpp>
-    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_performance.h>
-    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_preview.cpp>
-    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_preview.h>
-    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_tree.cpp>
-    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_tree.h>
-    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_fields.cpp>
-    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_fields.h>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_host.cpp>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_host.h>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_ui.cpp>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_ui.h>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_elements.cpp>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_elements.h>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_properties.cpp>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_properties.h>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_performance.cpp>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_performance.h>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_preview.cpp>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_preview.h>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_tree.cpp>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_tree.h>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_fields.cpp>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_fields.h>
 )
 add_library(eui::module_devtools ALIAS eui_neo_module_devtools)
 set_target_properties(eui_neo_module_devtools PROPERTIES EXPORT_NAME module_devtools)

@@ -10,7 +10,7 @@
 // (core/tooling/pass.h), and this is the module's half. What it has to get right on its own
 // is the band arithmetic: translucent region colours must not overlap, or two of them blend
 // into a colour the user cannot read as either region.
-#if defined(EUI_DEBUG_BUILD)
+#if defined(EUI_TOOLING)
 
 int main() {
     // The band between two boxes is split into rectangles that do not overlap, so

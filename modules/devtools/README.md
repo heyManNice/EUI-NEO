@@ -43,7 +43,7 @@ void compose(eui::Ui& ui, const eui::Screen& screen) {
 - `Release` 配置下模块只提供 `modules::devtools::available()`，它返回 `false`；`Session` 是空类型，接入代码会被完整优化掉。
 - `Debug` 配置下面板代码编译进模块库，只在应用创建 `Session` 时链接进来。
 - 因此 DevTools 需要和 EUI-NEO 使用同一个构建配置。Release SDK 不包含面板实现，Release 构建的 SDK 无法为 Debug 应用提供面板。
-- 框架侧的门控是 `EUI_TOOLING`（Debug 配置下由 CMake 定义）：它表示"这个构建带工具接缝"，与"是不是调试构建"（`EUI_DEBUG_BUILD`）分开，判定集中在一个头文件里。面板模块自身的源文件目前仍跟 Debug 配置走。见 `docs/工具协议.md`。
+- 框架侧的门控是 `EUI_TOOLING`：它表示"这个构建带工具接缝"，与"是不是调试构建"（`EUI_DEBUG_BUILD`）分开，判定集中在一个头文件里。面板模块的源文件和它自己的守卫都**跟 `EUI_TOOLING` 走**，不跟构建配置走：Debug 配置默认打开它，Release 配置用 `-DEUI_TOOLING=ON` 打开，两者编译的是同一份面板代码。见 `docs/工具协议.md`。
 
 ## 能力边界
 

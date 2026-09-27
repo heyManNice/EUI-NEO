@@ -13,7 +13,7 @@
 // element's own value back. The core is not asked about a single field, because it holds
 // none: what the panel wrote travels to the page as one patch, applied through the hook the
 // store registers.
-#if defined(EUI_DEBUG_BUILD)
+#if defined(EUI_TOOLING)
 
 namespace {
 

@@ -30,7 +30,10 @@ struct DslAppConfig {
     bool alwaysOnTopValue = false;
     bool maximizedValue = false;
     float uiScaleValue = 1.0f;
-#if EUI_TOOLING_ENABLED
+    // The window title statistics and the DSL debug overlay are debug-build conveniences,
+    // not tooling: a shipped build that turns the tooling seam on for a profiler keeps them
+    // off, and a debug build turns them on whether or not a tool is attached.
+#if EUI_DEV_BUILD
     bool showDebugStatsInTitleValue = true;
     bool showDebugOverlayValue = true;
 #else

@@ -198,7 +198,10 @@ struct AppRunner {
 
     template <typename SetTitleFn, typename PublishSnapshotFn>
     void updatePerformanceStats(double now, SetTitleFn&& setTitle, PublishSnapshotFn&& publishSnapshot) {
-#if !EUI_TOOLING_ENABLED
+        // Measuring costs a process sample every interval, and there are two reasons to pay
+        // it: the window title shows the numbers, or the build carries tools that read the
+        // snapshot. A build with neither only listens to the title.
+#if !(EUI_DEV_BUILD || EUI_TOOLING_ENABLED)
         if (!showDebugStatsInTitle()) {
             return;
         }

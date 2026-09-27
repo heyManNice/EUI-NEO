@@ -7,7 +7,7 @@
 
 // The element tree snapshot is a debug tool: it exists in Debug builds only and
 // the tools that display it read it on demand.
-#if defined(EUI_DEBUG_BUILD)
+#if defined(EUI_TOOLING)
 
 namespace {
 

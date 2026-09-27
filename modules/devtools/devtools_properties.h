@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(EUI_DEBUG_BUILD)
+#if defined(EUI_TOOLING)
 
 #include "core/dsl.h"
 #include "modules/devtools/devtools_fields.h"

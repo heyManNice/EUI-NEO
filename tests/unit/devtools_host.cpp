@@ -17,7 +17,7 @@ struct HasOverlayHooks<T, std::void_t<decltype(&T::setInputFilter),
                                       decltype(&T::pushScrollEvent),
                                       decltype(&T::renderDirectOverlay)>> : std::true_type {};
 
-#if defined(EUI_DEBUG_BUILD)
+#if defined(EUI_TOOLING)
 
 #include "modules/devtools/devtools.h"
 #include "modules/devtools/devtools_host.h"

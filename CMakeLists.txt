@@ -22,6 +22,7 @@ option(EUI_ENABLE_INSTALL "Install EUI-NEO library, headers, and CMake package f
 option(EUI_ENABLE_MODULES "Build optional EUI-NEO modules when their directories are present." ${EUI_NEO_TOP_LEVEL_DEFAULT})
 option(EUI_VULKAN_LOW_LATENCY_PRESENT "Prefer low-latency Vulkan presentation when available." OFF)
 option(EUI_ENABLE_TRAY "Enable the system tray backend. On Linux, configuration fails when neither glib/gio (SNI) nor GTK3 + libappindicator is available; turn this OFF to build without tray support." ON)
+option(EUI_TOOLING "Build the in-app tooling seam (the DevTools panel and any other tool). It is on in debug configurations and off in release ones, and a shipped build can turn it on for a profiler or a HUD without becoming a debug build." OFF)
 
 set(EUI_DEFAULT_WINDOW_BACKEND "glfw")
 set(EUI_DEFAULT_RENDER_BACKEND "opengl")
@@ -288,12 +289,14 @@ target_compile_definitions(eui_neo PRIVATE YYJSON_DISABLE_WRITER=1)
 # definition through eui::neo when their target links the framework.
 #
 # EUI_TOOLING is the tooling feature flag: the seam a debug panel (or any in-app
-# tool) talks to. It follows the debug configuration by default but is a feature
-# of its own, so a shipped build can enable it for a profiler or a HUD without
-# pretending to be a debug build.  See docs/工具协议.md.
+# tool) talks to. It follows the debug configuration unless the EUI_TOOLING
+# option says otherwise, so a shipped build can turn it on for a profiler or a
+# HUD without pretending to be a debug build, and a debug build can leave it out.
+# Everything that depends on the seam — including the modules that build a tool on
+# top of it — asks for EUI_TOOLING, not for the configuration. See docs/工具协议.md.
 target_compile_definitions(eui_neo INTERFACE
     $<$<CONFIG:Debug>:EUI_DEBUG_BUILD=1>
-    $<$<CONFIG:Debug>:EUI_TOOLING=1>)
+    $<$<OR:$<CONFIG:Debug>,$<BOOL:${EUI_TOOLING}>>:EUI_TOOLING=1>)
 eui_apply_compile_options(eui_neo)
 
 if(EUI_RESOLVED_RENDER_BACKEND STREQUAL "vulkan")
@@ -726,7 +729,8 @@ if(EUI_BUILD_TEST_FIXTURES)
     foreach(unit_source ${TEST_UNIT_SOURCES})
         get_filename_component(unit_name "${unit_source}" NAME_WE)
         # The panel is an optional module, so its tests only exist while the module
-        # does; the rest of the unit tests always build.
+        # does — and the module only builds the panel where the tooling seam is. The
+        # rest of the unit tests always build.
         if((unit_name STREQUAL "devtools_host" OR unit_name STREQUAL "devtools_preview"
             OR unit_name STREQUAL "devtools_tree" OR unit_name STREQUAL "devtools_fields")
            AND NOT TARGET eui::module_devtools)

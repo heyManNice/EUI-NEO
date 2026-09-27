@@ -7,7 +7,7 @@ namespace modules::devtools {
 // carry no DevTools code.
 bool available();
 
-#if defined(EUI_DEBUG_BUILD)
+#if defined(EUI_TOOLING)
 // Keeps the DevTools panel attached to the application for the lifetime of the
 // object. An application opts in by keeping one session alive:
 //

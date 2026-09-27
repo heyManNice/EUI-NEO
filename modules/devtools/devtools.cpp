@@ -1,20 +1,20 @@
 #include "modules/devtools/devtools.h"
 
-#if defined(EUI_DEBUG_BUILD)
+#if defined(EUI_TOOLING)
 #include "modules/devtools/devtools_host.h"
 #endif
 
 namespace modules::devtools {
 
 bool available() {
-#if defined(EUI_DEBUG_BUILD)
+#if defined(EUI_TOOLING)
     return true;
 #else
     return false;
 #endif
 }
 
-#if defined(EUI_DEBUG_BUILD)
+#if defined(EUI_TOOLING)
 
 Session::Session() : attached_(attachDevtoolsHost()) {}
 

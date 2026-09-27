@@ -21,7 +21,7 @@
 // holds, and the element member it reads and writes. Reading, writing and applying a patch
 // all walk that table, so adding a field is one row here plus one row in the property area.
 
-#if defined(EUI_DEBUG_BUILD)
+#if defined(EUI_TOOLING)
 
 namespace modules::devtools {
 
