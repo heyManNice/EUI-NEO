@@ -68,7 +68,8 @@ bool hasPanelElement(const modules::devtools::DevtoolsHost& host, const std::str
 
 // Row slots of the element tree list. A slot is named `...slot.<n>`; the row it
 // composes lives below it.
-int countPanelRows(const modules::devtools::DevtoolsHost& host) {    const std::string prefix = "elements.list.slot.";
+int countPanelRows(const modules::devtools::DevtoolsHost& host) {
+    const std::string prefix = "elements.list.slot.";
     int count = 0;
     for (const modules::devtools::ElementTreeNode& node : host.panelElementTree().nodes) {
         const std::size_t at = node.id.find(prefix);
