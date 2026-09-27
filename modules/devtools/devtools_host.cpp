@@ -806,6 +806,20 @@ DevtoolsUiActions DevtoolsHost::buildActions(DevtoolsPanelState& state) {
         state.elementsScrollOffset = offset;
         requestCompose();
     };
+    actions.tree.setTrimIdPrefix = [this, &state](bool value) {
+        if (state.trimIdPrefix == value) {
+            return;
+        }
+        state.trimIdPrefix = value;
+        requestCompose();
+    };
+    actions.tree.setShowElementBounds = [this, &state](bool value) {
+        if (state.showElementBounds == value) {
+            return;
+        }
+        state.showElementBounds = value;
+        requestCompose();
+    };
     actions.tree.selectElement = [this, &state](const std::string& id) {
         if (state.selectedElement == id) {
             return;

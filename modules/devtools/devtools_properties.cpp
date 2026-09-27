@@ -89,24 +89,6 @@ const PropertyDescriptor* findDescriptor(ElementField field) {
     return found != descriptors.end() ? &*found : nullptr;
 }
 
-// Sliders and switches take a component theme, so the panel hands them its own
-// palette instead of the default light one.
-const components::theme::ThemeColorTokens& controlTheme() {
-    static const components::theme::ThemeColorTokens tokens = [] {
-        const DevtoolsTheme& theme = devtoolsTheme();
-        auto value = components::theme::dark();
-        value.background = theme.panelBackground;
-        value.primary = theme.accent;
-        value.surface = theme.toolbarBackground;
-        value.surfaceHover = theme.toolbarHover;
-        value.surfaceActive = theme.menuRowSelected;
-        value.text = theme.primaryText;
-        value.border = theme.panelBorder;
-        return value;
-    }();
-    return tokens;
-}
-
 core::Transition controlTransition() {
     return core::Transition::make(0.16f, core::Ease::OutCubic);
 }
@@ -327,7 +309,7 @@ void composeColorSwatch(core::dsl::Ui& ui, const std::string& id, const std::str
     const DevtoolsTheme& theme = devtoolsTheme();
     // The swatch box ends where the sliders and the switch tracks of the neighbouring rows
     // end, which is the control inset inside the column, and the caret sits in front of it.
-    const float inset = controlTheme().metrics.spacing.control;
+    const float inset = devtoolsControlTheme().metrics.spacing.control;
     const float slotWidth =
         theme.propertyIndicatorWidth + theme.metricGap + theme.propertySwatchSize + inset;
     core::Color swatch = color;
@@ -407,7 +389,7 @@ void composePropertyRow(core::dsl::Ui& ui,
     // spacing, so its box is that track plus both insets. The control column aligns that
     // box, and the sliders get the same inset at both ends of the column, which is what
     // puts a switch and a slider on the same two lines.
-    const float controlInset = controlTheme().metrics.spacing.control;
+    const float controlInset = devtoolsControlTheme().metrics.spacing.control;
     const float editorWidth = std::max(
         24.0f,
         state.panel.width - theme.propertyLabelWidth - theme.propertyValueWidth - theme.propertyRevertWidth -
@@ -464,7 +446,7 @@ void composePropertyRow(core::dsl::Ui& ui,
                 components::slider(ui, id + ".slider")
                     .size(sliderWidth, theme.elementRowHeight)
                     .value(channelValue)
-                    .theme(controlTheme())
+                    .theme(devtoolsControlTheme())
                     .onChange([set = actions.properties.setValue, elementId, field = row.field,
                                channel = row.channel, current](float normalized) {
                         if (!set) {
@@ -521,7 +503,7 @@ void composePropertyRow(core::dsl::Ui& ui,
                 .size(switchWidth, theme.elementRowHeight)
                 .checked(row.value == "on")
                 .trackSize(theme.propertySwitchTrackWidth, theme.propertySwitchTrackHeight)
-                .theme(controlTheme())
+                .theme(devtoolsControlTheme())
                 .onChange([set = actions.properties.setValue, elementId, field = row.field](bool value) {
                     if (set) {
                         set(elementId, field, fieldValueOf(value));
@@ -546,7 +528,7 @@ void composePropertyRow(core::dsl::Ui& ui,
             components::slider(ui, id + ".slider")
                 .size(sliderWidth, theme.elementRowHeight)
                 .value(range > 0.0f ? (current - minimum) / range : 0.0f)
-                .theme(controlTheme())
+                .theme(devtoolsControlTheme())
                 .onChange([set = actions.properties.setValue, elementId, field = row.field, minimum,
                            range](float normalized) {
                     if (set) {

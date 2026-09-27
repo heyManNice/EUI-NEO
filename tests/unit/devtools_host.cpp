@@ -151,9 +151,12 @@ int main() {
     host.attach(nullptr, windows);
 
     // One app frame for the window the panel is docked into. A test that needs a
-    // differently scaled window drives the host with its own factor.
+    // differently scaled window drives the host with its own factor, and a scaled window
+    // keeps the same logical size: its framebuffer grows with the scale.
     const auto frame = [&](float dpiScale = kDpiScale) {
-        return host.frame(kWindowWidth, kWindowHeight, dpiScale, kFrameSeconds);
+        const int windowWidth = static_cast<int>(kWindowWidth * dpiScale);
+        const int windowHeight = static_cast<int>(kWindowHeight * dpiScale);
+        return host.frame(windowWidth, windowHeight, dpiScale, kFrameSeconds);
     };
 
     // A hidden panel leaves the whole window to the page.
@@ -397,6 +400,18 @@ int main() {
         assert(countPanelRows(host) == 1);
         assert(!hasPanelElement(host, "elements.details"));
 
+        // The view options take a band of their own above the tree, directly under the
+        // toolbar, with both options on one line in the order the tab lists them.
+        {
+            const core::Rect toolbar = panelElementFrame(host, "toolbar");
+            const core::Rect options = panelElementFrame(host, "elements.options");
+            assert(std::fabs(options.y - (toolbar.y + toolbar.height)) < 1.5f);
+            const core::Rect trim = panelElementFrame(host, "elements.options.trimPrefix");
+            const core::Rect bounds = panelElementFrame(host, "elements.options.showBounds");
+            assert(trim.y == bounds.y);
+            assert(bounds.x >= trim.x + trim.width);
+        }
+
         tree.revision = 8;
         tree.nodes.push_back({"page.title", core::dsl::ElementKind::Text, "Hello", 1, 0, false, false, false,
                               {0.0f, 0.0f, 120.0f, 20.0f}});
@@ -415,8 +430,8 @@ int main() {
 
         // Clicking a row selects that element and shows its properties. A panel state
         // change lands on the frame after the click, so the frame is run first.
-        const double rowY = host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).height + theme.toolbarHeight + 1.0 +
-                            theme.elementRowHeight * 0.5;
+        const double rowY = host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).height + theme.toolbarHeight +
+                            theme.elementOptionsHeight + 1.0 + theme.elementRowHeight * 0.5;
         clickPanel(200.0, rowY);
         assert(host.selectedElement() == "page.root");
         frame();
@@ -954,8 +969,8 @@ int main() {
 
         // Selecting the row reads that element's values from the page.
         const double pageRowY =
-            host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).height + theme.toolbarHeight + 1.0 +
-            theme.elementRowHeight * 0.5;
+            host.contentBounds(kWindowWidth, kWindowHeight, kDpiScale).height + theme.toolbarHeight +
+            theme.elementOptionsHeight + 1.0 + theme.elementRowHeight * 0.5;
         clickPanel(200.0, pageRowY);
         assert(host.selectedElement() == "page.panel");
         frame();

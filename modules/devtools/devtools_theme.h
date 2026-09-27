@@ -1,5 +1,6 @@
 #pragma once
 
+#include "components/theme.h"
 #include "core/dsl.h"
 
 namespace modules::devtools {
@@ -63,6 +64,13 @@ struct DevtoolsTheme {
     float indicatorInset = 4.0f;
     float elementRowHeight = 22.0f;
     float elementRowFontSize = 13.0f;
+    // The row of view options above the element tree: one line, one tree row tall, so it
+    // reads at the scale of the rows below it. Its labels use elementRowFontSize and its
+    // indicators iconSize, and each option is sized to its own label, so what separates the
+    // two is elementOptionGap and nothing else.
+    float elementOptionsHeight = elementRowHeight;
+    float elementOptionGap = 0.0f;
+    float elementOptionBoxSize = iconSize;
     float elementIndent = 12.0f;
     float elementDisclosureSize = 16.0f;
     float elementKindWidth = 22.0f;
@@ -118,6 +126,24 @@ struct DevtoolsTheme {
 inline const DevtoolsTheme& devtoolsTheme() {
     static const DevtoolsTheme theme;
     return theme;
+}
+
+// Components (sliders, switches, checkboxes) carry a theme of their own, so the panel hands
+// them its palette instead of the default light one.
+inline const components::theme::ThemeColorTokens& devtoolsControlTheme() {
+    static const components::theme::ThemeColorTokens tokens = [] {
+        const DevtoolsTheme& theme = devtoolsTheme();
+        auto value = components::theme::dark();
+        value.background = theme.panelBackground;
+        value.primary = theme.accent;
+        value.surface = theme.toolbarBackground;
+        value.surfaceHover = theme.toolbarHover;
+        value.surfaceActive = theme.menuRowSelected;
+        value.text = theme.primaryText;
+        value.border = theme.panelBorder;
+        return value;
+    }();
+    return tokens;
 }
 
 } // namespace modules::devtools

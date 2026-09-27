@@ -73,6 +73,11 @@ struct DevtoolsPanelState {
     // only remembers what the user expanded inside it: every node with children
     // starts collapsed, which keeps a deep page readable from the first frame.
     std::vector<std::string> expandedElements;
+    // View options of the Elements tab, both off until the user asks for them: whether a
+    // row prints its id without the prefix it shares with its parent, and whether the page
+    // marks every element's bounds instead of only the one the pointer is on.
+    bool trimIdPrefix = false;
+    bool showElementBounds = false;
 };
 
 // Everything the panel needs for one composition. The host owns geometry, the
@@ -120,6 +125,9 @@ struct DevtoolsUiActions {
         std::function<void(float)> setScrollOffset;
         std::function<void(const std::string&)> selectElement;
         std::function<void(const std::string&, bool)> hoverElement;
+        // The two view options above the tree.
+        std::function<void(bool)> setTrimIdPrefix;
+        std::function<void(bool)> setShowElementBounds;
         // Turns picking on or off. While it is on the panel owns the pointer and the
         // element it picks becomes the selection, which the tree then keeps in view.
         std::function<void()> toggleElementPicker;

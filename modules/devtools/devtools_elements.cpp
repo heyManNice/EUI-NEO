@@ -1,6 +1,8 @@
 #include "modules/devtools/devtools_elements.h"
 
+#include "components/checkbox.h"
 #include "components/virtuallist.h"
+#include "core/render/text.h"
 #include "modules/devtools/devtools_properties.h"
 #include "modules/devtools/devtools_theme.h"
 #include "modules/devtools/devtools_tree.h"
@@ -346,12 +348,61 @@ const char* elementKindName(core::dsl::ElementKind kind) {
     return "element";
 }
 
+// Width one option needs: a checkbox takes its box, the gap after it and its insets out of
+// the width it is given, so its label is measured instead. A fixed width would either clip
+// the text or leave the two options further apart than the gap between them.
+float elementOptionWidth(const std::string& label, const DevtoolsTheme& theme,
+                         const components::theme::ThemeMetricTokens& metrics) {
+    const float inset = metrics.spacing.control;
+    const float text = core::TextPrimitive::measureTextWidth(label, {}, theme.elementRowFontSize, 400);
+    return inset + theme.elementOptionBoxSize + inset + text + inset;
+}
+
+// The view options of the Elements tab: one line of checkboxes above the tree. They say
+// what the panel shows, not what the page is, so they stay out of the more menu and sit
+// with the tree they change.
+void composeElementsOptions(core::dsl::Ui& ui, const DevtoolsUiState& state, const DevtoolsUiActions& actions) {
+    const DevtoolsTheme& theme = devtoolsTheme();
+    const components::theme::ThemeColorTokens& control = devtoolsControlTheme();
+    const DevtoolsPanelState* panel = state.panelState;
+    const std::string trimLabel = "Omit prefix";
+    const std::string boundsLabel = "Show bounds";
+    ui.row("elements.options")
+        .position(state.panel.x, state.panel.y + theme.toolbarHeight + (state.detached ? 0.0f : 1.0f))
+        .size(state.panel.width, theme.elementOptionsHeight)
+        .gap(theme.elementOptionGap)
+        .alignItems(core::Align::CENTER)
+        .content([&] {
+            components::checkbox(ui, "elements.options.trimPrefix")
+                .size(elementOptionWidth(trimLabel, theme, control.metrics), theme.elementOptionsHeight)
+                .text(trimLabel)
+                .fontSize(theme.elementRowFontSize)
+                .boxSize(theme.elementOptionBoxSize)
+                .theme(control)
+                .checked(panel != nullptr && panel->trimIdPrefix)
+                .onChange(actions.tree.setTrimIdPrefix)
+                .build();
+            components::checkbox(ui, "elements.options.showBounds")
+                .size(elementOptionWidth(boundsLabel, theme, control.metrics), theme.elementOptionsHeight)
+                .text(boundsLabel)
+                .fontSize(theme.elementRowFontSize)
+                .boxSize(theme.elementOptionBoxSize)
+                .theme(control)
+                .checked(panel != nullptr && panel->showElementBounds)
+                .onChange(actions.tree.setShowElementBounds)
+                .build();
+        })
+        .build();
+}
+
 void composeElementsTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const DevtoolsUiActions& actions) {
     const DevtoolsTheme& theme = devtoolsTheme();
     const ElementTreeSnapshot* tree = state.elementTree;
-    const float top = state.panel.y + theme.toolbarHeight + (state.detached ? 0.0f : 1.0f);
-    const float contentHeight =
-        std::max(0.0f, state.panel.height - theme.toolbarHeight - (state.detached ? 0.0f : 1.0f));
+    const float tabTop = state.panel.y + theme.toolbarHeight + (state.detached ? 0.0f : 1.0f);
+    const float top = tabTop + theme.elementOptionsHeight;
+    const float contentHeight = std::max(
+        0.0f, state.panel.height - theme.toolbarHeight - (state.detached ? 0.0f : 1.0f) -
+                  theme.elementOptionsHeight);
     const bool hasTree = tree != nullptr && !tree->nodes.empty();
     // The property area belongs to the element the user selected, so it only takes
     // space while there is one, and the divider on its top edge decides how much.
@@ -370,6 +421,8 @@ void composeElementsTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const D
     const float propertyHeight =
         hasProperties ? std::clamp(requestedHeight, minimumHeight, maximumPropertyHeight) : 0.0f;
     const float listHeight = std::max(0.0f, availableHeight - handleHeight - propertyHeight);
+
+    composeElementsOptions(ui, state, actions);
 
     if (!hasTree) {
         composeElementsNotice(ui, "elements.empty",
