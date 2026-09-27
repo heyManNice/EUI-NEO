@@ -1,4 +1,4 @@
-#include "core/dsl_runtime.h"
+#include "modules/devtools/devtools_tree.h"
 
 #ifdef NDEBUG
 #undef NDEBUG
@@ -39,7 +39,7 @@ int main() {
     core::dsl::Runtime runtime;
     composePage(runtime, false);
 
-    const core::dsl::runtime::ElementTreeSnapshot tree = runtime.elementTree();
+    const modules::devtools::ElementTreeSnapshot tree = modules::devtools::buildElementTree(runtime);
     assert(tree.revision > 0);
     assert(!tree.truncated);
     assert(tree.nodes.size() == 5);
@@ -77,7 +77,7 @@ int main() {
     assert(tree.nodes[4].frame.x == 64.0f);
 
     // The copy is bounded: a caller can ask for fewer nodes and learns it was cut.
-    const core::dsl::runtime::ElementTreeSnapshot limited = runtime.elementTree(3);
+    const modules::devtools::ElementTreeSnapshot limited = modules::devtools::buildElementTree(runtime, 3);
     assert(limited.nodes.size() == 3);
     assert(limited.truncated);
     assert(limited.revision == tree.revision);
@@ -85,12 +85,12 @@ int main() {
     // Recomposing the same tree leaves the revision alone, so a viewer knows its
     // copy is still current.
     composePage(runtime, false);
-    assert(runtime.elementTree().revision == tree.revision);
-    assert(runtime.elementTree().nodes.size() == 5);
+    assert(modules::devtools::buildElementTree(runtime).revision == tree.revision);
+    assert(modules::devtools::buildElementTree(runtime).nodes.size() == 5);
 
     // A structural change moves the revision; the viewer refetches from it.
     composePage(runtime, true);
-    const core::dsl::runtime::ElementTreeSnapshot grown = runtime.elementTree();
+    const modules::devtools::ElementTreeSnapshot grown = modules::devtools::buildElementTree(runtime);
     assert(grown.revision > tree.revision);
     assert(grown.nodes.size() == 6);
     assert(grown.nodes[5].id == "page.later");
@@ -103,9 +103,7 @@ int main() {
 #else
 
 int main() {
-    // Release builds carry neither the snapshot nor the tools that read it.
-    core::dsl::Runtime runtime;
-    runtime.shutdown(false);
+    // The panel is not part of this configuration, so neither is the copy it builds.
     return 0;
 }
 

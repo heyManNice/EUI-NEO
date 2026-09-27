@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/app/performance_snapshot.h"
+#include "modules/devtools/devtools_tree.h"
 #include "core/dsl.h"
 #include "core/tooling/model.h"
 
@@ -76,7 +77,7 @@ struct DevtoolsUiState {
     DockPosition dockPosition = DockPosition::Bottom;
     const DevtoolsPanelState* panelState = nullptr;
     const app::PerformanceSnapshot* performance = nullptr;
-    const core::dsl::runtime::ElementTreeSnapshot* elementTree = nullptr;
+    const ElementTreeSnapshot* elementTree = nullptr;
     // Values of the selected element, owned by the host and read once per refresh.
     const core::dsl::runtime::ElementValues* properties = nullptr;
     std::size_t propertyOverrideCount = 0;

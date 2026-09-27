@@ -58,7 +58,7 @@ core::KeyEvent F12Key(core::KeyAction action) {
 // Sees what the panel composed without a renderer: the panel composes into its
 // own Runtime, so its element tree is the composed result.
 bool hasPanelElement(const modules::devtools::DevtoolsHost& host, const std::string& part) {
-    for (const core::dsl::runtime::ElementTreeNode& node : host.panelElementTree().nodes) {
+    for (const modules::devtools::ElementTreeNode& node : host.panelElementTree().nodes) {
         if (node.id.find(part) != std::string::npos) {
             return true;
         }
@@ -70,7 +70,7 @@ bool hasPanelElement(const modules::devtools::DevtoolsHost& host, const std::str
 // composes lives below it.
 int countPanelRows(const modules::devtools::DevtoolsHost& host) {    const std::string prefix = "elements.list.slot.";
     int count = 0;
-    for (const core::dsl::runtime::ElementTreeNode& node : host.panelElementTree().nodes) {
+    for (const modules::devtools::ElementTreeNode& node : host.panelElementTree().nodes) {
         const std::size_t at = node.id.find(prefix);
         if (at == std::string::npos) {
             continue;
@@ -88,7 +88,7 @@ int countPanelRows(const modules::devtools::DevtoolsHost& host) {    const std::
 // are on screen depends on what the panel is showing.
 int panelPropertySlot(const modules::devtools::DevtoolsHost& host, const std::string& label) {
     const std::string prefix = "elements.properties.list.slot.";
-    for (const core::dsl::runtime::ElementTreeNode& node : host.panelElementTree().nodes) {
+    for (const modules::devtools::ElementTreeNode& node : host.panelElementTree().nodes) {
         if (node.kind != core::dsl::ElementKind::Text || node.text != label) {
             continue;
         }
@@ -106,7 +106,7 @@ int panelPropertySlot(const modules::devtools::DevtoolsHost& host, const std::st
 // layout the composition already did.
 std::vector<core::Rect> panelElementFrames(const modules::devtools::DevtoolsHost& host, const std::string& part) {
     std::vector<core::Rect> frames;
-    for (const core::dsl::runtime::ElementTreeNode& node : host.panelElementTree().nodes) {
+    for (const modules::devtools::ElementTreeNode& node : host.panelElementTree().nodes) {
         if (node.id.find(part) != std::string::npos) {
             frames.push_back(node.frame);
         }
@@ -383,7 +383,7 @@ int main() {
         assert(host.activeTab() == DevtoolsTab::Elements);
         assert(host.wantsElementTree());
 
-        core::dsl::runtime::ElementTreeSnapshot tree;
+        modules::devtools::ElementTreeSnapshot tree;
         tree.revision = 7;
         tree.nodes.push_back({"page.root", core::dsl::ElementKind::Column, {}, 0, 0, false, false, false,
                               {0.0f, 0.0f, 800.0f, 600.0f}});
@@ -672,8 +672,8 @@ int main() {
         // property list already behaves. The numbers keep the inset the row content
         // reserves for them, so they stop short of the scrollbar themselves.
         {
-            const core::dsl::runtime::ElementTreeSnapshot narrow = host.elementTree();
-            core::dsl::runtime::ElementTreeSnapshot wide;
+            const modules::devtools::ElementTreeSnapshot narrow = host.elementTree();
+            modules::devtools::ElementTreeSnapshot wide;
             wide.revision = narrow.revision + 1;
             for (int index = 0; index < 40; ++index) {
                 wide.nodes.push_back({"page.row" + std::to_string(index), core::dsl::ElementKind::Rect, {}, 0, 0,
@@ -863,7 +863,8 @@ int main() {
     {
         const auto detachedFrame = [&](const std::string& part) {
             core::Rect found;
-            for (const core::dsl::runtime::ElementTreeNode& node : detachedRuntime.elementTree().nodes) {
+            for (const modules::devtools::ElementTreeNode& node :
+                 modules::devtools::buildElementTree(detachedRuntime).nodes) {
                 if (node.id.find(part) != std::string::npos) {
                     found = node.frame;
                     break;
@@ -1069,7 +1070,7 @@ int main() {
     assert(runtime.tooling() == nullptr);
     assert(runtime.elementStructureRevision() == 0);
     assert(runtime.hoveredElement().empty());
-    assert(runtime.elementTree().nodes.empty());
+    assert(runtime.elementRoots().empty());
     assert(!runtime.elementValues("page.root").active);
     assert(runtime.elementIdAt(0.0, 0.0, 1.0f).empty());
     assert(runtime.elementPatchCount() == 0);

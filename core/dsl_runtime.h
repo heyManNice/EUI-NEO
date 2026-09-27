@@ -99,13 +99,12 @@ public:
     // viewport. Overlay runtimes draw outside the app Runtime render pass.
     void renderDirectOverlay(int windowWidth, int windowHeight, float dpiScale, const Rect* dirtyRect = nullptr);
 
-    // Read-only copy of the current element tree in pre-order. It is built on
-    // demand by the tools that display it, so the runtime keeps no copy of its own,
-    // and it stops at `maximumNodes` to bound the work.
-    runtime::ElementTreeSnapshot elementTree(
-        std::size_t maximumNodes = runtime::kElementTreeMaximumNodes) const;
+    // The page's own elements, in paint order. A tool walks them and builds whatever
+    // snapshot it wants; the runtime keeps no copy, so nothing has to be invalidated when
+    // the page changes.
+    const std::vector<const Element*>& elementRoots() const { return ui_.orderedRoots(); }
 
-    // Bumped whenever the element structure changes, which lets a reader of the tree
+    // Bumped whenever the element structure changes, which lets a tool that builds its own
     // snapshot tell "same tree, new frames" from "the tree itself changed" without
     // diffing. A counter is cheaper than any tool, so the runtime keeps it whether or
     // not a tool is attached.

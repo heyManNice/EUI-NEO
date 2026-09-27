@@ -3,6 +3,7 @@
 #include "components/virtuallist.h"
 #include "modules/devtools/devtools_properties.h"
 #include "modules/devtools/devtools_theme.h"
+#include "modules/devtools/devtools_tree.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -13,8 +14,8 @@ namespace modules::devtools {
 
 namespace {
 
-using core::dsl::runtime::ElementTreeNode;
-using core::dsl::runtime::ElementTreeSnapshot;
+using modules::devtools::ElementTreeNode;
+using modules::devtools::ElementTreeSnapshot;
 
 // One visible row: the node plus what the row needs to draw itself. The app hands
 // the tree over as a pre-order list with depth, so the rows on screen are a filter

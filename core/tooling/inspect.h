@@ -130,51 +130,6 @@ inline std::string Runtime::elementIdAt(double x, double y, float dpiScale) cons
     return hitTest(event, dpiScale, [](const Element&) { return true; }, true);
 }
 
-// A read-only copy of the element tree in pre-order.
-inline runtime::ElementTreeSnapshot Runtime::elementTree(std::size_t maximumNodes) const {
-    runtime::ElementTreeSnapshot snapshot;
-    snapshot.revision = elementStructureRevision();
-
-    // Pre-order with an explicit stack: the snapshot carries depth instead of nesting,
-    // so a tool that renders it can map nodes to flat rows.
-    std::vector<std::pair<const Element*, int>> pending;
-    const std::vector<const Element*>& roots = ui_.orderedRoots();
-    pending.reserve(roots.size());
-    for (auto root = roots.rbegin(); root != roots.rend(); ++root) {
-        pending.push_back({*root, 0});
-    }
-
-    while (!pending.empty()) {
-        if (snapshot.nodes.size() >= maximumNodes) {
-            snapshot.truncated = true;
-            break;
-        }
-        const std::pair<const Element*, int> current = pending.back();
-        pending.pop_back();
-        const Element& element = *current.first;
-
-        runtime::ElementTreeNode node;
-        node.id = element.id;
-        node.kind = element.kind;
-        node.depth = current.second;
-        node.zIndex = element.zIndex;
-        node.clip = element.clip;
-        node.interactive = element.interactive;
-        node.disabled = element.disabled;
-        node.frame = {element.frame.x, element.frame.y, element.frame.width, element.frame.height};
-        if (element.kind == ElementKind::Text) {
-            node.text = runtime::truncateElementText(element.text, runtime::kElementTreeTextLimit);
-        }
-        snapshot.nodes.push_back(std::move(node));
-
-        const std::vector<const Element*>& children = element.orderedChildren;
-        for (auto child = children.rbegin(); child != children.rend(); ++child) {
-            pending.push_back({*child, current.second + 1});
-        }
-    }
-    return snapshot;
-}
-
 // The two readers a tool uses to see what is marked and what it replaced. They answer
 // "nothing" when no tool ever talked to the runtime.
 inline const std::string& Runtime::hoveredElement() const {
@@ -231,7 +186,7 @@ inline runtime::ElementValues Runtime::elementValues(const std::string& id) cons
     values.clip = element->clip;
     values.interactive = element->interactive;
     values.disabled = element->disabled;
-    values.text = runtime::truncateElementText(element->text, runtime::kElementTreeTextLimit);
+    values.text = runtime::truncateElementText(element->text, runtime::kElementValueTextLimit);
     for (int index = 0; index < runtime::kElementFieldCount; ++index) {
         const runtime::ElementField field = static_cast<runtime::ElementField>(index);
         values.fields[static_cast<std::size_t>(index)] = runtime::readElementField(*element, field);

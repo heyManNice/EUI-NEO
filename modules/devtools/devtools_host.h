@@ -5,6 +5,7 @@
 #include "core/dsl_runtime.h"
 #include "core/render/primitive.h"
 #include "eui/detail/overlay_hooks.h"
+#include "modules/devtools/devtools_tree.h"
 #include "modules/devtools/devtools_ui.h"
 
 #include <deque>
@@ -67,7 +68,7 @@ public:
 
     void filterInput(std::vector<core::PointerEvent>& pointerEvents, core::ScrollEvent& scrollEvent);
     bool wantsElementTree() const;
-    void setElementTree(const core::dsl::runtime::ElementTreeSnapshot& tree);
+    void setElementTree(const ElementTreeSnapshot& tree);
     const std::string& hoveredElement() const;
     bool pickingElement() const;
     core::PointerEvent pickedPointer() const;
@@ -91,14 +92,14 @@ public:
     float performanceScrollOffset() const;
     const std::string& selectedElement() const;
     const std::vector<std::string>& expandedElements() const;
-    const core::dsl::runtime::ElementTreeSnapshot& elementTree() const;
+    const ElementTreeSnapshot& elementTree() const;
     const core::dsl::runtime::ElementValues& properties() const;
     std::size_t propertyOverrideCount() const;
 
     // The panel's own element tree. Tests use it to see what the panel composed
     // without a renderer; it is also what a future "inspect the inspector" view
     // would read.
-    core::dsl::runtime::ElementTreeSnapshot panelElementTree() const;
+    ElementTreeSnapshot panelElementTree() const;
 
 private:
     // Copying the page to the panel and writing the panel's edits back, each throttled by
@@ -165,7 +166,7 @@ private:
     bool visible_ = false;
     DockPosition dockPosition_ = DockPosition::Bottom;
     app::PerformanceSnapshot performanceSnapshot_;
-    core::dsl::runtime::ElementTreeSnapshot elementTree_;
+    ElementTreeSnapshot elementTree_;
     core::dsl::runtime::ElementValues properties_;
     std::deque<ElementPropertyEdit> propertyEdits_;
     std::size_t propertyOverrideCount_ = 0;

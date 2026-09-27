@@ -44,7 +44,7 @@ void compose(eui::Ui& ui, const eui::Screen& screen) {
 ## 能力边界
 
 - 面板读取 `core::app/performance_snapshot.h` 中的性能快照，也就是窗口标题统计使用同一份数据。
-- `Elements` 标签页列出应用页面的元素树，数据来自 `Runtime` 的只读元素树快照。应用层只在面板显示该标签页时拉取快照：结构变化立即拉取，纯帧变化（动画、滚动、悬停导致的坐标变化）按固定间隔节流。
+- `Elements` 标签页列出应用页面的元素树。树快照是**面板自己的事**（`devtools_tree.cpp`）：框架只给一个入口 `Runtime::elementRoots()`（元素的绘制顺序）与结构版本号，面板自己走树、自己截断长文本、自己决定什么时候重拷（结构变化立即，纯帧变化按固定间隔节流）。
 - 树按行高虚拟化，折叠状态、选中元素和滚动位置都存在面板自己的 Runtime 状态里。节点默认收起，只有用户点开的节点会展开，深页面的树不会一打开就铺满整个列表，点击一行选中它。
 - 鼠标在树上悬浮某一行时，会在页面上预览那个元素：框架在页面渲染过程中把后端与**已解析好的几何**（变换、祖先裁剪、盒模型）交给面板（`core/tooling/pass.h` 的 `RenderPassContext`），面板用自己持有的图元按盒模型填充 margin / border / padding / content 四个区域（`devtools_preview.cpp`：半透明纯填充、不描边，与浏览器 devtools 一致）。这样变换与祖先裁剪都和元素本身一致，所以滚动容器、缩放和 clip 里的元素也能对齐；而调色板、色带切分与绘制留在模块，核心只做几何解析。移出列表或离开 Elements 标签就撤掉。
 - 选中（点击）只在面板内部生效，不会在页面上留下常驻高亮：页面上只会出现鼠标位置的悬浮预览。
@@ -61,7 +61,7 @@ void compose(eui::Ui& ui, const eui::Screen& screen) {
 - 树会把新来的选中显示出来：展开藏住它的祖先、必要时滚到那一行，每个选中只做一次，之后手动折叠或滚动不会被抢回。
 - 拾取不改变光标（面板不碰窗口光标），也不在页面上留常驻高亮：页面上只出现跟随指针的那一次预览。
 - 输入过滤、内容区预留、页面上层绘制（`renderPageOverlay`）、独立窗口由 `app::detail::OverlayHooks` / `OverlayWindows` 这层小接缝完成（见 `include/eui/detail/overlay_hooks.h`），面板不依赖业务组件和核心流程的特例。面板自己持有的图元（预览用）由面板在 `releaseGraphicsResources()` 里释放，框架不替工具管图形资源。
-- 面板读页面数据、写页面值都**直接调页面 Runtime**（`elementTree` / `elementValues` / `setElementField` / `elementIdAt` / `hoveredBox` / `setHoveredElement`），框架不替工具保管数据、也不保管发布状态：什么时候拷、拷什么、节流多久都是面板自己的事（`DevtoolsHost::frame`）。
+- 面板读页面数据、写页面值都**直接调页面 Runtime**（`elementRoots` / `elementValues` / `setElementField` / `elementIdAt` / `hoveredBox` / `setHoveredElement`），框架不替工具保管数据、也不保管发布状态：什么时候拷、拷什么、节流多久都是面板自己的事（`DevtoolsHost::frame`）。
 - 属性区的尺寸是主题度量（`devtools_theme.h` 的 `propertiesInitialFraction`、`propertiesMinimumHeight`、`propertiesMinimumTreeHeight`、`propertiesHandleHeight`），高度本身存在面板状态里，不写回应用。
 
 ## 标签页与计划

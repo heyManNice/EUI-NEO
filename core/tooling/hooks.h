@@ -195,10 +195,6 @@ inline void release(Runtime&) {}
 // The seam's own API is declared in every configuration, so a tool is written once and
 // compiled against one set of headers. Without tooling every entry point is inert:
 // there is no state to read, nothing to mark, nothing to replace.
-inline runtime::ElementTreeSnapshot Runtime::elementTree(std::size_t) const {
-    return {};
-}
-
 inline const std::string& Runtime::hoveredElement() const {
     static const std::string empty;
     return empty;

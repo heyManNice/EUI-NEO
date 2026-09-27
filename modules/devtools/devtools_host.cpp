@@ -4,6 +4,7 @@
 
 #include "modules/devtools/devtools_preview.h"
 #include "modules/devtools/devtools_theme.h"
+#include "modules/devtools/devtools_tree.h"
 
 #include <algorithm>
 #include <cmath>
@@ -136,7 +137,7 @@ void DevtoolsHost::publishElementTree() {
     }
     treeRevision_ = revision;
     treeRefreshTime_ = now;
-    setElementTree(page_->elementTree());
+    setElementTree(buildElementTree(*page_));
 }
 
 void DevtoolsHost::publishElementProperties() {
@@ -235,7 +236,7 @@ bool DevtoolsHost::wantsElementTree() const {
     return visible_ && panelState_ != nullptr && panelState_->activeTab == DevtoolsTab::Elements;
 }
 
-void DevtoolsHost::setElementTree(const core::dsl::runtime::ElementTreeSnapshot& tree) {
+void DevtoolsHost::setElementTree(const ElementTreeSnapshot& tree) {
     elementTree_ = tree;
     if (visible_) {
         requestCompose();
@@ -352,12 +353,12 @@ std::size_t DevtoolsHost::propertyOverrideCount() const {
     return propertyOverrideCount_;
 }
 
-const core::dsl::runtime::ElementTreeSnapshot& DevtoolsHost::elementTree() const {
+const ElementTreeSnapshot& DevtoolsHost::elementTree() const {
     return elementTree_;
 }
 
-core::dsl::runtime::ElementTreeSnapshot DevtoolsHost::panelElementTree() const {
-    return runtime_.elementTree();
+ElementTreeSnapshot DevtoolsHost::panelElementTree() const {
+    return buildElementTree(runtime_);
 }
 
 bool DevtoolsHost::visible() const {

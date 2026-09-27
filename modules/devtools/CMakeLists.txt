@@ -20,6 +20,8 @@ add_library(eui_neo_module_devtools
     $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_performance.h>
     $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_preview.cpp>
     $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_preview.h>
+    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_tree.cpp>
+    $<$<CONFIG:Debug>:${CMAKE_CURRENT_LIST_DIR}/devtools_tree.h>
 )
 add_library(eui::module_devtools ALIAS eui_neo_module_devtools)
 set_target_properties(eui_neo_module_devtools PROPERTIES EXPORT_NAME module_devtools)
