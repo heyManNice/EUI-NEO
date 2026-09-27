@@ -169,8 +169,14 @@ jobs:
         # `available()` is the one thing a build without the seam answers, and it says no:
         # the module carries no panel code at all.
         run: |
+          shopt -s nullglob
           cmake --build build-no-tooling --parallel --target eui_neo_module_devtools
-          for lib in build-no-tooling/lib*eui_neo*.a; do
+          libs=(build-no-tooling/lib*eui_neo*.a)
+          if [ ${#libs[@]} -eq 0 ]; then
+            echo 'no library to inspect: the check below would pass without checking anything'
+            exit 1
+          fi
+          for lib in "${libs[@]}"; do
             if nm --defined-only "$lib" | grep -qE 'DevtoolsHost|buildElementTree|ElementPatches|readElementValues'; then
               echo "a build without the tooling seam linked panel code: $lib"
               exit 1

@@ -1063,7 +1063,13 @@ int main() {
         };
         core::dsl::Runtime second;
         composeFreshPage(second);
+        // A page that is replaced without a detach in between — the app re-created it and
+        // attached again — is let go first: the panel takes its hooks off the page before,
+        // which is also what clears the mark that page was still holding for it.
+        host.attach(&page, {});
+        page.setHoveredElement("page.panel");
         host.attach(&second, {});
+        assert(page.hoveredElement().empty());
         // The app composes again, which is also the moment the panel's store would put its
         // patches back on the tree — if it still held any from the page before.
         composeFreshPage(second);

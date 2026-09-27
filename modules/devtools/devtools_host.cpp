@@ -94,8 +94,9 @@ void detachDevtoolsHost() {
 }
 
 void DevtoolsHost::attach(core::dsl::Runtime* page, const app::detail::OverlayWindows& windows) {
-    // A page arrives: the session starts empty, so nothing of a previous page — a patch, a
-    // copied snapshot, a pick in progress — can be read back or written onto this one.
+    // A page arrives, and the one before it — a re-created runtime, a second window — is let
+    // go first, hooks and all: a page the panel no longer inspects must not keep calling it.
+    unhookPage();
     session_ = PageSession{};
     session_.page = page;
     session_.windows = windows;
@@ -120,6 +121,17 @@ void DevtoolsHost::attach(core::dsl::Runtime* page, const app::detail::OverlayWi
 }
 
 void DevtoolsHost::detach() {
+    // One whole session goes away: the page pointer, the windows, everything the panel
+    // wrote on it, everything it copied from it and the pick in progress. The panel's own
+    // preferences are not in here and survive to be used on the next page.
+    unhookPage();
+    session_ = PageSession{};
+    forgetPageSelection();
+}
+
+// The hooks are what let a page reach the panel, so taking them off is what keeps a page
+// nobody inspects any more from calling into it.
+void DevtoolsHost::unhookPage() {
     if (core::dsl::Runtime* page = session_.page) {
         page->setInputFilter(nullptr);
         page->setOverlayRenderer(nullptr);
@@ -127,18 +139,20 @@ void DevtoolsHost::detach() {
         page->setAfterCompose(nullptr);
         page->setHoveredElement(std::string{});
     }
-    // One whole session goes away: the page pointer, the windows, everything the panel
-    // wrote on it, everything it copied from it and the pick in progress. The panel's own
-    // preferences are not in here and survive to be used on the next page.
-    session_ = PageSession{};
-    forgetPageSelection();
 }
 
 // The selection, the hover and the expansion all name elements of the page that just went
 // away, so the panel forgets which ones it was looking at. What the user chose for the
 // panel itself — the dock, its size, the tab, the scroll offsets — is not page state and
 // stays where it is.
+//
+// The panel's state lives in the panel's runtime and is reached through the last compose,
+// so a panel that has not composed yet has no state to forget (it was never shown) and one
+// whose state is unreachable keeps a selection that names an element the next page does not
+// have — which reads as "nothing selected" in the area that shows it. Clearing later, at the
+// next compose, would be worse: it would throw away what the user did in between.
 void DevtoolsHost::forgetPageSelection() {
+    composeRequested_ = true;
     if (panelState_ == nullptr) {
         return;
     }
@@ -148,7 +162,6 @@ void DevtoolsHost::forgetPageSelection() {
     panelState_->expandedElements.clear();
     panelState_->pickingElement = false;
     panelState_->moreMenuOpen = false;
-    composeRequested_ = true;
 }
 
 bool DevtoolsHost::frame(int framebufferWidth, int framebufferHeight, float dpiScale, float deltaSeconds) {

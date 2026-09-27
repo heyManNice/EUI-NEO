@@ -147,6 +147,8 @@ private:
     void applyElementPropertyEdits();
 
     bool hasPage() const { return session_.page != nullptr; }
+    // Takes the panel's hooks off the page it is wired to, so that page stops calling it.
+    void unhookPage();
     // The panel's preferences (dock, size, tab, expansion) kept in its own runtime; the
     // elements they name belong to the page, so they go with it.
     void forgetPageSelection();
