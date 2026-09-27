@@ -165,6 +165,44 @@ inline void publishPickedElement(OverlayHost& overlay, float dpiScale) {
     const core::PointerEvent pointer = overlay.pickedPointer();
     overlay.setElementUnderPointer(dslRuntime().debugElementAt(pointer.x, pointer.y, dpiScale));
 }
+
+// What one frame of the overlay did, so the app loop can react to it.
+struct OverlayFrame {
+    bool repainted = false;
+    core::Rect contentBounds{};
+};
+
+// Drives the overlay for one frame. The order the two sides depend on lives here
+// instead of being spread over the app loop:
+//
+//   1. the tree of this frame, so the overlay composes against what the user sees
+//   2. the edits the overlay made, read back before the values below, so an edit
+//      shows its result in the same frame instead of the next one
+//   3. the values of the element it shows
+//   4. the element the picker points at, before the preview, so the page marks what
+//      the pointer is on in the frame it moved
+//   5. the preview the overlay asked for, and then the overlay's own update
+inline OverlayFrame driveOverlay(OverlayHost& overlay,
+                                 int windowWidth,
+                                 int windowHeight,
+                                 float dpiScale,
+                                 float deltaSeconds) {
+    publishElementTree(overlay);
+    applyElementPropertyEdits(overlay);
+    publishElementProperties(overlay);
+    publishPickedElement(overlay, dpiScale);
+    dslRuntime().setHoveredElement(overlay.hoveredElement());
+
+    OverlayFrame frame;
+    // The overlay draws inside the app render cache, so a repaint of its own has to
+    // rebuild the cached frame it belongs to.
+    if (overlay.update(windowWidth, windowHeight, dpiScale, deltaSeconds)) {
+        dslRuntime().requestFullPaint();
+        frame.repainted = true;
+    }
+    frame.contentBounds = overlay.contentBounds();
+    return frame;
+}
 #endif
 
 inline std::string resolveIconPath(const std::string& iconPath) {
@@ -544,35 +582,19 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
 
 #if defined(EUI_DEBUG_BUILD)
     if (overlay != nullptr) {
-        // Publish before the overlay update so it composes with the tree of this
-        // frame; the overlay asks for the tree only while it displays it.
-        publishElementTree(*overlay);
-        // The overlay edits the page through the app layer: it asks for the values
-        // of the element it shows, and the edits it made land on the page here.
-        applyElementPropertyEdits(*overlay);
-        publishElementProperties(*overlay);
-        // The overlay owns the pointer while it picks: the answer to "what is under it"
-        // is read before the preview, so the page marks what the picker is pointing at
-        // in the same frame it moves.
-        detail::publishPickedElement(*overlay, effectiveScale);
-        // The overlay decides which element the page should preview, and the page
-        // draws it with the same transform and clip as the element itself.
-        detail::dslRuntime().setHoveredElement(overlay->hoveredElement());
-        // The overlay draws on top of the rendered app frame, so an overlay
-        // repaint never forces the app render cache to be rebuilt.
-        if (overlay->update(windowWidth, windowHeight, effectiveScale, deltaSeconds)) {
-            // The overlay draws inside the app render cache, so its repaint has
-            // to rebuild the cached frame it belongs to.
-            detail::dslRuntime().requestFullPaint();
-            changed = true;
-        }
-        const core::Rect updatedContent = overlay->contentBounds();
-        if (contentX != static_cast<int>(updatedContent.x) ||
-            contentWidth != static_cast<int>(updatedContent.width) ||
-            contentHeight != static_cast<int>(updatedContent.height)) {
-            contentX = static_cast<int>(updatedContent.x);
-            contentWidth = static_cast<int>(updatedContent.width);
-            contentHeight = static_cast<int>(updatedContent.height);
+        // One frame of the overlay, in the order the two sides depend on; see
+        // driveOverlay for what that order is and why.
+        const detail::OverlayFrame overlayFrame =
+            detail::driveOverlay(*overlay, windowWidth, windowHeight, effectiveScale, deltaSeconds);
+        changed = overlayFrame.repainted || changed;
+        // An overlay that took or gave back room changes where the page is composed,
+        // so the frame is composed again into what is left.
+        if (contentX != static_cast<int>(overlayFrame.contentBounds.x) ||
+            contentWidth != static_cast<int>(overlayFrame.contentBounds.width) ||
+            contentHeight != static_cast<int>(overlayFrame.contentBounds.height)) {
+            contentX = static_cast<int>(overlayFrame.contentBounds.x);
+            contentWidth = static_cast<int>(overlayFrame.contentBounds.width);
+            contentHeight = static_cast<int>(overlayFrame.contentBounds.height);
             logicalWidth = static_cast<float>(contentWidth) / effectiveScale;
             logicalHeight = static_cast<float>(contentHeight) / effectiveScale;
             detail::dslRuntime().requestFullPaint();
