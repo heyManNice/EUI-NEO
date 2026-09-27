@@ -30,11 +30,14 @@ bool isHotkey(const core::KeyEvent& key) {
 
 namespace {
 
-// The panel host lives as long as the module does, so the hooks can point at it without
-// capturing anything that could go away.
+// The panel host lives for the whole process, and deliberately outlives its own static
+// destruction: the hooks point at it, and the session that owns those hooks is a file
+// scope object in the application, so it is destroyed *after* this object would have been —
+// which is enough for "remove the hooks I installed" to reach into freed storage. One
+// leaked object at exit buys an ordering the application cannot get wrong.
 DevtoolsHost& devtoolsHost() {
-    static DevtoolsHost host;
-    return host;
+    static DevtoolsHost* host = new DevtoolsHost();
+    return *host;
 }
 
 // The panel is one place in the app loop, so there is one owner. A second live session is
