@@ -19,6 +19,10 @@ const char* elementKindName(core::dsl::ElementKind kind);
 // `kDebugPropertyCount` instead of trusting the table.
 const std::vector<core::dsl::runtime::DebugPropertyId>& elementPropertyIds();
 
+// The properties the area shows for an element of this kind. A row only appears for the
+// kinds it can change something on, so the same element offers more or fewer rows.
+std::vector<core::dsl::runtime::DebugPropertyId> elementPropertyIds(core::dsl::ElementKind kind);
+
 // Everything the property area needs for one composition. Values belong to the host,
 // the panel only reads them, like the element tree.
 struct ElementPropertiesState {

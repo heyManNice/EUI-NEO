@@ -189,6 +189,7 @@ inline runtime::DebugElementProperties Runtime::debugElementProperties(const std
     properties.borderColor = element->border.color;
     properties.blur = element->blur;
     properties.shadow = element->shadow;
+    properties.gradient = element->gradient;
     properties.textColor = element->textColor;
 
     const auto override = instances_.debugOverrides.find(id);

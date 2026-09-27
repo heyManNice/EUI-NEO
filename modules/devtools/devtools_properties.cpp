@@ -16,34 +16,66 @@ namespace modules::devtools {
 
 namespace {
 
+using core::dsl::ElementKind;
 using core::dsl::runtime::DebugElementProperties;
 using core::dsl::runtime::DebugPropertyId;
 using core::dsl::runtime::DebugPropertyType;
 
-// One property the area shows, with the range its editor covers. The table is the
-// single place that knows how a property is presented: the runtime only knows how to
-// read and write it, so adding a property is a row here plus a case there.
+// One property the area shows, with the range its editor covers and the kinds of element
+// it can change something on. The table is the single place that knows how a property is
+// presented: the runtime only knows how to read and write it, so adding a property is a
+// row here plus a case there.
 struct PropertyDescriptor {
     DebugPropertyId id;
     const char* label;
     float minimum;
     float maximum;
-    bool textOnly;
+    std::uint32_t kinds;
 };
+
+// One bit per element kind, and the mask a row is built from.
+constexpr std::uint32_t elementKindBit(ElementKind kind) {
+    return 1u << static_cast<std::uint32_t>(kind);
+}
+
+template <typename... Kinds>
+constexpr std::uint32_t kindsOf(Kinds... kinds) {
+    return (elementKindBit(kinds) | ...);
+}
+
+// Every kind there is, for a property that applies to all of them.
+constexpr std::uint32_t kEveryKind = (elementKindBit(ElementKind::Shadertoy) << 1u) - 1u;
+
+// Which kinds carry a property. Only a rect draws the rounded box that has a border, a
+// shadow or a gradient; the polygon, image and shadertoy primitives each carry their own
+// subset, and a text element paints glyphs instead of a box. A row that would change
+// nothing on the selected element is left out, so the list stays about that element.
+constexpr std::uint32_t kBoxKinds = kindsOf(ElementKind::Rect);
+constexpr std::uint32_t kColorKinds =
+    kindsOf(ElementKind::Rect, ElementKind::Polygon, ElementKind::Image, ElementKind::Svg);
+constexpr std::uint32_t kRadiusKinds =
+    kindsOf(ElementKind::Rect, ElementKind::Polygon, ElementKind::Image, ElementKind::Svg, ElementKind::Shadertoy);
+constexpr std::uint32_t kBlurKinds = kindsOf(ElementKind::Rect, ElementKind::Image, ElementKind::Svg);
 
 const std::vector<PropertyDescriptor>& propertyDescriptors() {
     static const std::vector<PropertyDescriptor> descriptors{
-        {DebugPropertyId::Color, "Color", 0.0f, 1.0f, false},
-        {DebugPropertyId::Opacity, "Opacity", 0.0f, 1.0f, false},
-        {DebugPropertyId::Radius, "Radius", 0.0f, 64.0f, false},
-        {DebugPropertyId::BorderWidth, "Border", 0.0f, 16.0f, false},
-        {DebugPropertyId::BorderColor, "Border color", 0.0f, 1.0f, false},
-        {DebugPropertyId::Blur, "Blur", 0.0f, 64.0f, false},
-        {DebugPropertyId::ShadowEnabled, "Shadow", 0.0f, 1.0f, false},
-        {DebugPropertyId::ShadowColor, "Shadow color", 0.0f, 1.0f, false},
-        {DebugPropertyId::ShadowBlur, "Shadow blur", 0.0f, 64.0f, false},
-        {DebugPropertyId::ShadowOffsetY, "Shadow Y", -64.0f, 64.0f, false},
-        {DebugPropertyId::TextColor, "Text color", 0.0f, 1.0f, true},
+        {DebugPropertyId::Color, "Color", 0.0f, 1.0f, kColorKinds},
+        {DebugPropertyId::Opacity, "Opacity", 0.0f, 1.0f, kEveryKind},
+        {DebugPropertyId::Radius, "Radius", 0.0f, 64.0f, kRadiusKinds},
+        {DebugPropertyId::BorderWidth, "Border", 0.0f, 16.0f, kBoxKinds},
+        {DebugPropertyId::BorderColor, "Border color", 0.0f, 1.0f, kBoxKinds},
+        {DebugPropertyId::Blur, "Blur", 0.0f, 64.0f, kBlurKinds},
+        {DebugPropertyId::ShadowEnabled, "Shadow", 0.0f, 1.0f, kBoxKinds},
+        {DebugPropertyId::ShadowColor, "Shadow color", 0.0f, 1.0f, kBoxKinds},
+        {DebugPropertyId::ShadowBlur, "Shadow blur", 0.0f, 64.0f, kBoxKinds},
+        {DebugPropertyId::ShadowSpread, "Shadow spread", 0.0f, 64.0f, kBoxKinds},
+        {DebugPropertyId::ShadowOffsetX, "Shadow X", -64.0f, 64.0f, kBoxKinds},
+        {DebugPropertyId::ShadowOffsetY, "Shadow Y", -64.0f, 64.0f, kBoxKinds},
+        {DebugPropertyId::ShadowInset, "Shadow inset", 0.0f, 1.0f, kBoxKinds},
+        {DebugPropertyId::GradientEnabled, "Gradient", 0.0f, 1.0f, kBoxKinds},
+        {DebugPropertyId::GradientStart, "Gradient from", 0.0f, 1.0f, kBoxKinds},
+        {DebugPropertyId::GradientEnd, "Gradient to", 0.0f, 1.0f, kBoxKinds},
+        {DebugPropertyId::TextColor, "Text color", 0.0f, 1.0f, kindsOf(ElementKind::Text)},
     };
     return descriptors;
 }
@@ -235,7 +267,7 @@ std::vector<PropertyRow> buildPropertyRows(const DebugElementProperties& propert
     rows.push_back(header);
 
     for (const PropertyDescriptor& descriptor : propertyDescriptors()) {
-        if (descriptor.textOnly && properties.kind != core::dsl::ElementKind::Text) {
+        if ((descriptor.kinds & elementKindBit(properties.kind)) == 0) {
             continue;
         }
         PropertyRow row;
@@ -598,6 +630,16 @@ const std::vector<core::dsl::runtime::DebugPropertyId>& elementPropertyIds() {
         return value;
     }();
     return ids;
+}
+
+std::vector<core::dsl::runtime::DebugPropertyId> elementPropertyIds(core::dsl::ElementKind kind) {
+    std::vector<core::dsl::runtime::DebugPropertyId> value;
+    for (const PropertyDescriptor& descriptor : propertyDescriptors()) {
+        if ((descriptor.kinds & elementKindBit(kind)) != 0) {
+            value.push_back(descriptor.id);
+        }
+    }
+    return value;
 }
 
 void composeElementProperties(core::dsl::Ui& ui,

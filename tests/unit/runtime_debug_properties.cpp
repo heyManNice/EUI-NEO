@@ -102,6 +102,37 @@ int main() {
     assert(shadowed.shadow.blur == 9.0f);
     assert((shadowed.overridden & debugPropertyBit(DebugPropertyId::ShadowEnabled)) != 0);
 
+    // The rest of the shadow and the gradient are the same shape of property: a field of
+    // the element's own struct, plus the switch that has to be on for it to be seen.
+    runtime.setDebugElementOverride("page.panel", DebugPropertyId::ShadowSpread, 5.0f);
+    runtime.setDebugElementOverride("page.panel", DebugPropertyId::ShadowOffsetX, -6.0f);
+    settle(runtime);
+    const DebugElementProperties spread = runtime.debugElementProperties("page.panel");
+    assert(spread.shadow.spread == 5.0f);
+    assert(spread.shadow.offset.x == -6.0f);
+    assert(spread.shadow.enabled);
+
+    runtime.setDebugElementOverride("page.panel", DebugPropertyId::ShadowInset, true);
+    settle(runtime);
+    assert(runtime.debugElementProperties("page.panel").shadow.inset);
+
+    runtime.setDebugElementOverride("page.panel", DebugPropertyId::GradientStart,
+                                    core::Color{1.0f, 0.0f, 0.0f, 1.0f});
+    settle(runtime);
+    const DebugElementProperties gradient = runtime.debugElementProperties("page.panel");
+    assert(gradient.gradient.enabled);
+    assert(gradient.gradient.start.r == 1.0f && gradient.gradient.start.g == 0.0f);
+    assert((gradient.overridden & debugPropertyBit(DebugPropertyId::GradientEnabled)) != 0);
+
+    runtime.setDebugElementOverride("page.panel", DebugPropertyId::GradientEnd,
+                                    core::Color{0.0f, 0.0f, 1.0f, 1.0f});
+    settle(runtime);
+    assert(runtime.debugElementProperties("page.panel").gradient.end.b == 1.0f);
+
+    runtime.setDebugElementOverride("page.panel", DebugPropertyId::GradientEnabled, false);
+    settle(runtime);
+    assert(!runtime.debugElementProperties("page.panel").gradient.enabled);
+
     runtime.setDebugElementOverride("page.panel", DebugPropertyId::ShadowEnabled, false);
     settle(runtime);
     assert(!runtime.debugElementProperties("page.panel").shadow.enabled);
@@ -119,7 +150,13 @@ int main() {
     assert(debugPropertyType(DebugPropertyId::ShadowColor) == DebugPropertyType::Color);
     assert(debugPropertyType(DebugPropertyId::Blur) == DebugPropertyType::Number);
     assert(debugPropertyType(DebugPropertyId::ShadowOffsetY) == DebugPropertyType::Number);
+    assert(debugPropertyType(DebugPropertyId::ShadowOffsetX) == DebugPropertyType::Number);
+    assert(debugPropertyType(DebugPropertyId::ShadowSpread) == DebugPropertyType::Number);
     assert(debugPropertyType(DebugPropertyId::ShadowEnabled) == DebugPropertyType::Flag);
+    assert(debugPropertyType(DebugPropertyId::ShadowInset) == DebugPropertyType::Flag);
+    assert(debugPropertyType(DebugPropertyId::GradientEnabled) == DebugPropertyType::Flag);
+    assert(debugPropertyType(DebugPropertyId::GradientStart) == DebugPropertyType::Color);
+    assert(debugPropertyType(DebugPropertyId::GradientEnd) == DebugPropertyType::Color);
 
     // Putting one property back leaves the other overrides alone, and the element has
     // to be composed again for its own value to come back.

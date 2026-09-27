@@ -166,7 +166,13 @@ enum class DebugPropertyId {
     ShadowEnabled,
     ShadowColor,
     ShadowBlur,
+    ShadowOffsetX,
     ShadowOffsetY,
+    ShadowSpread,
+    ShadowInset,
+    GradientEnabled,
+    GradientStart,
+    GradientEnd,
     TextColor
 };
 
@@ -185,9 +191,13 @@ inline constexpr DebugPropertyType debugPropertyType(DebugPropertyId property) {
     case DebugPropertyId::Color:
     case DebugPropertyId::BorderColor:
     case DebugPropertyId::ShadowColor:
+    case DebugPropertyId::GradientStart:
+    case DebugPropertyId::GradientEnd:
     case DebugPropertyId::TextColor:
         return DebugPropertyType::Color;
     case DebugPropertyId::ShadowEnabled:
+    case DebugPropertyId::ShadowInset:
+    case DebugPropertyId::GradientEnabled:
         return DebugPropertyType::Flag;
     default:
         return DebugPropertyType::Number;
@@ -216,6 +226,7 @@ struct DebugElementProperties {
     Color borderColor = {1.0f, 1.0f, 1.0f, 1.0f};
     float blur = 0.0f;
     Shadow shadow;
+    Gradient gradient;
     Color textColor = {1.0f, 1.0f, 1.0f, 1.0f};
     std::uint32_t overridden = 0;
 };
@@ -234,16 +245,28 @@ struct DebugElementOverride {
     bool shadowEnabled = false;
     Color shadowColor = {0.0f, 0.0f, 0.0f, 1.0f};
     float shadowBlur = 0.0f;
+    float shadowOffsetX = 0.0f;
     float shadowOffsetY = 0.0f;
+    float shadowSpread = 0.0f;
+    bool shadowInset = false;
+    bool gradientEnabled = false;
+    Color gradientStart = {1.0f, 1.0f, 1.0f, 1.0f};
+    Color gradientEnd = {1.0f, 1.0f, 1.0f, 1.0f};
     Color textColor = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 // Editing one shadow field of an element whose shadow is switched off would show
 // nothing, so any shadow override also switches the shadow on and records that: the
-// switch in the tool then tells the truth and can be put back.
+// switch in the tool then tells the truth and can be put back. A gradient works the same
+// way, for the same reason.
 inline void markDebugShadowEnabled(DebugElementOverride& override) {
     override.mask |= debugPropertyBit(DebugPropertyId::ShadowEnabled);
     override.shadowEnabled = true;
+}
+
+inline void markDebugGradientEnabled(DebugElementOverride& override) {
+    override.mask |= debugPropertyBit(DebugPropertyId::GradientEnabled);
+    override.gradientEnabled = true;
 }
 
 inline bool setDebugOverrideFloat(DebugElementOverride& override, DebugPropertyId property, float value) {
@@ -254,14 +277,23 @@ inline bool setDebugOverrideFloat(DebugElementOverride& override, DebugPropertyI
     case DebugPropertyId::BorderWidth: target = &override.borderWidth; break;
     case DebugPropertyId::Blur: target = &override.blur; break;
     case DebugPropertyId::ShadowBlur: target = &override.shadowBlur; break;
+    case DebugPropertyId::ShadowOffsetX: target = &override.shadowOffsetX; break;
     case DebugPropertyId::ShadowOffsetY: target = &override.shadowOffsetY; break;
+    case DebugPropertyId::ShadowSpread: target = &override.shadowSpread; break;
     default: return false;
     }
     const bool changed = (override.mask & debugPropertyBit(property)) == 0 || *target != value;
     *target = value;
     override.mask |= debugPropertyBit(property);
-    if (property == DebugPropertyId::ShadowBlur || property == DebugPropertyId::ShadowOffsetY) {
+    switch (property) {
+    case DebugPropertyId::ShadowBlur:
+    case DebugPropertyId::ShadowOffsetX:
+    case DebugPropertyId::ShadowOffsetY:
+    case DebugPropertyId::ShadowSpread:
         markDebugShadowEnabled(override);
+        break;
+    default:
+        break;
     }
     return changed;
 }
@@ -272,6 +304,8 @@ inline bool setDebugOverrideColor(DebugElementOverride& override, DebugPropertyI
     case DebugPropertyId::Color: target = &override.color; break;
     case DebugPropertyId::BorderColor: target = &override.borderColor; break;
     case DebugPropertyId::ShadowColor: target = &override.shadowColor; break;
+    case DebugPropertyId::GradientStart: target = &override.gradientStart; break;
+    case DebugPropertyId::GradientEnd: target = &override.gradientEnd; break;
     case DebugPropertyId::TextColor: target = &override.textColor; break;
     default: return false;
     }
@@ -281,15 +315,22 @@ inline bool setDebugOverrideColor(DebugElementOverride& override, DebugPropertyI
     if (property == DebugPropertyId::ShadowColor) {
         markDebugShadowEnabled(override);
     }
+    if (property == DebugPropertyId::GradientStart || property == DebugPropertyId::GradientEnd) {
+        markDebugGradientEnabled(override);
+    }
     return changed;
 }
 
 inline bool setDebugOverrideFlag(DebugElementOverride& override, DebugPropertyId property, bool value) {
-    if (property != DebugPropertyId::ShadowEnabled) {
-        return false;
+    bool* target = nullptr;
+    switch (property) {
+    case DebugPropertyId::ShadowEnabled: target = &override.shadowEnabled; break;
+    case DebugPropertyId::ShadowInset: target = &override.shadowInset; break;
+    case DebugPropertyId::GradientEnabled: target = &override.gradientEnabled; break;
+    default: return false;
     }
-    const bool changed = (override.mask & debugPropertyBit(property)) == 0 || override.shadowEnabled != value;
-    override.shadowEnabled = value;
+    const bool changed = (override.mask & debugPropertyBit(property)) == 0 || *target != value;
+    *target = value;
     override.mask |= debugPropertyBit(property);
     return changed;
 }
@@ -330,8 +371,26 @@ inline void applyDebugOverride(Element& element, const DebugElementOverride& ove
     if (mask & debugPropertyBit(DebugPropertyId::ShadowBlur)) {
         element.shadow.blur = override.shadowBlur;
     }
+    if (mask & debugPropertyBit(DebugPropertyId::ShadowOffsetX)) {
+        element.shadow.offset.x = override.shadowOffsetX;
+    }
     if (mask & debugPropertyBit(DebugPropertyId::ShadowOffsetY)) {
         element.shadow.offset.y = override.shadowOffsetY;
+    }
+    if (mask & debugPropertyBit(DebugPropertyId::ShadowSpread)) {
+        element.shadow.spread = override.shadowSpread;
+    }
+    if (mask & debugPropertyBit(DebugPropertyId::ShadowInset)) {
+        element.shadow.inset = override.shadowInset;
+    }
+    if (mask & debugPropertyBit(DebugPropertyId::GradientEnabled)) {
+        element.gradient.enabled = override.gradientEnabled;
+    }
+    if (mask & debugPropertyBit(DebugPropertyId::GradientStart)) {
+        element.gradient.start = override.gradientStart;
+    }
+    if (mask & debugPropertyBit(DebugPropertyId::GradientEnd)) {
+        element.gradient.end = override.gradientEnd;
     }
     if (mask & debugPropertyBit(DebugPropertyId::TextColor)) {
         element.textColor = override.textColor;

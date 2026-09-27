@@ -408,7 +408,10 @@ int main() {
         core::dsl::runtime::DebugElementProperties values;
         values.active = true;
         values.id = "page.root";
-        values.kind = core::dsl::ElementKind::Column;
+        // A rect is the element that carries the whole box, so the rows a rect offers are
+        // the ones this test exercises. What a container shows instead is asserted with
+        // the other kinds below.
+        values.kind = core::dsl::ElementKind::Rect;
         values.frame = {0.0f, 0.0f, 800.0f, 600.0f};
         values.color = {0.2f, 0.4f, 0.6f, 1.0f};
         values.opacity = 0.5f;
@@ -439,6 +442,50 @@ int main() {
             std::vector<core::dsl::runtime::DebugPropertyId> sorted = ids;
             std::sort(sorted.begin(), sorted.end());
             assert(std::adjacent_find(sorted.begin(), sorted.end()) == sorted.end());
+
+            // A row only appears for the kinds the property can change something on: a
+            // rect carries the box, a text element carries its own colour instead, and a
+            // layout container paints nothing but its opacity.
+            const auto has = [](const std::vector<core::dsl::runtime::DebugPropertyId>& list,
+                                core::dsl::runtime::DebugPropertyId id) {
+                return std::find(list.begin(), list.end(), id) != list.end();
+            };
+            const std::vector<core::dsl::runtime::DebugPropertyId> box =
+                elementPropertyIds(core::dsl::ElementKind::Rect);
+            const std::vector<core::dsl::runtime::DebugPropertyId> text =
+                elementPropertyIds(core::dsl::ElementKind::Text);
+            const std::vector<core::dsl::runtime::DebugPropertyId> container =
+                elementPropertyIds(core::dsl::ElementKind::Column);
+            assert(container.size() == 1 && has(container, core::dsl::runtime::DebugPropertyId::Opacity));
+            assert(text.size() == 2 && has(text, core::dsl::runtime::DebugPropertyId::TextColor));
+            assert(!has(text, core::dsl::runtime::DebugPropertyId::BorderWidth));
+            assert(box.size() == static_cast<std::size_t>(core::dsl::runtime::kDebugPropertyCount) - 1);
+            assert(has(box, core::dsl::runtime::DebugPropertyId::BorderWidth));
+            assert(has(box, core::dsl::runtime::DebugPropertyId::ShadowSpread));
+            assert(has(box, core::dsl::runtime::DebugPropertyId::GradientStart));
+            assert(!has(box, core::dsl::runtime::DebugPropertyId::TextColor));
+            for (core::dsl::runtime::DebugPropertyId id : box) {
+                assert(has(ids, id));
+            }
+        }
+
+        // The same element as a layout container: the box rows are gone from the area, so
+        // nothing that would change nothing on it is offered.
+        {
+            assert(hasPanelElement(host, ".swatch"));
+            assert(hasPanelElement(host, ".switch"));
+            core::dsl::runtime::DebugElementProperties container = values;
+            container.kind = core::dsl::ElementKind::Column;
+            host.setElementProperties(container);
+            frame();
+            assert(!hasPanelElement(host, ".swatch"));
+            assert(!hasPanelElement(host, ".switch"));
+            assert(!hasPanelElement(host, ".shadow"));
+            // Opacity applies to every element, so its row is still there.
+            assert(hasPanelElement(host, ".slider"));
+            host.setElementProperties(values);
+            frame();
+            assert(hasPanelElement(host, ".swatch"));
         }
 
         // Every property row puts its control in the same column and ends it on the same
