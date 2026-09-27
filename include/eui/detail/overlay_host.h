@@ -6,6 +6,7 @@
 #include "core/render/render_types.h"
 #include "core/tooling/config.h"
 #include "core/tooling/model.h"
+#include "core/tooling/pass.h"
 #include "core/window/window_types.h"
 
 #include <functional>
@@ -127,6 +128,14 @@ public:
     // How many elements the debug session wrote values on, so the overlay can tell the
     // user the page no longer matches its code.
     virtual void setElementPropertyOverrideCount(std::size_t count) { static_cast<void>(count); }
+
+    // Draws what the overlay puts on top of the page from inside the page render pass:
+    // the element the overlay marked is already resolved in `pass`, so this is a draw and
+    // nothing else. Drawing here (instead of from a pass of its own) is what keeps the
+    // overlay in the cached frame the window blits.
+    virtual void renderPageOverlay(const core::dsl::runtime::RenderPassContext& pass) {
+        static_cast<void>(pass);
+    }
 
     virtual void releaseGraphicsResources() = 0;
 

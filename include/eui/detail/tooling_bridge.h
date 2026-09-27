@@ -222,6 +222,9 @@ inline void wireHost(core::dsl::Runtime& runtime, const DslAppConfig& config) {
     runtime.setOverlayRenderer([overlay](int width, int height, float dpiScale, const core::Rect* dirtyRect) {
         overlay->render(width, height, dpiScale, dirtyRect);
     });
+    runtime.setPassRenderer([overlay](const core::dsl::runtime::RenderPassContext& pass) {
+        overlay->renderPageOverlay(pass);
+    });
     runtime.setKeyEventHandler([appKeyHandler](const eui::KeyEvent& key) {
         detail::OverlayHost* active = detail::overlayHost();
         if (active != nullptr && active->handleHotkey(key)) {

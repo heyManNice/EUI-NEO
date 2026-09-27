@@ -57,11 +57,12 @@ inline std::string truncateElementText(const std::string& text, std::size_t limi
     return text.substr(0, end);
 }
 
-// Everything the renderer needs to draw the inspection overlay for one element.
-// The runtime derives it from the element path with the same transform and clip
-// rules the element itself is drawn with, so the overlay cannot drift away from
-// the element it describes.
-struct DebugInspection {
+// The box of one element, resolved into the space the render pass draws in: the same
+// transform and clip the element itself is drawn with, so a tool that draws from this
+// cannot drift away from the element it describes. This is the core's Resolve half of the
+// seam: geometry only. What a tool draws with it (a box model wash, an outline, nothing)
+// lives with the tool.
+struct ElementBox {
     bool active = false;
     RenderTransform transform;
     LayoutRect frame;               // the box itself: background and border live here
@@ -72,87 +73,15 @@ struct DebugInspection {
     bool hasScissor = false;
 };
 
-// One element a debug tool marks, plus the cached path that leads to it. Element
-// pointers only stay valid until the next compose, so the cache is keyed by the
-// compose generation instead of being pinned for the runtime's lifetime.
-struct InspectionMark {
+// One element a tool marks, plus the cached path that leads to it. Element pointers only
+// stay valid until the next compose, so the cache is keyed by the compose generation
+// instead of being pinned for the runtime's lifetime.
+struct ElementMark {
     std::string id;
     std::vector<const Element*> path;
     std::string pathId;
     std::uint64_t pathGeneration = 0;
 };
-
-// One translucent fill per box model region, never stroked. This is how browser
-// devtools draw an element: the regions do not overlap, so a previewed element
-// reads as a single light wash across its boxes instead of a frame drawn around a
-// frame. The hues are the ones the browsers use for these regions, the alphas sit
-// a little lower because a wash reads heavier over the dark pages EUI ships, and
-// the values are fixed instead of themed because the overlay has to read the same
-// over any page.
-struct InspectionPalette {
-    Color margin;
-    Color border;
-    Color padding;
-    Color content;
-};
-
-inline constexpr InspectionPalette kInspectionHoverPalette{
-    {0.96f, 0.70f, 0.42f, 0.55f},   // margin
-    {1.00f, 0.90f, 0.60f, 0.55f},   // border
-    {0.58f, 0.77f, 0.49f, 0.45f},   // padding
-    {0.44f, 0.66f, 0.86f, 0.50f}    // content
-};
-
-// The area between two nested boxes as up to four rectangles. Filling the inner box
-// on top of the outer one would blend the two translucent colours into a third, so
-// the renderer fills the band that is left around the inner box instead. The bands
-// share their edges and the side bands never run under the top and bottom ones.
-struct InspectionBand {
-    Rect rects[4];
-    int count = 0;
-};
-
-inline InspectionBand inspectionBand(const Rect& outer, const Rect& inner) {
-    InspectionBand band;
-    const float outerRight = outer.x + outer.width;
-    const float outerBottom = outer.y + outer.height;
-    float top = inner.y - outer.y;
-    if (top < 0.0f) {
-        top = 0.0f;
-    } else if (top > outer.height) {
-        top = outer.height;
-    }
-    float bottom = outerBottom - (inner.y + inner.height);
-    if (bottom < 0.0f) {
-        bottom = 0.0f;
-    } else if (bottom > outer.height - top) {
-        bottom = outer.height - top;
-    }
-    const float middle = outer.height - top - bottom;
-    float left = inner.x - outer.x;
-    if (left < 0.0f) {
-        left = 0.0f;
-    }
-    float right = outerRight - (inner.x + inner.width);
-    if (right < 0.0f) {
-        right = 0.0f;
-    }
-    if (top > 0.0f) {
-        band.rects[band.count++] = {outer.x, outer.y, outer.width, top};
-    }
-    if (bottom > 0.0f) {
-        band.rects[band.count++] = {outer.x, outer.y + top + middle, outer.width, bottom};
-    }
-    if (middle > 0.0f) {
-        if (left > 0.0f) {
-            band.rects[band.count++] = {outer.x, outer.y + top, left, middle};
-        }
-        if (right > 0.0f) {
-            band.rects[band.count++] = {outerRight - right, outer.y + top, right, middle};
-        }
-    }
-    return band;
-}
 
 // The fields a tool may write on a live element, one line each: the name a tool uses for
 // the field, the kind of value it holds, and the element member it reads and writes.
@@ -436,15 +365,14 @@ inline Element* findElement(const Ui& ui, const std::string& id) {
     return nullptr;
 }
 
-// Geometry of the inspection overlay for one mark. Both the panel (through
-// `Runtime::debugHoverInspection`) and the renderer read this, so there is one
-// implementation of "where is that element now". `composeGeneration` is what tells the
+// Geometry of the box overlay for one mark, resolved for the pass that is about to draw.
+// `composeGeneration` is what tells the
 // mark whether the path it cached is still valid, since element pointers only live
 // until the next compose.
-DebugInspection computeInspection(Ui& ui,
-                                  InstanceStore& instances,
-                                  InspectionMark& mark,
-                                  std::uint64_t composeGeneration,
-                                  float dpiScale);
+ElementBox computeElementBox(Ui& ui,
+                             InstanceStore& instances,
+                             ElementMark& mark,
+                             std::uint64_t composeGeneration,
+                             float dpiScale);
 
 } // namespace core::dsl::runtime

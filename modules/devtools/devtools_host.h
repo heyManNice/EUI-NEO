@@ -3,6 +3,7 @@
 #if defined(EUI_DEBUG_BUILD)
 
 #include "core/dsl_runtime.h"
+#include "core/render/primitive.h"
 #include "eui/detail/overlay_host.h"
 #include "modules/devtools/devtools_ui.h"
 
@@ -25,6 +26,7 @@ public:
     void filterInput(std::vector<core::PointerEvent>& pointerEvents, core::ScrollEvent& scrollEvent) override;
     bool update(int framebufferWidth, int framebufferHeight, float dpiScale, float deltaSeconds) override;
     void render(int windowWidth, int windowHeight, float dpiScale, const core::Rect* dirtyRect) override;
+    void renderPageOverlay(const core::dsl::runtime::RenderPassContext& pass) override;
     void setPerformanceSnapshot(const app::PerformanceSnapshot& snapshot) override;
     bool wantsElementTree() const override;
     void setElementTree(const core::dsl::runtime::ElementTreeSnapshot& tree) override;
@@ -110,6 +112,11 @@ private:
     std::function<void()> detachedWindowOpener_;
     std::function<void()> detachedWindowCloser_;
     bool composeRequested_ = true;
+    // The primitive the box model preview is drawn with. The overlay owns what it draws
+    // with, which is what lets the framework hand over the render pass without keeping a
+    // graphics object of the tool's alive for it.
+    core::RoundedRectPrimitive boxPreviewPrimitive_;
+    bool boxPreviewPrimitiveInitialized_ = false;
 };
 
 } // namespace modules::devtools

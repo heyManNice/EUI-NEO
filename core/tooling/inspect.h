@@ -38,13 +38,13 @@ inline void commitElementPatch(Ui& ui, ToolingState& state, const std::string& i
     fullPaintRequested = true;
 }
 
-inline bool findInspectionPath(Ui& ui, InstanceStore& instances, InspectionMark& mark, const Element& element) {
+inline bool findMarkedPath(Ui& ui, InstanceStore& instances, ElementMark& mark, const Element& element) {
     mark.path.push_back(&element);
     if (element.id == mark.id) {
         return true;
     }
     for (const Element* child : element.orderedChildren) {
-        if (findInspectionPath(ui, instances, mark, *child)) {
+        if (findMarkedPath(ui, instances, mark, *child)) {
             return true;
         }
     }
@@ -52,7 +52,7 @@ inline bool findInspectionPath(Ui& ui, InstanceStore& instances, InspectionMark&
     return false;
 }
 
-inline const std::vector<const Element*>& inspectionPath(Ui& ui, InstanceStore& instances, InspectionMark& mark,
+inline const std::vector<const Element*>& markedPath(Ui& ui, InstanceStore& instances, ElementMark& mark,
                                                          std::uint64_t composeGeneration) {
     if (mark.pathId == mark.id && mark.pathGeneration == composeGeneration) {
         return mark.path;
@@ -66,20 +66,20 @@ inline const std::vector<const Element*>& inspectionPath(Ui& ui, InstanceStore& 
     // Depth first search for the path from a root to the marked element. It only
     // runs when the mark changed or the page was recomposed.
     for (const Element* root : ui.orderedRoots()) {
-        if (findInspectionPath(ui, instances, mark, *root)) {
+        if (findMarkedPath(ui, instances, mark, *root)) {
             break;
         }
     }
     return mark.path;
 }
 
-inline DebugInspection computeInspection(Ui& ui, InstanceStore& instances, InspectionMark& mark,
+inline ElementBox computeElementBox(Ui& ui, InstanceStore& instances, ElementMark& mark,
                                           std::uint64_t composeGeneration, float dpiScale) {
-    DebugInspection inspection;
+    ElementBox inspection;
     if (mark.id.empty()) {
         return inspection;
     }
-    const std::vector<const Element*>& path = inspectionPath(ui, instances, mark, composeGeneration);
+    const std::vector<const Element*>& path = markedPath(ui, instances, mark, composeGeneration);
     if (path.empty() || path.back()->id != mark.id) {
         return inspection;
     }
@@ -180,7 +180,7 @@ inline runtime::ElementTreeSnapshot Runtime::elementTree(std::size_t maximumNode
 inline const std::string& Runtime::hoveredElement() const {
     static const std::string empty;
     const runtime::ToolingState* state = tooling();
-    return state != nullptr ? state->hoveredMark.id : empty;
+    return state != nullptr ? state->hovered.id : empty;
 }
 
 inline std::size_t Runtime::elementPatchCount() const {
@@ -190,22 +190,22 @@ inline std::size_t Runtime::elementPatchCount() const {
 
 inline void Runtime::setHoveredElement(const std::string& id) {
     runtime::ToolingState& state = ensureTooling();
-    if (state.hoveredMark.id == id) {
+    if (state.hovered.id == id) {
         return;
     }
-    state.hoveredMark.id = id;
-    state.hoveredMark.path.clear();
-    state.hoveredMark.pathId.clear();
+    state.hovered.id = id;
+    state.hovered.path.clear();
+    state.hovered.pathId.clear();
     fullPaintRequested_ = true;
     paintRequested_ = true;
 }
 
-inline runtime::DebugInspection Runtime::hoverInspection(float dpiScale) {
+inline runtime::ElementBox Runtime::hoveredBox(float dpiScale) {
     runtime::ToolingState* state = tooling();
     if (state == nullptr) {
         return {};
     }
-    return runtime::computeInspection(ui_, instances_, state->hoveredMark, state->composeGeneration, dpiScale);
+    return runtime::computeElementBox(ui_, instances_, state->hovered, state->composeGeneration, dpiScale);
 }
 
 // The values of one element, for the single element a tool shows. The field table is

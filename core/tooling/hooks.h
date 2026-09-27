@@ -46,6 +46,10 @@ inline void Runtime::setOverlayRenderer(std::function<void(int, int, float, cons
     ensureTooling().overlayRenderer = std::move(renderer);
 }
 
+inline void Runtime::setPassRenderer(std::function<void(const runtime::RenderPassContext&)> renderer) {
+    ensureTooling().passRenderer = std::move(renderer);
+}
+
 inline void Runtime::pushPointerEvent(const PointerEvent& event) {
     ensureTooling().hostPointerEvents.push_back(event);
 }
@@ -73,8 +77,8 @@ inline void beforeCompose(Runtime& runtime) {
         return;
     }
     ++state->composeGeneration;
-    state->hoveredMark.path.clear();
-    state->hoveredMark.pathId.clear();
+    state->hovered.path.clear();
+    state->hovered.pathId.clear();
 }
 
 // The values a tool replaced go back on the fresh tree, before it is laid out.
@@ -117,7 +121,31 @@ inline void filterInput(Runtime& runtime, std::vector<PointerEvent>& pointerEven
 }
 
 // The tool draws on top of the page, inside the page render pass, so its output becomes
-// part of the cached frame the window blits.
+// part of the cached frame the window blits. What the pass has to hand over is the
+// renderer's own material: the tree the geometry is resolved from, the backend it draws
+// with, and the state the tool left behind. What to draw with that is the tool's, so this
+// hook knows no palette and no preview.
+inline void drawPassOverlay(Ui& ui,
+                            runtime::InstanceStore& instances,
+                            runtime::ToolingState* state,
+                            core::render::RenderBackend& renderBackend,
+                            int windowWidth,
+                            int windowHeight,
+                            float dpiScale) {
+    if (state == nullptr || !state->passRenderer) {
+        return;
+    }
+    runtime::RenderPassContext pass;
+    pass.backend = &renderBackend;
+    pass.windowWidth = windowWidth;
+    pass.windowHeight = windowHeight;
+    pass.dpiScale = dpiScale;
+    pass.hover = runtime::computeElementBox(ui, instances, state->hovered, state->composeGeneration, dpiScale);
+    state->passRenderer(pass);
+}
+
+// The tool draws its own overlay (its own runtime) on top of the page, inside the page
+// render pass, so its output becomes part of the cached frame the window blits.
 inline void drawOverlay(Runtime& runtime, int windowWidth, int windowHeight, float dpiScale, const Rect* dirtyRect) {
     runtime::ToolingState* state = runtime.tooling();
     if (state == nullptr || !state->overlayRenderer) {
@@ -129,15 +157,9 @@ inline void drawOverlay(Runtime& runtime, int windowWidth, int windowHeight, flo
 // The runtime is dropping its graphics resources, so the tool's overlay primitive goes
 // with them instead of outliving the device.
 inline void releaseGraphics(Runtime& runtime) {
-    runtime::ToolingState* state = runtime.tooling();
-    if (state == nullptr || !state->overlayPrimitive) {
-        return;
-    }
-    if (state->overlayPrimitiveInitialized) {
-        state->overlayPrimitive->destroy();
-        state->overlayPrimitiveInitialized = false;
-    }
-    state->overlayPrimitive.reset();
+    // The tool owns whatever it draws with and hooks this through its own host, so the
+    // seam has nothing to release here.
+    static_cast<void>(runtime);
 }
 
 // The tool is going away with the runtime.
@@ -148,6 +170,7 @@ inline void release(Runtime& runtime) {
     }
     state->inputFilter = {};
     state->overlayRenderer = {};
+    state->passRenderer = {};
     state->hostPointerEvents.clear();
     state->hostScrollEvent = {};
 }
@@ -159,6 +182,7 @@ inline void afterCompose(Runtime&) {}
 inline void resetHostInput(Runtime&) {}
 inline void mergeHostInput(Runtime&, std::vector<PointerEvent>&, ScrollEvent&) {}
 inline void filterInput(Runtime&, std::vector<PointerEvent>&, ScrollEvent&) {}
+inline void drawPassOverlay(Ui&, runtime::InstanceStore&, runtime::ToolingState*, core::render::RenderBackend&, int, int, float) {}
 inline void drawOverlay(Runtime&, int, int, float, const Rect*) {}
 inline void releaseGraphics(Runtime&) {}
 inline void release(Runtime&) {}
@@ -182,7 +206,7 @@ inline const std::string& Runtime::hoveredElement() const {
 
 inline void Runtime::setHoveredElement(const std::string&) {}
 
-inline runtime::DebugInspection Runtime::hoverInspection(float) {
+inline runtime::ElementBox Runtime::hoveredBox(float) {
     return {};
 }
 
@@ -198,6 +222,7 @@ inline void Runtime::setElementField(const std::string&, runtime::ElementField, 
 inline void Runtime::clearElementField(const std::string&, runtime::ElementField) {}
 inline void Runtime::clearElementFields(const std::string&) {}
 inline void Runtime::clearElementFields() {}
+inline void Runtime::setPassRenderer(std::function<void(const runtime::RenderPassContext&)>) {}
 inline std::size_t Runtime::elementPatchCount() const { return 0; }
 #endif
 

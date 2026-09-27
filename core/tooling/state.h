@@ -5,9 +5,9 @@
 #if EUI_TOOLING_ENABLED
 
 #include "core/input/input_types.h"
-#include "core/render/primitive.h"
 #include "core/render/render_types.h"
 #include "core/tooling/model.h"
+#include "core/tooling/pass.h"
 
 #include <cstdint>
 #include <functional>
@@ -36,13 +36,13 @@ struct ToolingState {
 
     // The element a tool previews, with the cached path to it. Element pointers only
     // live until the next compose, so the path is keyed by the compose generation.
-    InspectionMark hoveredMark;
+    ElementMark hovered;
     std::uint64_t composeGeneration = 0;
 
-    // One primitive kept alive for the runtime, so the transient preview overlay never
-    // allocates per frame.
-    std::unique_ptr<RoundedRectPrimitive> overlayPrimitive;
-    bool overlayPrimitiveInitialized = false;
+    // How a tool draws on top of the page from inside the page render pass. The tool owns
+    // whatever graphics objects it draws with, so nothing here has to be released with the
+    // device; the pass only hands it the backend and the resolved geometry.
+    std::function<void(const RenderPassContext&)> passRenderer;
 
     // The input a tool takes away from the page, and the queue a host pushes for a
     // runtime that has no window of its own.

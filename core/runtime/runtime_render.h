@@ -15,17 +15,8 @@ public:
         : ui_(ui), instances_(instances), viewport_(viewport), tooling_(tooling) {}
 
     // The tool state of the runtime this renderer draws for, null when no tool ever
-    // talked to it. The seam reads it for the preview overlay a tool asked for.
+    // talked to it. The seam reads it for the draws a tool asked for.
     runtime::ToolingState* tooling() const { return tooling_; }
-
-    // Draws the box model overlay for one mark: one translucent fill per region
-    // (margin, border, padding, content) and no strokes.
-    void renderInspection(core::render::RenderBackend& renderBackend,
-                          runtime::InspectionMark& mark,
-                          int windowWidth,
-                          int windowHeight,
-                          float dpiScale,
-                          const runtime::InspectionPalette& palette);
 
     void renderDirect(core::render::RenderBackend& renderBackend,
                       int windowWidth,
@@ -62,16 +53,6 @@ private:
                                const Rect* dirtyRect,
                                bool hasScissor,
                                const Rect& scissorRect);
-
-#if EUI_TOOLING_ENABLED
-    // Draws the preview a tool asked for, on top of the page content and inside this
-    // render pass. The seam calls it; nothing else may, because a preview drawn outside
-    // the cached frame would be missing from the next cache blit.
-    void drawToolPreview(core::render::RenderBackend& renderBackend,
-                         int windowWidth,
-                         int windowHeight,
-                         float dpiScale);
-#endif
 
     bool isRetainedLayerCandidate(const Element& element,
                                   const runtime::PaintBoundsInstance& bounds,
@@ -222,16 +203,11 @@ inline void RuntimeRenderer::renderDirect(core::render::RenderBackend& renderBac
     for (const Element* root : roots) {
         renderElement(renderBackend, *root, windowWidth, windowHeight, dpiScale, identity, dirtyRect, hasScissor, scissor);
     }
-    // The preview overlay a tool asked for is drawn after the page, so page content
-    // (including siblings painted later) never covers it. Its geometry already carries
-    // the element's transform and the ancestor clips, so it stays where the element is.
-    //
-    // This one call site keeps its own branch instead of going through the seam: the
-    // preview belongs to the page render pass (the renderer's scissor state is what
-    // keeps it clipped), so it is drawn here rather than from a free hook.
-#if EUI_TOOLING_ENABLED
-    drawToolPreview(renderBackend, windowWidth, windowHeight, dpiScale);
-#endif
+    // A tool that draws on top of the page draws here, after page content, so nothing the
+    // page draws (including siblings painted later) covers it. It goes through the seam
+    // like every other tool call: without tooling the hook is empty, and with tooling but
+    // no tool attached it returns before it resolves any geometry.
+    tooling::drawPassOverlay(ui_, instances_, tooling_, renderBackend, windowWidth, windowHeight, dpiScale);
 }
 
 inline void RuntimeRenderer::prepareTextElement(
@@ -971,115 +947,6 @@ inline bool RuntimeRenderer::renderRetainedElements(
     ++core::render::currentRenderFrameStats().retainedLayerDraws;
     return true;
 }
-
-#if EUI_TOOLING_ENABLED
-inline void RuntimeRenderer::drawToolPreview(core::render::RenderBackend& renderBackend,
-                                             int windowWidth,
-                                             int windowHeight,
-                                             float dpiScale) {
-    if (tooling_ == nullptr || tooling_->hoveredMark.id.empty()) {
-        return;
-    }
-    renderInspection(renderBackend, tooling_->hoveredMark, windowWidth, windowHeight, dpiScale,
-                     runtime::kInspectionHoverPalette);
-}
-
-inline void RuntimeRenderer::renderInspection(core::render::RenderBackend& renderBackend,
-                                              runtime::InspectionMark& mark,
-                                              int windowWidth,
-                                              int windowHeight,
-                                              float dpiScale,
-                                              const runtime::InspectionPalette& palette) {
-    const runtime::DebugInspection inspection =
-        runtime::computeInspection(ui_, instances_, mark, tooling_ != nullptr ? tooling_->composeGeneration : 0,
-                                   dpiScale);
-    if (!inspection.active) {
-        return;
-    }
-    if (!tooling_->overlayPrimitive) {
-        tooling_->overlayPrimitive = std::make_unique<RoundedRectPrimitive>();
-    }
-    if (!tooling_->overlayPrimitiveInitialized) {
-        tooling_->overlayPrimitiveInitialized = tooling_->overlayPrimitive->initialize();
-        if (!tooling_->overlayPrimitiveInitialized) {
-            return;
-        }
-    }
-
-    if (inspection.hasScissor) {
-        applyOptionalScissor(renderBackend, true, inspection.scissor, windowHeight);
-    } else {
-        applyOptionalScissor(renderBackend, false, {}, windowHeight);
-    }
-
-    // The boxes stay in the element's own space, like a page rect: the primitive
-    // matrix carries the transform, so the overlay lands where the element is
-    // drawn even inside a scrolled or transformed ancestor.
-    const Rect frame = toPixelRect(inspection.frame, dpiScale);
-    const auto insetBox = [dpiScale](const Rect& rect, const EdgeInsets& insets) {
-        const float left = toPixels(insets.left, dpiScale);
-        const float top = toPixels(insets.top, dpiScale);
-        const float right = toPixels(insets.right, dpiScale);
-        const float bottom = toPixels(insets.bottom, dpiScale);
-        return Rect{rect.x + left,
-                    rect.y + top,
-                    std::max(0.0f, rect.width - left - right),
-                    std::max(0.0f, rect.height - top - bottom)};
-    };
-    const auto expandedBox = [dpiScale](const Rect& rect, const EdgeInsets& insets) {
-        const float left = toPixels(insets.left, dpiScale);
-        const float top = toPixels(insets.top, dpiScale);
-        const float right = toPixels(insets.right, dpiScale);
-        const float bottom = toPixels(insets.bottom, dpiScale);
-        return Rect{rect.x - left, rect.y - top, rect.width + left + right, rect.height + top + bottom};
-    };
-
-    // The border is painted inside the box and padding is measured from the box
-    // edge, so the padding band reaches inward from whichever of the two is wider.
-    const EdgeInsets border = EdgeInsets::all(std::max(0.0f, toPixels(inspection.borderWidth, dpiScale)));
-    const EdgeInsets contentInset{
-        std::max(border.left, toPixels(inspection.padding.left, dpiScale)),
-        std::max(border.top, toPixels(inspection.padding.top, dpiScale)),
-        std::max(border.right, toPixels(inspection.padding.right, dpiScale)),
-        std::max(border.bottom, toPixels(inspection.padding.bottom, dpiScale))
-    };
-    const Rect borderBox = insetBox(frame, border);
-    const Rect contentBox = insetBox(frame, contentInset);
-
-    // No stroke anywhere: the browser look is translucent fills only.
-    const auto paint = [&](const Rect& box, const Color& boxFill) {
-        tooling_->overlayPrimitive->setBounds(box.x, box.y, box.width, box.height);
-        tooling_->overlayPrimitive->setColor(boxFill);
-        tooling_->overlayPrimitive->setGradient({});
-        tooling_->overlayPrimitive->setBorder(Border{});
-        tooling_->overlayPrimitive->setShadow({});
-        tooling_->overlayPrimitive->setCornerRadius(0.0f);
-        tooling_->overlayPrimitive->setBlur(0.0f);
-        tooling_->overlayPrimitive->setOpacity(1.0f);
-        tooling_->overlayPrimitive->setTransformMatrix(
-            combinedPrimitiveMatrix(inspection.transform, box, Transform{}));
-        ++core::render::currentRenderFrameStats().rectDraws;
-        tooling_->overlayPrimitive->render(windowWidth, windowHeight);
-    };
-    const auto paintBand = [&](const Rect& outer, const Rect& inner, const Color& boxFill) {
-        const runtime::InspectionBand band = runtime::inspectionBand(outer, inner);
-        for (int index = 0; index < band.count; ++index) {
-            paint(band.rects[index], boxFill);
-        }
-    };
-
-    // Outermost first. The regions are disjoint, so no colour ever blends twice.
-    paintBand(expandedBox(frame, inspection.margin), frame, palette.margin);
-    paintBand(frame, borderBox, palette.border);
-    paintBand(borderBox, contentBox, palette.padding);
-    if (contentBox.width > 0.0f && contentBox.height > 0.0f) {
-        paint(contentBox, palette.content);
-    }
-
-    // Leave the backend scissor to the caller's next draw, like the tree does.
-    renderBackend.setScissor(false, {}, windowHeight);
-}
-#endif
 
 inline void RuntimeRenderer::renderRect(
     const Element& element,

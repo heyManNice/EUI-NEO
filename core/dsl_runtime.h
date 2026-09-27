@@ -15,6 +15,7 @@
 #include "core/runtime/runtime_state_bindings.h"
 #include "core/tooling/config.h"
 #include "core/tooling/model.h"
+#include "core/tooling/pass.h"
 #include "core/tooling/state.h"
 #include "core/window/window_backend.h"
 
@@ -55,6 +56,12 @@ public:
     // complete frame. The renderer is asked to repaint whenever the cache is rebuilt:
     // on a full paint and on every dirty rect.
     void setOverlayRenderer(std::function<void(int, int, float, const Rect*)> renderer);
+
+    // A tool draws on top of the page from inside the page render pass, so what it draws
+    // cannot be covered by page content and lands in the cached frame. The pass hands it
+    // the backend and the resolved geometry of the element it marked; the tool owns what
+    // it draws with, so nothing here has to be released with the device.
+    void setPassRenderer(std::function<void(const runtime::RenderPassContext&)> renderer);
 
     // A runtime driven by a host instead of a window has no input queue of its own. The
     // host pushes the pointer and scroll state the next update() should consume, and
@@ -114,7 +121,7 @@ public:
 
     // Geometry of the preview overlay for the current frame; the renderer draws
     // exactly this, and tests read it without a renderer.
-    runtime::DebugInspection hoverInspection(float dpiScale);
+    runtime::ElementBox hoveredBox(float dpiScale);
 
     // The element the pointer is over, for a tool that picks elements on the page
     // instead of interacting with them. Every element is a candidate, disabled and
@@ -397,10 +404,11 @@ private:
 
 } // namespace core::dsl
 
-#include "core/runtime/runtime_render.h"
 // The seam the runtime calls. It is always included, and it is where the decision
-// "is tooling part of this build" is made; every call site below it is one line.
+// "is tooling part of this build" is made; every call site is one line. It comes before
+// the renderer because the renderer's pass calls one of its hooks.
 #include "core/tooling/hooks.h"
+#include "core/runtime/runtime_render.h"
 #include "core/runtime/runtime_lifecycle.h"
 #include "core/runtime/runtime_input.h"
 #include "core/runtime/runtime_update.h"

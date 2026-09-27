@@ -2,6 +2,7 @@
 
 #if defined(EUI_DEBUG_BUILD)
 
+#include "modules/devtools/devtools_preview.h"
 #include "modules/devtools/devtools_theme.h"
 
 #include <algorithm>
@@ -730,14 +731,38 @@ void DevtoolsHost::render(int windowWidth, int windowHeight, float dpiScale, con
     runtime_.renderDirectOverlay(windowWidth, windowHeight, dpiScale, &panel);
 }
 
+void DevtoolsHost::renderPageOverlay(const core::dsl::runtime::RenderPassContext& pass) {
+    // The hovered element is what asks for a preview: the panel reports one only while it
+    // shows the tree that hovers over it, so an inactive box means nothing to draw.
+    if (!pass.hover.active) {
+        return;
+    }
+    if (!boxPreviewPrimitiveInitialized_) {
+        boxPreviewPrimitiveInitialized_ = boxPreviewPrimitive_.initialize();
+        if (!boxPreviewPrimitiveInitialized_) {
+            return;
+        }
+    }
+    drawBoxPreview(pass.hover, pass, kHoverBoxPreviewPalette, boxPreviewPrimitive_);
+}
+
 void DevtoolsHost::releaseGraphicsResources() {
     runtime_.releaseGraphicsResources(false);
+    // The preview primitive belongs to the device that just went away.
+    if (boxPreviewPrimitiveInitialized_) {
+        boxPreviewPrimitive_.destroy();
+        boxPreviewPrimitiveInitialized_ = false;
+    }
     panelState_ = nullptr;
     composeRequested_ = true;
 }
 
 void DevtoolsHost::shutdown() {
     runtime_.shutdown(false);
+    if (boxPreviewPrimitiveInitialized_) {
+        boxPreviewPrimitive_.destroy();
+        boxPreviewPrimitiveInitialized_ = false;
+    }
     panelState_ = nullptr;
     visible_ = false;
     dockPosition_ = DockPosition::Bottom;
