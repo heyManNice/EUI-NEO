@@ -819,6 +819,11 @@ DevtoolsUiActions DevtoolsHost::buildActions(DevtoolsPanelState& state) {
         }
         state.showElementBounds = value;
         requestCompose();
+        // The rings are drawn inside the page's own pass, so the page has to draw again for
+        // them to appear, and again to take them away.
+        if (hasPage()) {
+            session_.page->requestFullPaint();
+        }
     };
     actions.tree.selectElement = [this, &state](const std::string& id) {
         if (state.selectedElement == id) {
@@ -1013,9 +1018,11 @@ void DevtoolsHost::render(int windowWidth, int windowHeight, float dpiScale, con
 }
 
 void DevtoolsHost::renderPageOverlay(const core::dsl::runtime::RenderPassContext& pass) {
-    // The hovered element is what asks for a preview: the panel reports one only while it
-    // shows the tree that hovers over it, so an inactive box means nothing to draw.
-    if (!pass.hover.active) {
+    // Two things draw over the page: the box model of the element the panel points at, and,
+    // while the view options ask for it, a ring around every element the tree lists. Both
+    // belong to the panel, so a panel nobody can see leaves the page alone.
+    const bool showBounds = visible_ && panelState_ != nullptr && panelState_->showElementBounds;
+    if (!pass.hover.active && !showBounds) {
         return;
     }
     if (!boxPreviewPrimitiveInitialized_) {
@@ -1024,7 +1031,17 @@ void DevtoolsHost::renderPageOverlay(const core::dsl::runtime::RenderPassContext
             return;
         }
     }
-    drawBoxPreview(pass.hover, pass, kHoverBoxPreviewPalette, boxPreviewPrimitive_);
+    if (showBounds) {
+        std::vector<ElementBounds> bounds;
+        bounds.reserve(session_.tree.nodes.size());
+        for (const ElementTreeNode& node : session_.tree.nodes) {
+            bounds.push_back({node.frame, node.depth});
+        }
+        drawElementBounds(bounds, pass, boxPreviewPrimitive_);
+    }
+    if (pass.hover.active) {
+        drawBoxPreview(pass.hover, pass, kHoverBoxPreviewPalette, boxPreviewPrimitive_);
+    }
 }
 
 void DevtoolsHost::releaseGraphicsResources() {

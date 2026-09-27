@@ -24,6 +24,9 @@ using modules::devtools::ElementTreeSnapshot;
 // of that list with collapsed subtrees removed.
 struct ElementRow {
     const ElementTreeNode* node = nullptr;
+    // The nearest row above this one with a smaller depth: a row prints its id without the
+    // part this one already says.
+    const ElementTreeNode* parent = nullptr;
     bool hasChildren = false;
     bool collapsed = false;
 };
@@ -60,6 +63,9 @@ bool isExpanded(const std::vector<std::string>& expanded, const std::string& id)
 std::vector<ElementRow> visibleElementRows(const ElementTreeSnapshot& tree, const std::vector<std::string>& expanded) {
     std::vector<ElementRow> rows;
     rows.reserve(tree.nodes.size());
+    // The nodes arrive in pre-order with their depth, so the ancestor at a depth is the last
+    // node seen at it. A row keeps the one directly above so it can print a trimmed id.
+    std::vector<const ElementTreeNode*> ancestors;
     int hiddenDeeperThan = -1;
     for (std::size_t index = 0; index < tree.nodes.size(); ++index) {
         const ElementTreeNode& node = tree.nodes[index];
@@ -69,12 +75,44 @@ std::vector<ElementRow> visibleElementRows(const ElementTreeSnapshot& tree, cons
         hiddenDeeperThan = -1;
         const bool hasChildren = index + 1 < tree.nodes.size() && tree.nodes[index + 1].depth > node.depth;
         const bool collapsed = hasChildren && !isExpanded(expanded, node.id);
-        rows.push_back({&node, hasChildren, collapsed});
+        const std::size_t depth = static_cast<std::size_t>(std::max(0, node.depth));
+        const ElementTreeNode* parent = depth > 0 && depth <= ancestors.size() ? ancestors[depth - 1] : nullptr;
+        rows.push_back({&node, parent, hasChildren, collapsed});
+        ancestors.resize(depth);
+        ancestors.push_back(&node);
         if (collapsed) {
             hiddenDeeperThan = node.depth;
         }
     }
     return rows;
+}
+
+// What a row prints as its id. Element ids are scoped by the page and by the scopes a
+// component pushes, never by their parent element (`page.ok` hangs under `page.buttons` but
+// only shares `page.`), so the part to drop is whatever the two ids have in common up to the
+// last segment they agree on. Ids that share nothing, top level rows, and ids the parent
+// already says in full keep what they have.
+std::string elementRowLabel(const ElementRow& row, bool trimPrefix) {
+    const std::string& id = row.node->id;
+    if (!trimPrefix || row.parent == nullptr) {
+        return id;
+    }
+    const std::string& parentId = row.parent->id;
+    std::size_t shared = 0;
+    while (shared < id.size() && shared < parentId.size() && id[shared] == parentId[shared]) {
+        ++shared;
+    }
+    if (shared == 0) {
+        return id;
+    }
+    // The break has to fall on a separator, so a row prints names and never the halves of two
+    // ids that happen to start the same way. When the ids agree up to the parent's end, the
+    // separator that follows in the child is part of what the parent already said.
+    const std::size_t cut = shared < id.size() && id[shared] == '.' ? shared + 1 : id.rfind('.', shared - 1) + 1;
+    if (cut == 0 || cut >= id.size()) {
+        return id;
+    }
+    return id.substr(cut);
 }
 
 // The selection can arrive from the page (a pick) instead of from the tree, so the
@@ -146,10 +184,13 @@ void revealSelection(const ElementTreeSnapshot& tree,
 }
 
 void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRow& row, bool selected,
-                       const DevtoolsUiActions& actions) {
+                       bool trimPrefix, const DevtoolsUiActions& actions) {
     const DevtoolsTheme& theme = devtoolsTheme();
     const ElementTreeNode& node = *row.node;
+    // The actions address the element the row stands for, so they always take the whole id;
+    // only what the row prints follows the option.
     const std::string nodeId = node.id;
+    const std::string label = elementRowLabel(row, trimPrefix);
     // The list already owns `id` (the row slot), so the row content lives in its
     // own subtree instead of reusing that element.
     const std::string base = id + ".row";
@@ -223,7 +264,7 @@ void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRo
                     ui.text(base + ".label")
                         .width(core::SizeValue::fill())
                         .height(theme.elementRowHeight)
-                        .text(nodeId)
+                        .text(label)
                         .fontSize(theme.elementRowFontSize)
                         .color(node.disabled ? theme.elementDisabledText : theme.primaryText)
                         .verticalAlign(core::VerticalAlign::Center)
@@ -455,9 +496,10 @@ void composeElementsTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const D
                 }
                 const ElementRow& row = rows[static_cast<std::size_t>(index)];
                 const bool isSelected = state.panelState != nullptr && row.node->id == state.panelState->selectedElement;
+                const bool trimPrefix = state.panelState != nullptr && state.panelState->trimIdPrefix;
                 (void)width;
                 (void)height;
-                composeElementRow(rowUi, rowId, row, isSelected, actions);
+                composeElementRow(rowUi, rowId, row, isSelected, trimPrefix, actions);
             })
             .build();
     }

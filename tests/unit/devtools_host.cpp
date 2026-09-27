@@ -3,6 +3,7 @@
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
+#include <algorithm>
 #include <cassert>
 #include <type_traits>
 
@@ -105,6 +106,34 @@ int panelPropertySlot(const modules::devtools::DevtoolsHost& host, const std::st
 // Frames of the composed panel elements whose id contains `part`, in composition
 // order. A test clicks where the panel put a control instead of recomputing the
 // layout the composition already did.
+// The text a composed panel element prints. A test reads what the panel wrote instead of
+// guessing it from the id, which is what makes the id options observable at all.
+std::string panelElementText(const modules::devtools::DevtoolsHost& host, const std::string& id) {
+    for (const modules::devtools::ElementTreeNode& node : host.panelElementTree().nodes) {
+        if (node.kind == core::dsl::ElementKind::Text && node.id == id) {
+            return node.text;
+        }
+    }
+    return {};
+}
+
+// Every id the tree list prints, sorted. The list is virtual and scrolls, so a test asks for
+// the set of rows it composed instead of a slot that may hold any of them.
+std::vector<std::string> sortedRowLabels(const modules::devtools::DevtoolsHost& host) {
+    const std::string suffix = ".row.label";
+    std::vector<std::string> labels;
+    for (const modules::devtools::ElementTreeNode& node : host.panelElementTree().nodes) {
+        if (node.kind != core::dsl::ElementKind::Text || node.id.size() <= suffix.size()) {
+            continue;
+        }
+        if (node.id.compare(node.id.size() - suffix.size(), suffix.size(), suffix) == 0) {
+            labels.push_back(node.text);
+        }
+    }
+    std::sort(labels.begin(), labels.end());
+    return labels;
+}
+
 std::vector<core::Rect> panelElementFrames(const modules::devtools::DevtoolsHost& host, const std::string& part) {
     std::vector<core::Rect> frames;
     for (const modules::devtools::ElementTreeNode& node : host.panelElementTree().nodes) {
@@ -682,6 +711,49 @@ int main() {
         assert(host.expandedElements().empty());
         frame();
         assert(countPanelRows(host) == 1);
+
+        // The id option only changes what a row prints. A row drops what its parent's id
+        // already says, which for these ids means the page scope rather than the parent's whole
+        // id: `page.ok` hangs under `page.buttons` and shares nothing with it but `page.`.
+        {
+            const modules::devtools::ElementTreeSnapshot before = host.elementTree();
+            modules::devtools::ElementTreeSnapshot nested;
+            nested.revision = before.revision + 1;
+            nested.nodes.push_back({"page.root", core::dsl::ElementKind::Column, {}, 0, 0, false, false, false,
+                                    {0.0f, 0.0f, 800.0f, 600.0f}});
+            nested.nodes.push_back({"page.root.row", core::dsl::ElementKind::Rect, {}, 1, 0, false, false, false,
+                                    {0.0f, 0.0f, 120.0f, 20.0f}});
+            nested.nodes.push_back({"page.other", core::dsl::ElementKind::Text, "Hello", 1, 0, false, false, false,
+                                    {0.0f, 20.0f, 120.0f, 20.0f}});
+            nested.nodes.push_back({"widget", core::dsl::ElementKind::Rect, {}, 1, 0, false, false, false,
+                                    {0.0f, 40.0f, 120.0f, 20.0f}});
+            nested.nodes.push_back({"page.solo", core::dsl::ElementKind::Rect, {}, 0, 0, false, false, false,
+                                    {0.0f, 60.0f, 120.0f, 20.0f}});
+            host.setElementTree(nested);
+            frame();
+            clickPanel(theme.elementDisclosureSize * 0.5, rowY);
+            frame();
+            assert(countPanelRows(host) == 5);
+            assert(sortedRowLabels(host) ==
+                   std::vector<std::string>({"page.other", "page.root", "page.root.row", "page.solo", "widget"}));
+
+            const core::Rect option = panelElementFrame(host, "elements.options.trimPrefix");
+            clickPanel(option.x + option.width * 0.5, option.y + option.height * 0.5);
+            frame();
+            assert(sortedRowLabels(host) ==
+                   std::vector<std::string>({"other", "page.root", "page.solo", "row", "widget"}));
+
+            // Clicking it again puts the ids back, and the rows the rest of the test reads
+            // are the ones it published.
+            clickPanel(option.x + option.width * 0.5, option.y + option.height * 0.5);
+            frame();
+            assert(sortedRowLabels(host) ==
+                   std::vector<std::string>({"page.other", "page.root", "page.root.row", "page.solo", "widget"}));
+            clickPanel(theme.elementDisclosureSize * 0.5, rowY);
+            frame();
+            host.setElementTree(before);
+            frame();
+        }
 
         // The tree list spans the whole panel, so its scrollbar ends on the panel edge
         // and a row highlight reaches it instead of stopping a gap short, the way the

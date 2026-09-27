@@ -6,6 +6,8 @@
 #include "core/render/primitive.h"
 #include "core/tooling/pass.h"
 
+#include <vector>
+
 // The box model preview the panel draws over the element it points at.
 //
 // The core resolves the geometry of the marked element and hands it over inside the page
@@ -43,6 +45,38 @@ struct PreviewBand {
 };
 
 PreviewBand previewBand(const core::Rect& outer, const core::Rect& inner);
+
+// The colours the bounds option rings elements with, one per depth and cycled: a nested
+// element is told apart from its parent by hue, and two elements at the same depth always
+// carry the same colour. Picked rather than drawn at random, because a colour that changed
+// while the page redraws would read as flicker rather than as a level.
+inline constexpr core::Color kElementBoundsColors[] = {
+    {0.42f, 0.86f, 0.98f, 0.80f},   // cyan
+    {0.98f, 0.72f, 0.36f, 0.80f},   // amber
+    {0.72f, 0.60f, 0.98f, 0.80f},   // violet
+    {0.48f, 0.90f, 0.60f, 0.80f},   // green
+    {0.98f, 0.55f, 0.72f, 0.80f},   // pink
+    {0.62f, 0.82f, 0.36f, 0.80f}    // olive
+};
+
+core::Color elementBoundsColor(int depth);
+
+// One layout box and the depth the tree gave it.
+struct ElementBounds {
+    core::Rect frame;
+    int depth = 0;
+};
+
+// The one pixel ring just inside a frame. It is the same band arithmetic the box preview uses,
+// which is what keeps a frame too small to hold two rings from turning inside out.
+PreviewBand outlineBand(const core::Rect& frame);
+
+// Rings every frame the element tree published, in the pass's pixel space, in the colour its
+// depth picks. The frames are the layout boxes, so what lands on screen is where the tree says
+// the rows are.
+void drawElementBounds(const std::vector<ElementBounds>& bounds,
+                       const core::dsl::runtime::RenderPassContext& pass,
+                       core::RoundedRectPrimitive& primitive);
 
 // Draws the wash of one resolved box, inside the pass's clip. The caller owns `primitive`
 // and is what releases it with the device.

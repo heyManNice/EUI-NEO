@@ -49,6 +49,63 @@ PreviewBand previewBand(const core::Rect& outer, const core::Rect& inner) {
     return band;
 }
 
+// The one pixel ring just inside a frame, as disjoint rectangles.
+PreviewBand outlineBand(const core::Rect& frame) {
+    constexpr float kThickness = 1.0f;
+    const core::Rect inner{frame.x + kThickness,
+                           frame.y + kThickness,
+                           std::max(0.0f, frame.width - kThickness * 2.0f),
+                           std::max(0.0f, frame.height - kThickness * 2.0f)};
+    return previewBand(frame, inner);
+}
+
+core::Color elementBoundsColor(int depth) {
+    constexpr std::size_t kCount = sizeof(kElementBoundsColors) / sizeof(kElementBoundsColors[0]);
+    return kElementBoundsColors[static_cast<std::size_t>(std::max(0, depth)) % kCount];
+}
+
+void drawElementBounds(const std::vector<ElementBounds>& bounds,
+                       const core::dsl::runtime::RenderPassContext& pass,
+                       core::RoundedRectPrimitive& primitive) {
+    if (pass.backend == nullptr) {
+        return;
+    }
+
+    // These rings are page geometry, not one element's box, so the clip they need is the
+    // pass's own and not the clip some element left behind.
+    pass.clipToNothing();
+
+    const auto paint = [&](const core::Rect& rect, const core::Color& color) {
+        primitive.setBounds(rect.x, rect.y, rect.width, rect.height);
+        primitive.setColor(color);
+        primitive.setGradient({});
+        primitive.setBorder({});
+        primitive.setShadow({});
+        primitive.setCornerRadius(0.0f);
+        primitive.setBlur(0.0f);
+        primitive.setOpacity(1.0f);
+        primitive.setTransformMatrix(core::dsl::combinedPrimitiveMatrix(core::dsl::RenderTransform{}, rect,
+                                                                        core::Transform{}));
+        ++core::render::currentRenderFrameStats().rectDraws;
+        primitive.render(pass.windowWidth, pass.windowHeight);
+    };
+
+    for (const ElementBounds& element : bounds) {
+        const core::Rect pixel = core::dsl::toPixelRect(element.frame, pass.dpiScale);
+        if (pixel.width <= 0.0f || pixel.height <= 0.0f) {
+            continue;
+        }
+        const core::Color color = elementBoundsColor(element.depth);
+        const PreviewBand ring = outlineBand(pixel);
+        for (int index = 0; index < ring.count; ++index) {
+            paint(ring.rects[index], color);
+        }
+    }
+
+    // Leave the backend scissor to the pass's next draw, like page content does.
+    pass.clipToNothing();
+}
+
 void drawBoxPreview(const core::dsl::runtime::ElementBox& box,
                     const core::dsl::runtime::RenderPassContext& pass,
                     const BoxPreviewPalette& palette,

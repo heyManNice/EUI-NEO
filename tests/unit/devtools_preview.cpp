@@ -38,6 +38,53 @@ int main() {
         assert(offset.rects[2].x == 3.0f && offset.rects[2].width == 7.0f);
     }
 
+    // The bounds option rings a frame with one pixel: the ring is the band between the frame
+    // and the frame a pixel inside it, so the four sides come out disjoint like the box model
+    // bands do.
+    {
+        const modules::devtools::PreviewBand ring = modules::devtools::outlineBand({0.0f, 0.0f, 10.0f, 6.0f});
+        assert(ring.count == 4);
+        assert(ring.rects[0].x == 0.0f && ring.rects[0].y == 0.0f && ring.rects[0].width == 10.0f &&
+               ring.rects[0].height == 1.0f);
+        assert(ring.rects[1].y == 5.0f && ring.rects[1].height == 1.0f);
+        assert(ring.rects[2].x == 0.0f && ring.rects[2].y == 1.0f && ring.rects[2].width == 1.0f &&
+               ring.rects[2].height == 4.0f);
+        assert(ring.rects[3].x == 9.0f && ring.rects[3].width == 1.0f && ring.rects[3].height == 4.0f);
+
+        // A frame with no room for a ring has to come back as bands that still have a size,
+        // never as a rectangle turned inside out.
+        for (const core::Rect& thin : {core::Rect{0.0f, 0.0f, 1.0f, 4.0f}, core::Rect{2.0f, 3.0f, 0.0f, 0.0f}}) {
+            const modules::devtools::PreviewBand thinRing = modules::devtools::outlineBand(thin);
+            for (int index = 0; index < thinRing.count; ++index) {
+                assert(thinRing.rects[index].width > 0.0f && thinRing.rects[index].height > 0.0f);
+                assert(thinRing.rects[index].x >= thin.x && thinRing.rects[index].y >= thin.y);
+            }
+        }
+    }
+
+    // A level gets one ring colour: two elements at the same depth always read the same, and
+    // neighbouring levels are far enough apart to be told apart. Every level carries the same
+    // weight, so a deep element is no harder to see than its parent.
+    {
+        const auto sameColor = [](const core::Color& left, const core::Color& right) {
+            return left.r == right.r && left.g == right.g && left.b == right.b && left.a == right.a;
+        };
+        assert(sameColor(modules::devtools::elementBoundsColor(0), modules::devtools::elementBoundsColor(0)));
+        assert(!sameColor(modules::devtools::elementBoundsColor(1), modules::devtools::elementBoundsColor(0)));
+        // A depth that cannot happen reads as the top level rather than reading out of bounds.
+        assert(sameColor(modules::devtools::elementBoundsColor(-1), modules::devtools::elementBoundsColor(0)));
+        constexpr std::size_t kLevels =
+            sizeof(modules::devtools::kElementBoundsColors) / sizeof(modules::devtools::kElementBoundsColors[0]);
+        for (std::size_t level = 0; level < kLevels; ++level) {
+            const core::Color color = modules::devtools::elementBoundsColor(static_cast<int>(level));
+            assert(color.a == modules::devtools::kElementBoundsColors[0].a);
+            assert(color.a > 0.5f);
+        }
+        // Deeper than the table wraps instead of running off it.
+        assert(sameColor(modules::devtools::elementBoundsColor(static_cast<int>(kLevels)),
+                         modules::devtools::elementBoundsColor(0)));
+    }
+
     return 0;
 }
 
