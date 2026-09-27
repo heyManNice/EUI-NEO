@@ -26,6 +26,7 @@ using modules::devtools::FieldKind;
 using modules::devtools::fieldBit;
 using modules::devtools::fieldKind;
 using modules::devtools::fieldValueOf;
+using modules::devtools::isElementField;
 using modules::devtools::kElementFieldCount;
 using modules::devtools::readElementValues;
 
@@ -106,6 +107,30 @@ int main() {
             assert(bit != 0 && (seen & bit) == 0);
             seen |= bit;
         }
+
+        // The sentinel that says how many fields there are is not a field, and neither is
+        // anything cast into the enum from outside. Both are refused before they can be used
+        // as an index: the stores below are exactly `kElementFieldCount` wide.
+        assert(!isElementField(ElementField::Count));
+        assert(!isElementField(static_cast<ElementField>(-1)));
+        assert(!isElementField(static_cast<ElementField>(kElementFieldCount)));
+        assert(fieldBit(ElementField::Count) == 0u);
+        assert(fieldBit(static_cast<ElementField>(kElementFieldCount + 7)) == 0u);
+
+        ElementPatch refused;
+        assert(!refused.set(ElementField::Count, fieldValueOf(1.0f)));
+        assert(!refused.set(static_cast<ElementField>(kElementFieldCount + 7), fieldValueOf(1.0f)));
+        refused.clear(static_cast<ElementField>(kElementFieldCount + 7));
+        assert(refused.mask == 0u);
+        assert(!refused.has(ElementField::Count));
+        assert(refused.get(ElementField::Count).kind == FieldKind::Number);
+        assert(refused.get(static_cast<ElementField>(kElementFieldCount + 7)).number == 0.0f);
+
+        ElementValues none;
+        none.setField(ElementField::Count, fieldValueOf(1.0f));
+        none.setField(static_cast<ElementField>(kElementFieldCount + 7), fieldValueOf(1.0f));
+        assert(none.field(ElementField::Count).number == 0.0f);
+        assert(!none.wasWritten(ElementField::Count));
     }
 
     core::dsl::Runtime runtime;

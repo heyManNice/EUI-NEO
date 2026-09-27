@@ -48,11 +48,11 @@ inline std::string truncateElementText(const std::string& text, std::size_t limi
 // The fields a tool may write on a live element, one line each: the name a tool uses for
 // the field, the kind of value it holds, and the element member it reads and writes.
 //
-// This table is the whole of what the core knows about editable values. The core reads a
-// field, writes a field and applies what a tool wrote; it does not know what a tool calls
-// the field, in which order it shows it, what range its editor covers or which control it
-// puts in the row. A new field is one line here plus one row in the tool that presents it
-// (see modules/devtools), and no function in the core grows a branch.
+// This table is the whole of what the module knows about editable values. Reading a field,
+// writing a field and applying what a tool wrote all walk the table; nothing here knows what
+// a tool calls the field, in which order it shows it, what range its editor covers or which
+// control it puts in the row. A new field is one line here plus one row in the tool that
+// presents it (see modules/devtools), and no function grows a branch.
 #define DEVTOOLS_ELEMENT_FIELD_TABLE(X)                   \
     X(Color,           Color,  color)                \
     X(Opacity,         Number, opacity)              \
@@ -81,6 +81,13 @@ enum class ElementField {
 
 inline constexpr int kElementFieldCount = static_cast<int>(ElementField::Count);
 
+// `ElementField::Count` says how many fields there are; it is not a field. A value cast into
+// the enum from outside — a stored index, a script, an off-by-one — is refused here instead
+// of being used as an index into tables that are exactly `kElementFieldCount` long.
+inline constexpr bool isElementField(ElementField field) {
+    return static_cast<int>(field) >= 0 && static_cast<int>(field) < kElementFieldCount;
+}
+
 // The kind of value a field holds. It is read from the table above, which is also where an
 // editor learns which control a row needs.
 enum class FieldKind { Number, Color, Flag };
@@ -99,7 +106,7 @@ inline constexpr FieldKind fieldKind(ElementField field) {
 }
 
 inline std::uint32_t fieldBit(ElementField field) {
-    return 1u << static_cast<std::uint32_t>(field);
+    return isElementField(field) ? (1u << static_cast<std::uint32_t>(field)) : 0u;
 }
 
 // One value a tool wrote, carried together with the kind it holds. The value travels with
@@ -191,16 +198,17 @@ struct ElementPatch {
     std::uint32_t mask = 0;
     std::array<FieldValue, kElementFieldCount> values{};
 
-    bool has(ElementField field) const { return (mask & fieldBit(field)) != 0u; }
+    bool has(ElementField field) const { return isElementField(field) && (mask & fieldBit(field)) != 0u; }
 
     FieldValue get(ElementField field) const {
         return has(field) ? values[static_cast<std::size_t>(field)] : FieldValue{};
     }
 
     // Writes one value and says whether that changed the patch. Writing a field also
-    // switches on the field it needs, if it has one.
+    // switches on the field it needs, if it has one. A field the table does not have is
+    // refused: the store is exactly as wide as the table.
     bool set(ElementField field, const FieldValue& value) {
-        if (value.kind != fieldKind(field)) {
+        if (!isElementField(field) || value.kind != fieldKind(field)) {
             return false;
         }
         const std::size_t index = static_cast<std::size_t>(field);
@@ -242,7 +250,7 @@ inline FieldValue readElementField(const core::dsl::Element& element, ElementFie
 
 // Writes one field of a live element, and says whether the field took the value.
 inline bool writeElementField(core::dsl::Element& element, ElementField field, const FieldValue& value) {
-    if (value.kind != fieldKind(field)) {
+    if (!isElementField(field) || value.kind != fieldKind(field)) {
         return false;
     }
     switch (field) {
@@ -278,7 +286,7 @@ inline void applyElementPatch(core::dsl::Element& element, const ElementPatch& p
 // What one element looks like right now, read on demand for the single element a tool
 // inspects. The geometry and the facts about the element are named; the values a tool can
 // write live in `fields`, indexed by field, so a tool that added a row reads it back
-// without the core knowing which fields it added. `written` marks the fields a tool
+// without the module knowing which fields it added. `written` marks the fields a tool
 // replaced, so the tool can flag them and offer to put them back.
 struct ElementValues {
     bool active = false;
@@ -296,9 +304,13 @@ struct ElementValues {
     std::array<FieldValue, kElementFieldCount> fields{};
     std::uint32_t written = 0;
 
-    FieldValue field(ElementField which) const { return fields[static_cast<std::size_t>(which)]; }
+    FieldValue field(ElementField which) const {
+        return isElementField(which) ? fields[static_cast<std::size_t>(which)] : FieldValue{};
+    }
     void setField(ElementField which, const FieldValue& value) {
-        fields[static_cast<std::size_t>(which)] = value;
+        if (isElementField(which)) {
+            fields[static_cast<std::size_t>(which)] = value;
+        }
     }
     bool wasWritten(ElementField which) const { return (written & fieldBit(which)) != 0u; }
 };
