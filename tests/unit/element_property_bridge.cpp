@@ -100,21 +100,21 @@ int main() {
     RecordingOverlay overlay;
 
     // An overlay that shows nothing asks for nothing, so nothing is read for it.
-    app::detail::publishElementProperties(overlay);
+    app::tooling::publishElementProperties(page, overlay);
     assert(overlay.publishCount == 0);
     assert(!overlay.properties.active);
 
     // An overlay that shows an element gets that one element. The read is throttled
     // while the shown element and the page structure stay the same.
     overlay.element = "page.panel";
-    app::detail::publishElementProperties(overlay);
+    app::tooling::publishElementProperties(page, overlay);
     assert(overlay.publishCount == 1);
     assert(overlay.properties.active);
     assert(overlay.properties.id == "page.panel");
     assert(overlay.properties.radius == 3.0f);
     assert(overlay.properties.color.r == 0.2f);
     assert(overlay.overrideCount == 0);
-    app::detail::publishElementProperties(overlay);
+    app::tooling::publishElementProperties(page, overlay);
     assert(overlay.publishCount == 1);
 
     // An edit the overlay made lands on the page, the panel sees the result in the
@@ -124,13 +124,13 @@ int main() {
     edit.property = DebugPropertyId::Radius;
     edit.number = 12.0f;
     overlay.pending.push_back(edit);
-    app::detail::applyElementPropertyEdits(overlay);
+    app::tooling::applyElementPropertyEdits(page, overlay);
     assert(page.debugElementOverrideCount() == 1);
     assert(page.debugElementProperties("page.panel").radius == 12.0f);
     assert(overlay.overrideCount == 1);
     // The app layer publishes again right after an edit, so the tool never shows the
     // value it just changed away from.
-    app::detail::publishElementProperties(overlay);
+    app::tooling::publishElementProperties(page, overlay);
     assert(overlay.publishCount == 2);
     assert(overlay.properties.radius == 12.0f);
 
@@ -143,8 +143,8 @@ int main() {
     edit.property = DebugPropertyId::ShadowEnabled;
     edit.flag = true;
     overlay.pending.push_back(edit);
-    app::detail::applyElementPropertyEdits(overlay);
-    app::detail::publishElementProperties(overlay);
+    app::tooling::applyElementPropertyEdits(page, overlay);
+    app::tooling::publishElementProperties(page, overlay);
     const core::dsl::runtime::DebugElementProperties edited = page.debugElementProperties("page.panel");
     assert(edited.color.r == 0.9f && edited.color.b == 0.2f);
     assert(edited.shadow.enabled);
@@ -158,7 +158,7 @@ int main() {
     edit.property = DebugPropertyId::Radius;
     edit.clear = true;
     overlay.pending.push_back(edit);
-    app::detail::applyElementPropertyEdits(overlay);
+    app::tooling::applyElementPropertyEdits(page, overlay);
     composePage();
     assert(page.debugElementProperties("page.panel").radius == 3.0f);
 
@@ -166,7 +166,7 @@ int main() {
     edit = {};
     edit.clear = true;
     overlay.pending.push_back(edit);
-    app::detail::applyElementPropertyEdits(overlay);
+    app::tooling::applyElementPropertyEdits(page, overlay);
     assert(page.debugElementOverrideCount() == 0);
     assert(overlay.overrideCount == 0);
     composePage();
@@ -181,19 +181,19 @@ int main() {
     overlay.picking = true;
     overlay.pointer.x = 40.0;
     overlay.pointer.y = 20.0;
-    app::detail::publishPickedElement(overlay, 1.0f);
+    app::tooling::publishPickedElement(page, overlay, 1.0f);
     assert(overlay.underPointer == "page.panel");
 
     // A point that hits nothing answers with nothing, and a panel that stopped picking
     // clears the answer even while the pointer stays where it was.
     overlay.pointer.x = 190.0;
     overlay.pointer.y = 90.0;
-    app::detail::publishPickedElement(overlay, 1.0f);
+    app::tooling::publishPickedElement(page, overlay, 1.0f);
     assert(overlay.underPointer.empty());
     overlay.pointer.x = 40.0;
     overlay.pointer.y = 20.0;
     overlay.picking = false;
-    app::detail::publishPickedElement(overlay, 1.0f);
+    app::tooling::publishPickedElement(page, overlay, 1.0f);
     assert(overlay.underPointer.empty());
 
     page.shutdown(false);

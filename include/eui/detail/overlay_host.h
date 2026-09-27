@@ -1,7 +1,5 @@
 #pragma once
 
-#if EUI_TOOLING_ENABLED
-
 #include "core/app/performance_snapshot.h"
 #include "core/dsl.h"
 #include "core/input/input_types.h"
@@ -156,5 +154,3 @@ inline void setOverlayHost(OverlayHost* host) {
 }
 
 } // namespace app::detail
-
-#endif

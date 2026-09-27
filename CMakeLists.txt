@@ -812,6 +812,7 @@ if(EUI_ENABLE_INSTALL)
         PATTERN "detail" EXCLUDE
     )
     install(FILES include/eui/detail/dsl_app_impl.h include/eui/detail/overlay_host.h
+        include/eui/detail/tooling_bridge.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/eui/detail
     )
     set(EUI_NEO_INSTALL_HEADER_DIRS components core)

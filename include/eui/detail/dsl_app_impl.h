@@ -2,6 +2,7 @@
 
 #include "eui/dsl_app.h"
 #include "eui/detail/overlay_host.h"
+#include "eui/detail/tooling_bridge.h"
 #include "eui/network.h"
 
 #include "3rd/stb_image.h"
@@ -34,14 +35,7 @@ namespace app {
 namespace detail {
 
 inline void publishPerformanceSnapshot(const PerformanceSnapshot& snapshot) {
-#if EUI_TOOLING_ENABLED
-    detail::OverlayHost* overlay = detail::overlayHost();
-    if (overlay != nullptr) {
-        overlay->setPerformanceSnapshot(snapshot);
-        return;
-    }
-#endif
-    (void)snapshot;
+    tooling::publishPerformance(snapshot);
 }
 
 inline core::dsl::Runtime& dslRuntime() {
@@ -59,151 +53,12 @@ struct DslAppState {
     bool iconApplied = false;
     float logicalWidth = 0.0f;
     float logicalHeight = 0.0f;
-#if EUI_TOOLING_ENABLED
-    std::uint64_t elementTreeRevision = 0;
-    double elementTreeRefreshTime = 0.0;
-    std::string elementPropertiesId;
-    std::uint64_t elementPropertiesRevision = 0;
-    double elementPropertiesRefreshTime = 0.0;
-    bool elementPropertiesStale = true;
-#endif
 };
 
 inline DslAppState& dslAppState() {
     static DslAppState state;
     return state;
 }
-
-#if EUI_TOOLING_ENABLED
-// Frame-only changes (animation, scrolling, hover) refresh the published tree at
-// most this often. A structural change always refreshes immediately, so a viewer
-// reacts to the page it inspects without waiting.
-inline constexpr double kElementTreeRefreshSeconds = 0.25;
-
-// Copies the page element tree to the overlay that displays it. Walking the tree
-// costs time and memory proportional to the page, and the overlay only pays for it
-// while it asks for the tree.
-inline void publishElementTree(OverlayHost& overlay) {
-    if (!overlay.wantsElementTree()) {
-        return;
-    }
-    DslAppState& state = dslAppState();
-    const std::uint64_t revision = dslRuntime().elementStructureRevision();
-    const double now = core::window::timeSeconds();
-    if (revision == state.elementTreeRevision &&
-        now - state.elementTreeRefreshTime < kElementTreeRefreshSeconds) {
-        return;
-    }
-    state.elementTreeRevision = revision;
-    state.elementTreeRefreshTime = now;
-    overlay.setElementTree(dslRuntime().elementTree());
-}
-
-// Properties are read for the single element the overlay shows, and only when it
-// asks. A tree walk per frame would cost as much as the page is big, so the read is
-// throttled like the tree and repeats immediately after an edit, when the panel has
-// to see what its own edit did.
-inline void publishElementProperties(OverlayHost& overlay) {
-    const std::string& id = overlay.propertiesElement();
-    if (id.empty()) {
-        return;
-    }
-    DslAppState& state = dslAppState();
-    const std::uint64_t revision = dslRuntime().elementStructureRevision();
-    const double now = core::window::timeSeconds();
-    const bool sameElement = id == state.elementPropertiesId;
-    const bool throttled = revision == state.elementPropertiesRevision &&
-                           now - state.elementPropertiesRefreshTime < kElementTreeRefreshSeconds;
-    if (sameElement && !state.elementPropertiesStale && throttled) {
-        return;
-    }
-    state.elementPropertiesId = id;
-    state.elementPropertiesRevision = revision;
-    state.elementPropertiesRefreshTime = now;
-    state.elementPropertiesStale = false;
-    overlay.setElementProperties(dslRuntime().debugElementProperties(id));
-    overlay.setElementPropertyOverrideCount(dslRuntime().debugElementOverrideCount());
-}
-
-// Applies the edits the overlay made to the page. This is the only direction that
-// writes: the runtime keeps them on top of the app's own values until they are
-// cleared, and the app state the page is built from is never touched.
-inline void applyElementPropertyEdits(OverlayHost& overlay) {
-    OverlayHost::ElementPropertyEdit edit;
-    while (overlay.takeElementPropertyEdit(edit)) {
-        if (edit.clear && edit.id.empty()) {
-            dslRuntime().clearAllDebugElementOverrides();
-        } else if (edit.clear) {
-            dslRuntime().clearDebugElementOverride(edit.id, edit.property);
-        } else {
-            switch (core::dsl::runtime::debugPropertyType(edit.property)) {
-            case core::dsl::runtime::DebugPropertyType::Number:
-                dslRuntime().setDebugElementOverride(edit.id, edit.property, edit.number);
-                break;
-            case core::dsl::runtime::DebugPropertyType::Color:
-                dslRuntime().setDebugElementOverride(edit.id, edit.property, edit.color);
-                break;
-            case core::dsl::runtime::DebugPropertyType::Flag:
-                dslRuntime().setDebugElementOverride(edit.id, edit.property, edit.flag);
-                break;
-            }
-        }
-        dslAppState().elementPropertiesStale = true;
-    }
-    overlay.setElementPropertyOverrideCount(dslRuntime().debugElementOverrideCount());
-}
-
-// A picking overlay owns the pointer: the page is told the pointer left, and what is
-// under it comes back from the page's own hit test. Asking the page keeps the answer
-// in the same space as the frame the user is looking at: transforms, ancestor clips
-// and paint order are the ones that drew it.
-inline void publishPickedElement(OverlayHost& overlay, float dpiScale) {
-    if (!overlay.pickingElement()) {
-        overlay.setElementUnderPointer(std::string{});
-        return;
-    }
-    const core::PointerEvent pointer = overlay.pickedPointer();
-    overlay.setElementUnderPointer(dslRuntime().debugElementAt(pointer.x, pointer.y, dpiScale));
-}
-
-// What one frame of the overlay did, so the app loop can react to it.
-struct OverlayFrame {
-    bool repainted = false;
-    core::Rect contentBounds{};
-};
-
-// Drives the overlay for one frame. The order the two sides depend on lives here
-// instead of being spread over the app loop:
-//
-//   1. the tree of this frame, so the overlay composes against what the user sees
-//   2. the edits the overlay made, read back before the values below, so an edit
-//      shows its result in the same frame instead of the next one
-//   3. the values of the element it shows
-//   4. the element the picker points at, before the preview, so the page marks what
-//      the pointer is on in the frame it moved
-//   5. the preview the overlay asked for, and then the overlay's own update
-inline OverlayFrame driveOverlay(OverlayHost& overlay,
-                                 int windowWidth,
-                                 int windowHeight,
-                                 float dpiScale,
-                                 float deltaSeconds) {
-    publishElementTree(overlay);
-    applyElementPropertyEdits(overlay);
-    publishElementProperties(overlay);
-    publishPickedElement(overlay, dpiScale);
-    dslRuntime().setHoveredElement(overlay.hoveredElement());
-
-    OverlayFrame frame;
-    // The overlay draws inside the app render cache, so a repaint of its own has to
-    // rebuild the cached frame it belongs to.
-    if (overlay.update(windowWidth, windowHeight, dpiScale, deltaSeconds)) {
-        dslRuntime().requestFullPaint();
-        frame.repainted = true;
-    }
-    frame.contentBounds = overlay.contentBounds();
-    return frame;
-}
-#endif
 
 inline std::string resolveIconPath(const std::string& iconPath) {
     if (iconPath.empty()) {
@@ -440,62 +295,9 @@ void requestFullPaint() {
 bool initialize(core::window::Handle window) {
     const DslAppConfig& config = dslAppConfig();
     core::TextPrimitive::setDefaultFontFiles(config.textFontFileValue, config.iconFontFileValue);
-#if EUI_TOOLING_ENABLED
-    detail::OverlayHost* overlay = detail::overlayHost();
-    if (overlay != nullptr) {
-        detail::dslRuntime().setInputFilter([overlay](std::vector<core::PointerEvent>& pointerEvents,
-                                                      core::ScrollEvent& scrollEvent) {
-            overlay->filterInput(pointerEvents, scrollEvent);
-        });
-        detail::dslRuntime().setOverlayRenderer([overlay](int width, int height, float dpiScale,
-                                                          const core::Rect* dirtyRect) {
-            overlay->render(width, height, dpiScale, dirtyRect);
-        });
-        const std::function<void(const eui::KeyEvent&)> appKeyHandler = config.keyEventHandler;
-        detail::dslRuntime().setKeyEventHandler([appKeyHandler](const eui::KeyEvent& key) {
-            detail::OverlayHost* active = detail::overlayHost();
-            if (active != nullptr && active->handleHotkey(key)) {
-                return;
-            }
-            if (appKeyHandler) {
-                appKeyHandler(key);
-            }
-        });
-        // The overlay describes its own window, but the app layer owns window
-        // creation and closing.
-        const std::shared_ptr<DslWindowHandle> detachedHandle = std::make_shared<DslWindowHandle>();
-        const std::shared_ptr<unsigned int> detachedGeneration = std::make_shared<unsigned int>(0);
-        overlay->setDetachedWindowOpener([overlay, detachedHandle, detachedGeneration] {
-            detail::DetachedWindowOptions options;
-            overlay->describeDetachedWindow(options);
-            const unsigned int generation = ++*detachedGeneration;
-            *detachedHandle = openWindow(DslWindowConfig{}
-                    .title(options.title)
-                    .pageId("eui.overlay.detached")
-                    .clearColor(options.clearColor)
-                    .windowSize(options.width, options.height)
-                    .onKeyEvent([overlay](const eui::KeyEvent& key) {
-                        overlay->handleHotkey(key);
-                    })
-                    .onClosed([overlay, detachedGeneration, generation] {
-                        // A window from an earlier detach must not touch the overlay.
-                        if (*detachedGeneration == generation) {
-                            overlay->detachedWindowClosed();
-                        }
-                    }),
-                [overlay](eui::Ui& ui, const eui::Screen& screen) {
-                    overlay->composeDetached(ui, screen);
-                });
-        });
-        overlay->setDetachedWindowCloser([detachedHandle] {
-            detachedHandle->requestClose();
-        });
-    } else {
-        detail::dslRuntime().setKeyEventHandler(config.keyEventHandler);
-    }
-#else
-    detail::dslRuntime().setKeyEventHandler(config.keyEventHandler);
-#endif
+    // A tool gets its hooks here, and the page keeps its own key handler when none is
+    // attached; the loop does not ask which configuration this is.
+    tooling::wireHost(detail::dslRuntime(), config);
 
     detail::DslAppState& state = detail::dslAppState();
     if (!state.iconApplied) {
@@ -522,18 +324,13 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
 
     const DslAppConfig& config = dslAppConfig();
     const float effectiveScale = dpiScale * uiScale();
-    int contentX = 0;
-    int contentWidth = windowWidth;
-    int contentHeight = windowHeight;
-#if EUI_TOOLING_ENABLED
-    detail::OverlayHost* overlay = detail::overlayHost();
-    if (overlay != nullptr) {
-        const core::Rect content = overlay->contentBounds();
-        contentX = static_cast<int>(content.x);
-        contentWidth = static_cast<int>(content.width);
-        contentHeight = static_cast<int>(content.height);
-    }
-#endif
+    // A tool that reserved part of the window leaves the page the rest of it; without a
+    // tool the page gets all of it.
+    const core::Rect toolContent =
+        tooling::contentBounds(static_cast<float>(windowWidth), static_cast<float>(windowHeight));
+    int contentX = static_cast<int>(toolContent.x);
+    int contentWidth = static_cast<int>(toolContent.width);
+    int contentHeight = static_cast<int>(toolContent.height);
     float logicalWidth = static_cast<float>(contentWidth) / effectiveScale;
     float logicalHeight = static_cast<float>(contentHeight) / effectiveScale;
     detail::DslAppState& state = detail::dslAppState();
@@ -580,30 +377,26 @@ bool update(core::window::Handle window, float deltaSeconds, int windowWidth, in
         changed = true;
     }
 
-#if EUI_TOOLING_ENABLED
-    if (overlay != nullptr) {
-        // One frame of the overlay, in the order the two sides depend on; see
-        // driveOverlay for what that order is and why.
-        const detail::OverlayFrame overlayFrame =
-            detail::driveOverlay(*overlay, windowWidth, windowHeight, effectiveScale, deltaSeconds);
-        changed = overlayFrame.repainted || changed;
-        // An overlay that took or gave back room changes where the page is composed,
-        // so the frame is composed again into what is left.
-        if (contentX != static_cast<int>(overlayFrame.contentBounds.x) ||
-            contentWidth != static_cast<int>(overlayFrame.contentBounds.width) ||
-            contentHeight != static_cast<int>(overlayFrame.contentBounds.height)) {
-            contentX = static_cast<int>(overlayFrame.contentBounds.x);
-            contentWidth = static_cast<int>(overlayFrame.contentBounds.width);
-            contentHeight = static_cast<int>(overlayFrame.contentBounds.height);
-            logicalWidth = static_cast<float>(contentWidth) / effectiveScale;
-            logicalHeight = static_cast<float>(contentHeight) / effectiveScale;
-            detail::dslRuntime().requestFullPaint();
-            composeFrame();
-            changed = detail::dslRuntime().update(window, 0.0f, pointerScale, effectiveScale, inputEnabled) || changed;
-            changed = true;
-        }
+    // One frame of the tool, in the order the two sides depend on; see the bridge for
+    // what that order is and why.
+    const tooling::FrameResult toolFrame =
+        tooling::driveFrame(detail::dslRuntime(), windowWidth, windowHeight, effectiveScale, deltaSeconds);
+    changed = toolFrame.repainted || changed;
+    // A tool that took or gave back room changes where the page is composed, so the
+    // frame is composed again into what is left.
+    if (contentX != static_cast<int>(toolFrame.contentBounds.x) ||
+        contentWidth != static_cast<int>(toolFrame.contentBounds.width) ||
+        contentHeight != static_cast<int>(toolFrame.contentBounds.height)) {
+        contentX = static_cast<int>(toolFrame.contentBounds.x);
+        contentWidth = static_cast<int>(toolFrame.contentBounds.width);
+        contentHeight = static_cast<int>(toolFrame.contentBounds.height);
+        logicalWidth = static_cast<float>(contentWidth) / effectiveScale;
+        logicalHeight = static_cast<float>(contentHeight) / effectiveScale;
+        detail::dslRuntime().requestFullPaint();
+        composeFrame();
+        changed = detail::dslRuntime().update(window, 0.0f, pointerScale, effectiveScale, inputEnabled) || changed;
+        changed = true;
     }
-#endif
 
     return changed;
 }
@@ -623,22 +416,14 @@ void render(int windowWidth, int windowHeight, float dpiScale) {
 }
 
 void releaseGraphicsResources() {
-#if EUI_TOOLING_ENABLED
-    if (detail::OverlayHost* overlay = detail::overlayHost(); overlay != nullptr) {
-        overlay->releaseGraphicsResources();
-    }
-#endif
+    tooling::releaseGraphics();
     detail::dslRuntime().releaseGraphicsResources();
 }
 
 void shutdown() {
     core::async::shutdown();
     if (dslAppConfig().shutdownHandler) dslAppConfig().shutdownHandler();
-#if EUI_TOOLING_ENABLED
-    if (detail::OverlayHost* overlay = detail::overlayHost(); overlay != nullptr) {
-        overlay->shutdown();
-    }
-#endif
+    tooling::shutdown();
     detail::dslRuntime().shutdown();
     eui::network::shutdown();
 }
