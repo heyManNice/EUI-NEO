@@ -891,8 +891,35 @@ int main() {
 
 #else
 
-static_assert(!HasOverlayHooks<core::dsl::Runtime>::value, "Release Runtime must not carry the hooks");
+// A build without tooling still exposes the seam's API — a tool is written once and
+// compiled against one set of headers — but nothing behind it: no state is allocated,
+// nothing can be marked, replaced or picked, and the panel is not part of the build.
+static_assert(HasOverlayHooks<core::dsl::Runtime>::value, "Release Runtime must still expose the tooling seam");
+static_assert(sizeof(core::dsl::runtime::ToolingState) <= sizeof(void*),
+              "A Release build must not carry tool state");
+static_assert(!core::dsl::tooling::kToolingEnabled, "This configuration has no tooling");
 
-int main() { return 0; }
+int main() {
+    using core::dsl::runtime::DebugPropertyId;
+
+    core::dsl::Runtime runtime;
+    assert(runtime.tooling() == nullptr);
+    assert(runtime.elementStructureRevision() == 0);
+    assert(runtime.hoveredElement().empty());
+    assert(runtime.elementTree().nodes.empty());
+    assert(!runtime.debugElementProperties("page.root").active);
+    assert(runtime.debugElementAt(0.0, 0.0, 1.0f).empty());
+    assert(runtime.debugElementOverrideCount() == 0);
+
+    // Every entry point is inert, and none of them allocates the state the seam would
+    // keep: a build without tooling pays one pointer and nothing else.
+    runtime.setHoveredElement("page.root");
+    runtime.setDebugElementOverride("page.root", DebugPropertyId::Radius, 4.0f);
+    runtime.clearDebugElementOverride("page.root", DebugPropertyId::Radius);
+    runtime.clearAllDebugElementOverrides();
+    assert(runtime.hoveredElement().empty());
+    assert(runtime.tooling() == nullptr);
+    return 0;
+}
 
 #endif

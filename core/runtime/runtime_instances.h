@@ -8,10 +8,6 @@
 #include "core/render/text.h"
 #include "core/runtime/runtime_geometry.h"
 
-#if EUI_TOOLING_ENABLED
-#include "core/tooling/model.h"
-#endif
-
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -467,12 +463,6 @@ public:
         releasePrimitive(texts);
         releasePrimitive(images);
         releasePrimitive(shaderToys);
-#if EUI_TOOLING_ENABLED
-        if (debugOverlayPrimitiveInitialized && debugOverlayPrimitive) {
-            debugOverlayPrimitive->destroy();
-            debugOverlayPrimitiveInitialized = false;
-        }
-#endif
 
         if (releaseCachedImageTextures) {
             ImagePrimitive::releaseCachedTextures();
@@ -505,13 +495,6 @@ public:
         frameTargets.clear();
         paintBounds.clear();
         retainedLayers.clear();
-#if EUI_TOOLING_ENABLED
-        debugOverlayPrimitive.reset();
-        debugOverlayPrimitiveInitialized = false;
-        hoveredMark = {};
-        debugOverrides.clear();
-        composeGeneration = 0;
-#endif
     }
 
     std::unordered_map<std::string, RectInstance> rects;
@@ -529,24 +512,6 @@ public:
     std::unordered_map<std::string, FrameTargetInstance> frameTargets;
     std::unordered_map<std::string, PaintBoundsInstance> paintBounds;
     std::unordered_map<std::string, RetainedLayerInstance> retainedLayers;
-
-#if EUI_TOOLING_ENABLED
-    // Debug tools draw transient overlays (element inspection) through one
-    // primitive kept alive for the runtime, so they never allocate per frame.
-    std::unique_ptr<RoundedRectPrimitive> debugOverlayPrimitive;
-    bool debugOverlayPrimitiveInitialized = false;
-
-    // The element a debug tool previews while the pointer is over it in its own
-    // view, empty when it previews nothing. The mark carries the cached path to
-    // that element; the compose generation invalidates it.
-    InspectionMark hoveredMark;
-    std::uint64_t composeGeneration = 0;
-
-    // Values a debug session wrote on top of elements, keyed by element id. A
-    // compose throws element values away, so the runtime applies these again to
-    // every freshly composed tree (see composeViewport).
-    std::unordered_map<std::string, DebugElementOverride> debugOverrides;
-#endif
 };
 
 } // namespace core::dsl::runtime

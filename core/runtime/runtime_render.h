@@ -10,8 +10,22 @@ constexpr int kRetainedLayerResizeStableFrames = 16;
 
 class RuntimeRenderer {
 public:
-    RuntimeRenderer(Ui& ui, runtime::InstanceStore& instances, const Rect* viewport = nullptr)
-        : ui_(ui), instances_(instances), viewport_(viewport) {}
+    RuntimeRenderer(Ui& ui, runtime::InstanceStore& instances, const Rect* viewport = nullptr,
+                    runtime::ToolingState* tooling = nullptr)
+        : ui_(ui), instances_(instances), viewport_(viewport), tooling_(tooling) {}
+
+    // The tool state of the runtime this renderer draws for, null when no tool ever
+    // talked to it. The seam reads it for the preview overlay a tool asked for.
+    runtime::ToolingState* tooling() const { return tooling_; }
+
+    // Draws the box model overlay for one mark: one translucent fill per region
+    // (margin, border, padding, content) and no strokes.
+    void renderInspection(core::render::RenderBackend& renderBackend,
+                          runtime::InspectionMark& mark,
+                          int windowWidth,
+                          int windowHeight,
+                          float dpiScale,
+                          const runtime::InspectionPalette& palette);
 
     void renderDirect(core::render::RenderBackend& renderBackend,
                       int windowWidth,
@@ -50,14 +64,13 @@ private:
                                const Rect& scissorRect);
 
 #if EUI_TOOLING_ENABLED
-    // Draws the box model overlay for one mark: one translucent fill per region
-    // (margin, border, padding, content) and no strokes.
-    void renderInspection(core::render::RenderBackend& renderBackend,
-                          runtime::InspectionMark& mark,
-                          int windowWidth,
-                          int windowHeight,
-                          float dpiScale,
-                          const runtime::InspectionPalette& palette);
+    // Draws the preview a tool asked for, on top of the page content and inside this
+    // render pass. The seam calls it; nothing else may, because a preview drawn outside
+    // the cached frame would be missing from the next cache blit.
+    void drawToolPreview(core::render::RenderBackend& renderBackend,
+                         int windowWidth,
+                         int windowHeight,
+                         float dpiScale);
 #endif
 
     bool isRetainedLayerCandidate(const Element& element,
@@ -168,6 +181,9 @@ private:
     Ui& ui_;
     runtime::InstanceStore& instances_;
     const Rect* viewport_ = nullptr;
+    // The tool state of the runtime this renderer draws for, null when no tool is
+    // attached: the preview overlay and its primitive live there.
+    runtime::ToolingState* tooling_ = nullptr;
     bool retainedLayerRenderDisabled_ = false;
 };
 
@@ -206,14 +222,15 @@ inline void RuntimeRenderer::renderDirect(core::render::RenderBackend& renderBac
     for (const Element* root : roots) {
         renderElement(renderBackend, *root, windowWidth, windowHeight, dpiScale, identity, dirtyRect, hasScissor, scissor);
     }
+    // The preview overlay a tool asked for is drawn after the page, so page content
+    // (including siblings painted later) never covers it. Its geometry already carries
+    // the element's transform and the ancestor clips, so it stays where the element is.
+    //
+    // This one call site keeps its own branch instead of going through the seam: the
+    // preview belongs to the page render pass (the renderer's scissor state is what
+    // keeps it clipped), so it is drawn here rather than from a free hook.
 #if EUI_TOOLING_ENABLED
-    // The hover preview overlay is drawn after the page, so page content (including
-    // siblings painted later) never covers it. Its geometry already carries the
-    // element's transform and the ancestor clips, so it stays where the element is.
-    if (!instances_.hoveredMark.id.empty()) {
-        renderInspection(renderBackend, instances_.hoveredMark, windowWidth, windowHeight, dpiScale,
-                         runtime::kInspectionHoverPalette);
-    }
+    drawToolPreview(renderBackend, windowWidth, windowHeight, dpiScale);
 #endif
 }
 
@@ -956,23 +973,35 @@ inline bool RuntimeRenderer::renderRetainedElements(
 }
 
 #if EUI_TOOLING_ENABLED
+inline void RuntimeRenderer::drawToolPreview(core::render::RenderBackend& renderBackend,
+                                             int windowWidth,
+                                             int windowHeight,
+                                             float dpiScale) {
+    if (tooling_ == nullptr || tooling_->hoveredMark.id.empty()) {
+        return;
+    }
+    renderInspection(renderBackend, tooling_->hoveredMark, windowWidth, windowHeight, dpiScale,
+                     runtime::kInspectionHoverPalette);
+}
+
 inline void RuntimeRenderer::renderInspection(core::render::RenderBackend& renderBackend,
                                               runtime::InspectionMark& mark,
                                               int windowWidth,
                                               int windowHeight,
                                               float dpiScale,
                                               const runtime::InspectionPalette& palette) {
-    const runtime::DebugInspection inspection = runtime::computeInspection(ui_, instances_, mark, dpiScale);
+    const runtime::DebugInspection inspection =
+        runtime::computeInspection(ui_, instances_, mark, tooling_ != nullptr ? tooling_->composeGeneration : 0,
+                                   dpiScale);
     if (!inspection.active) {
         return;
     }
-    if (!instances_.debugOverlayPrimitive) {
-        instances_.debugOverlayPrimitive = std::make_unique<RoundedRectPrimitive>();
+    if (!tooling_->overlayPrimitive) {
+        tooling_->overlayPrimitive = std::make_unique<RoundedRectPrimitive>();
     }
-    runtime::InstanceStore& store = instances_;
-    if (!store.debugOverlayPrimitiveInitialized) {
-        store.debugOverlayPrimitiveInitialized = store.debugOverlayPrimitive->initialize();
-        if (!store.debugOverlayPrimitiveInitialized) {
+    if (!tooling_->overlayPrimitiveInitialized) {
+        tooling_->overlayPrimitiveInitialized = tooling_->overlayPrimitive->initialize();
+        if (!tooling_->overlayPrimitiveInitialized) {
             return;
         }
     }
@@ -1019,18 +1048,18 @@ inline void RuntimeRenderer::renderInspection(core::render::RenderBackend& rende
 
     // No stroke anywhere: the browser look is translucent fills only.
     const auto paint = [&](const Rect& box, const Color& boxFill) {
-        store.debugOverlayPrimitive->setBounds(box.x, box.y, box.width, box.height);
-        store.debugOverlayPrimitive->setColor(boxFill);
-        store.debugOverlayPrimitive->setGradient({});
-        store.debugOverlayPrimitive->setBorder(Border{});
-        store.debugOverlayPrimitive->setShadow({});
-        store.debugOverlayPrimitive->setCornerRadius(0.0f);
-        store.debugOverlayPrimitive->setBlur(0.0f);
-        store.debugOverlayPrimitive->setOpacity(1.0f);
-        store.debugOverlayPrimitive->setTransformMatrix(
+        tooling_->overlayPrimitive->setBounds(box.x, box.y, box.width, box.height);
+        tooling_->overlayPrimitive->setColor(boxFill);
+        tooling_->overlayPrimitive->setGradient({});
+        tooling_->overlayPrimitive->setBorder(Border{});
+        tooling_->overlayPrimitive->setShadow({});
+        tooling_->overlayPrimitive->setCornerRadius(0.0f);
+        tooling_->overlayPrimitive->setBlur(0.0f);
+        tooling_->overlayPrimitive->setOpacity(1.0f);
+        tooling_->overlayPrimitive->setTransformMatrix(
             combinedPrimitiveMatrix(inspection.transform, box, Transform{}));
         ++core::render::currentRenderFrameStats().rectDraws;
-        store.debugOverlayPrimitive->render(windowWidth, windowHeight);
+        tooling_->overlayPrimitive->render(windowWidth, windowHeight);
     };
     const auto paintBand = [&](const Rect& outer, const Rect& inner, const Color& boxFill) {
         const runtime::InspectionBand band = runtime::inspectionBand(outer, inner);

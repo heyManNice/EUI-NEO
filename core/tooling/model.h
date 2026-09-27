@@ -1,6 +1,5 @@
 #pragma once
 
-#include "core/tooling/config.h"
 
 #include "core/dsl.h"
 #include "core/runtime/runtime_geometry.h"
@@ -154,7 +153,6 @@ inline InspectionBand inspectionBand(const Rect& outer, const Rect& inner) {
     return band;
 }
 
-#if EUI_TOOLING_ENABLED
 // A property a debug tool may edit on a live element. The runtime knows how to read
 // and write every one of them; which of them a tool shows, in what order and with
 // which editor is the tool's business (see modules/devtools).
@@ -398,15 +396,40 @@ inline void applyDebugOverride(Element& element, const DebugElementOverride& ove
         element.textColor = override.textColor;
     }
 }
-#endif
 
 class InstanceStore;
 
-#if EUI_TOOLING_ENABLED
+// Looks an element up by the id a tool holds. The walk uses `children`, not
+// `orderedChildren`, so it also works between a compose and the next layout pass, and
+// it hands out a writable element: a tool writes the values it replaced on it.
+inline Element* findDebugElement(const Ui& ui, const std::string& id) {
+    std::vector<Element*> pending;
+    pending.reserve(ui.roots().size());
+    for (const auto& root : ui.roots()) {
+        pending.push_back(root.get());
+    }
+    while (!pending.empty()) {
+        Element* element = pending.back();
+        pending.pop_back();
+        if (element->id == id) {
+            return element;
+        }
+        for (const auto& child : element->children) {
+            pending.push_back(child.get());
+        }
+    }
+    return nullptr;
+}
+
 // Geometry of the inspection overlay for one mark. Both the panel (through
-// `Runtime::debugInspection`) and the renderer read this, so there is one
-// implementation of "where is that element now".
-DebugInspection computeInspection(Ui& ui, InstanceStore& instances, InspectionMark& mark, float dpiScale);
-#endif
+// `Runtime::debugHoverInspection`) and the renderer read this, so there is one
+// implementation of "where is that element now". `composeGeneration` is what tells the
+// mark whether the path it cached is still valid, since element pointers only live
+// until the next compose.
+DebugInspection computeInspection(Ui& ui,
+                                  InstanceStore& instances,
+                                  InspectionMark& mark,
+                                  std::uint64_t composeGeneration,
+                                  float dpiScale);
 
 } // namespace core::dsl::runtime

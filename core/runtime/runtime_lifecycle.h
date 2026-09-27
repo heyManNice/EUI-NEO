@@ -11,26 +11,6 @@ inline bool Runtime::initialize(core::window::Handle window) {
     return true;
 }
 
-#if EUI_TOOLING_ENABLED
-namespace runtime {
-
-// Values a debug session wrote have to go back on a freshly composed tree before it
-// is laid out, so layout, the element tree snapshot, the render instances and hit
-// testing all read one value instead of asking whether a debug tool replaced it.
-inline void applyDebugElementOverrides(Ui& ui, InstanceStore& instances) {
-    if (instances.debugOverrides.empty()) {
-        return;
-    }
-    for (const auto& entry : instances.debugOverrides) {
-        if (Element* element = ui.debugFindElement(entry.first)) {
-            applyDebugOverride(*element, entry.second);
-        }
-    }
-}
-
-} // namespace runtime
-#endif
-
 template <typename ComposeFn>
 inline void Runtime::compose(const std::string& pageId, float logicalWidth, float logicalHeight, ComposeFn&& composeFn) {
     composeViewport(pageId, {0.0f, 0.0f, logicalWidth, logicalHeight}, false, std::forward<ComposeFn>(composeFn));
@@ -44,24 +24,18 @@ inline void Runtime::compose(const std::string& pageId, const Rect& viewport, Co
 template <typename ComposeFn>
 inline void Runtime::composeViewport(const std::string& pageId, const Rect& viewport, bool clipViewport, ComposeFn&& composeFn) {
     const std::vector<runtime::ElementSnapshot> previousStructure = elementStructure_;
-#if EUI_TOOLING_ENABLED
-    // A compose rebuilds every element, so anything that remembered element
-    // pointers (the inspection paths) has to forget them.
-    ++instances_.composeGeneration;
-    instances_.hoveredMark.path.clear();
-    instances_.hoveredMark.pathId.clear();
-#endif
+    // A compose builds every element again, so a tool that remembered element pointers
+    // has to forget them first.
+    tooling::beforeCompose(*this);
     const Screen screen{viewport.width, viewport.height};
     ui_.begin(pageId);
     ui_.setFocusedId(focusedId_);
     composeFn(ui_, screen);
     ui_.end();
-#if EUI_TOOLING_ENABLED
-    // Debug tools edit properties of composed elements, so their values go back on
-    // the fresh tree before it is laid out: everything downstream then reads one
-    // value instead of asking whether a debug session replaced it.
-    runtime::applyDebugElementOverrides(ui_, instances_);
-#endif
+    // The values a tool replaced go back on the fresh tree before it is laid out:
+    // everything downstream then reads one value instead of asking whether a tool
+    // replaced it.
+    tooling::afterCompose(*this);
     ui_.layout(screen.width, screen.height, viewport.x, viewport.y);
     elementStructure_ = collectElementStructure();
     syncScrollStateBindings();
@@ -80,11 +54,9 @@ inline void Runtime::composeViewport(const std::string& pageId, const Rect& view
         paintRequested_ = true;
         fullPaintRequested_ = true;
         pruneInstancesRequested_ = true;
-#if EUI_TOOLING_ENABLED
-        // The debug tools read the tree on demand; this tells them when the tree
-        // they copied is out of date without comparing snapshots themselves.
+        // The tree a tool copied is out of date from here on, which the snapshot's
+        // revision tells it without comparing snapshots.
         ++elementStructureRevision_;
-#endif
     }
 
     if (viewport_.x != viewport.x || viewport_.y != viewport.y || viewport_.width != viewport.width || viewport_.height != viewport.height || clipViewport_ != clipViewport) {
@@ -103,27 +75,16 @@ inline bool Runtime::update(core::window::Handle window, float deltaSeconds, flo
     }
     if (!inputEnabled) {
         cancelInput(window);
-#if EUI_TOOLING_ENABLED
-        overlayPointerEvents_.clear();
-        overlayScrollEvent_ = {};
-#endif
+        // Input is off for this frame, so the events a host pushed for it go with it.
+        tooling::resetHostInput(*this);
     }
     std::vector<PointerEvent> pointerEvents = consumePointerEvents(window, pointerScale);
     std::vector<KeyEvent> keyEvents = consumeKeyEvents(window);
     TextInputEvent textInputEvent = consumeTextInput(window);
     ScrollEvent scrollEvent = consumeScrollInput(window);
-#if EUI_TOOLING_ENABLED
-    if (window == nullptr) {
-        // A host driven overlay runtime has no window of its own. It consumes the
-        // input its host pushed on top of the input the null window queue holds.
-        pointerEvents.insert(pointerEvents.end(), overlayPointerEvents_.begin(), overlayPointerEvents_.end());
-        overlayPointerEvents_.clear();
-        if (overlayScrollEvent_.active()) {
-            scrollEvent = overlayScrollEvent_;
-        }
-        overlayScrollEvent_ = {};
-    }
-#endif
+    // A runtime driven by a host has no window input queue: the events its tool pushed
+    // are merged into this frame's input.
+    tooling::mergeHostInput(*this, pointerEvents, scrollEvent);
     if (!inputEnabled) {
         for (PointerEvent& event : pointerEvents) {
             event.x = -1000000.0;
@@ -136,11 +97,8 @@ inline bool Runtime::update(core::window::Handle window, float deltaSeconds, flo
         textInputEvent = {};
         scrollEvent = {};
     }
-#if EUI_TOOLING_ENABLED
-    if (inputFilter_) {
-        inputFilter_(pointerEvents, scrollEvent);
-    }
-#endif
+    // The tool takes the events it wants before the page sees them.
+    tooling::filterInput(*this, pointerEvents, scrollEvent);
     animating_ = false;
     composeRequested_ = false;
     wantsHandCursor_ = false;
@@ -224,25 +182,15 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
     const Rect* viewportClip = clipViewport_ ? &viewportPixels : nullptr;
 
     const bool hasRenderableContent = !ui_.roots().empty();
-#if EUI_TOOLING_ENABLED
-    // A debug overlay is part of the cached frame. The render cache is the window
-    // backing store, so content drawn outside it would be missing from the next
-    // cache blit; the overlay repaints wherever the cache is repainted.
-    const auto drawOverlay = [&](const Rect* dirty) {
-        if (overlayRenderer_) {
-            overlayRenderer_(windowWidth, windowHeight, dpiScale, dirty);
-        }
-    };
-#endif
     const auto releasePrunedRetainedLayers = [&] {
         instances_.releaseUnseenRetainedLayers();
     };
     if (!hasRenderableContent) {
         ++stats.clearCalls;
         renderBackend->clear(clearColor);
-#if EUI_TOOLING_ENABLED
-        drawOverlay(nullptr);
-#endif
+        // The tool draws on top of the page, inside this pass, so its output belongs to
+        // the cached frame the window blits.
+        tooling::drawOverlay(*this, windowWidth, windowHeight, dpiScale, nullptr);
         dirtyRects_.clear();
         fullPaintRequested_ = false;
         releasePrunedRetainedLayers();
@@ -254,10 +202,9 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
         ++stats.clearCalls;
         renderBackend->clear(clearColor);
         ++stats.renderDirectPasses;
-        RuntimeRenderer(ui_, instances_, viewportClip).renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale);
-#if EUI_TOOLING_ENABLED
-        drawOverlay(nullptr);
-#endif
+        RuntimeRenderer(ui_, instances_, viewportClip, tooling_.get())
+            .renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale);
+        tooling::drawOverlay(*this, windowWidth, windowHeight, dpiScale, nullptr);
         dirtyRects_.clear();
         fullPaintRequested_ = false;
         releasePrunedRetainedLayers();
@@ -302,20 +249,18 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale, c
         ++stats.clearCalls;
         renderBackend->clear(clearColor);
         ++stats.renderDirectPasses;
-        RuntimeRenderer(ui_, instances_, viewportClip).renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale);
-#if EUI_TOOLING_ENABLED
-        drawOverlay(nullptr);
-#endif
+        RuntimeRenderer(ui_, instances_, viewportClip, tooling_.get())
+            .renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale);
+        tooling::drawOverlay(*this, windowWidth, windowHeight, dpiScale, nullptr);
     } else {
         for (const Rect& dirty : dirtyRects) {
             renderBackend->setScissor(true, dirty, windowHeight);
             ++stats.clearCalls;
             renderBackend->clear(clearColor);
             ++stats.renderDirectPasses;
-            RuntimeRenderer(ui_, instances_, viewportClip).renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale, &dirty);
-#if EUI_TOOLING_ENABLED
-            drawOverlay(&dirty);
-#endif
+            RuntimeRenderer(ui_, instances_, viewportClip, tooling_.get())
+                .renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale, &dirty);
+            tooling::drawOverlay(*this, windowWidth, windowHeight, dpiScale, &dirty);
         }
         renderBackend->setScissor(false, {}, windowHeight);
     }
@@ -344,21 +289,20 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale) {
     ImagePrimitive::beginRenderFrame();
 
     const Rect viewportPixels = toPixelRect(viewport_, dpiScale);
-    RuntimeRenderer(ui_, instances_, clipViewport_ ? &viewportPixels : nullptr).renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale);
+    RuntimeRenderer(ui_, instances_, clipViewport_ ? &viewportPixels : nullptr, tooling_.get())
+        .renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale);
     instances_.releaseUnseenRetainedLayers();
 }
 
-#if EUI_TOOLING_ENABLED
 inline void Runtime::renderDirectOverlay(int windowWidth, int windowHeight, float dpiScale, const Rect* dirtyRect) {
     core::render::RenderBackend* renderBackend = core::render::activeRenderBackend();
     if (renderBackend == nullptr) {
         return;
     }
     const Rect viewportPixels = toPixelRect(viewport_, dpiScale);
-    RuntimeRenderer(ui_, instances_, clipViewport_ ? &viewportPixels : nullptr)
+    RuntimeRenderer(ui_, instances_, clipViewport_ ? &viewportPixels : nullptr, tooling_.get())
         .renderDirect(*renderBackend, windowWidth, windowHeight, dpiScale, dirtyRect);
 }
-#endif
 
 inline void Runtime::shutdown(bool releaseCachedImageTextures) {
     releaseGraphicsResources(releaseCachedImageTextures);
@@ -370,15 +314,15 @@ inline void Runtime::shutdown(bool releaseCachedImageTextures) {
     ui_.end();
     ui_.clearState();
     keyEventHandler_ = {};
-#if EUI_TOOLING_ENABLED
-    inputFilter_ = {};
-    overlayPointerEvents_.clear();
-    overlayScrollEvent_ = {};
-#endif
+    // The tool is going away with the runtime, and so is everything it kept.
+    tooling::release(*this);
+    tooling_.reset();
 }
 
 inline void Runtime::releaseGraphicsResources(bool releaseCachedImageTextures) {
     instances_.releaseGraphicsResources(releaseCachedImageTextures);
+    // The tool's overlay primitive belongs to the device that is going away.
+    tooling::releaseGraphics(*this);
     destroyCursors();
     fullPaintRequested_ = true;
     paintRequested_ = true;

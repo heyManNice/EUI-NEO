@@ -13,11 +13,10 @@
 #include "core/runtime/runtime_hit_test.h"
 #include "core/runtime/runtime_instances.h"
 #include "core/runtime/runtime_state_bindings.h"
-#include "core/window/window_backend.h"
-
-#if EUI_TOOLING_ENABLED
+#include "core/tooling/config.h"
 #include "core/tooling/model.h"
-#endif
+#include "core/tooling/state.h"
+#include "core/window/window_backend.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -42,29 +41,32 @@ public:
         keyEventHandler_ = std::move(handler);
     }
 
-#if EUI_TOOLING_ENABLED
-    void setInputFilter(std::function<void(std::vector<PointerEvent>&, ScrollEvent&)> filter) {
-        inputFilter_ = std::move(filter);
-    }
+    // The tool state of this runtime: created the first time a tool talks to the
+    // runtime, null when none ever did. The runtime never asks whether tools are part
+    // of the build; the seam it calls does (core/tooling/hooks.h).
+    runtime::ToolingState* tooling() { return tooling_.get(); }
+    const runtime::ToolingState* tooling() const { return tooling_.get(); }
+    runtime::ToolingState& ensureTooling();
 
-    // Debug overlays draw into the same render cache as the page, so every blit
-    // carries a complete frame. The overlay is asked to repaint whenever the
-    // cache is rebuilt: on a full paint and on every dirty rect.
-    void setOverlayRenderer(std::function<void(int, int, float, const Rect*)> renderer) {
-        overlayRenderer_ = std::move(renderer);
-    }
+    // Sets the input filter a tool uses to keep events away from the page.
+    void setInputFilter(std::function<void(std::vector<PointerEvent>&, ScrollEvent&)> filter);
 
-    // An overlay runtime is driven by its host instead of a window: it has no
-    // window input queue. The host pushes the pointer and scroll state that the
-    // next update() should consume, and update() is called without a window.
-    void pushPointerEvent(const PointerEvent& event) {
-        overlayPointerEvents_.push_back(event);
-    }
+    // A tool draws into the same render cache as the page, so every blit carries a
+    // complete frame. The renderer is asked to repaint whenever the cache is rebuilt:
+    // on a full paint and on every dirty rect.
+    void setOverlayRenderer(std::function<void(int, int, float, const Rect*)> renderer);
 
-    void pushScrollEvent(const ScrollEvent& event) {
-        overlayScrollEvent_ = event;
-    }
-#endif
+    // A runtime driven by a host instead of a window has no input queue of its own. The
+    // host pushes the pointer and scroll state the next update() should consume, and
+    // update() is called without a window.
+    void pushPointerEvent(const PointerEvent& event);
+
+    void pushScrollEvent(const ScrollEvent& event);
+
+    // Writes the values a tool replaced back onto the composed tree. The compose hook
+    // calls it before layout; nothing else may, because after layout the readers would
+    // disagree about the value an element has.
+    void applyToolPatches();
 
     template <typename ComposeFn>
     void compose(const std::string& pageId, float logicalWidth, float logicalHeight, ComposeFn&& composeFn);
@@ -86,19 +88,20 @@ public:
 
     void render(int windowWidth, int windowHeight, float dpiScale);
 
-#if EUI_TOOLING_ENABLED
     // Renders this runtime directly on top of the current frame, clipped to its
     // viewport. Overlay runtimes draw outside the app Runtime render pass.
     void renderDirectOverlay(int windowWidth, int windowHeight, float dpiScale, const Rect* dirtyRect = nullptr);
 
     // Read-only copy of the current element tree in pre-order. It is built on
-    // demand by the debug tools that display it, so the runtime keeps no extra
-    // state for them, and it stops at `maximumNodes` to bound the copy.
+    // demand by the tools that display it, so the runtime keeps no copy of its own,
+    // and it stops at `maximumNodes` to bound the work.
     runtime::ElementTreeSnapshot elementTree(
         std::size_t maximumNodes = runtime::kElementTreeMaximumNodes) const;
 
-    // Bumped whenever the element structure changes, which lets a tree view tell
-    // "same tree, new frames" from "the tree itself changed" without diffing.
+    // Bumped whenever the element structure changes, which lets a reader of the tree
+    // snapshot tell "same tree, new frames" from "the tree itself changed" without
+    // diffing. A counter is cheaper than any tool, so the runtime keeps it whether or
+    // not a tool is attached.
     std::uint64_t elementStructureRevision() const { return elementStructureRevision_; }
 
     // Marks the element the pointer is over in a tree view. The renderer draws the
@@ -107,7 +110,7 @@ public:
     // the page. It is a preview: a tool clears it again when the pointer leaves.
     // An empty id clears the mark.
     void setHoveredElement(const std::string& id);
-    const std::string& hoveredElement() const { return instances_.hoveredMark.id; }
+    const std::string& hoveredElement() const;
 
     // Geometry of the preview overlay for the current frame; the renderer draws
     // exactly this, and tests read it without a renderer.
@@ -137,8 +140,7 @@ public:
     void clearDebugElementOverride(const std::string& id, runtime::DebugPropertyId property);
     void clearDebugElementOverrides(const std::string& id);
     void clearAllDebugElementOverrides();
-    std::size_t debugElementOverrideCount() const { return instances_.debugOverrides.size(); }
-#endif
+    std::size_t debugElementOverrideCount() const;
 
     void shutdown(bool releaseCachedImageTextures = true);
 
@@ -378,13 +380,10 @@ private:
     std::string hoverTargetCacheId_;
     std::string focusedId_;
     std::function<void(const KeyEvent&)> keyEventHandler_;
-#if EUI_TOOLING_ENABLED
-    std::function<void(std::vector<PointerEvent>&, ScrollEvent&)> inputFilter_;
-    std::function<void(int, int, float, const Rect*)> overlayRenderer_;
-    std::vector<PointerEvent> overlayPointerEvents_;
-    ScrollEvent overlayScrollEvent_;
     std::uint64_t elementStructureRevision_ = 0;
-#endif
+    // The tool state, allocated on first use; see core/tooling/state.h. The pointer is
+    // the same in every configuration, so a runtime has one layout for all of them.
+    std::unique_ptr<runtime::ToolingState> tooling_;
     RenderTransform focusedElementRenderTransform_;
     bool focusedElementRenderTransformValid_ = false;
     Rect viewport_;
@@ -401,9 +400,10 @@ private:
 } // namespace core::dsl
 
 #include "core/runtime/runtime_render.h"
+// The seam the runtime calls. It is always included, and it is where the decision
+// "is tooling part of this build" is made; every call site below it is one line.
+#include "core/tooling/hooks.h"
 #include "core/runtime/runtime_lifecycle.h"
 #include "core/runtime/runtime_input.h"
 #include "core/runtime/runtime_update.h"
-#if EUI_TOOLING_ENABLED
 #include "core/tooling/inspect.h"
-#endif
