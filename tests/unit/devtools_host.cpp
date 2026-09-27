@@ -1035,6 +1035,46 @@ int main() {
         const core::dsl::Element* restored = page.findElement("page.panel");
         assert(restored != nullptr && restored->opacity == 1.0f);
 
+        // One more edit, and then the page goes away: what the panel wrote belongs to the
+        // page it wrote it on, and so does everything it copied from it.
+        const core::Rect sliderAgain = panelElementFrame(
+            host, "elements.properties.list.slot." + std::to_string(opacitySlot) + ".control");
+        dragPanel(sliderAgain.x + sliderAgain.width * 0.9, sliderAgain.y + sliderAgain.height * 0.5,
+                  sliderAgain.x + sliderAgain.width * 0.15, sliderAgain.y + sliderAgain.height * 0.5);
+        frame();
+        assert(host.propertyOverrideCount() == 1);
+        host.detach();
+        assert(host.propertyOverrideCount() == 0);
+        assert(host.elementTree().nodes.empty());
+        assert(!host.properties().active);
+        assert(host.selectedElement().empty());
+
+        // The next page of the same shape starts from its own values: nothing the panel wrote
+        // on the page before it is replayed here.
+        const auto composeFreshPage = [](core::dsl::Runtime& runtime) {
+            runtime.compose("page", 300.0f, 200.0f, [](core::dsl::Ui& ui, const core::dsl::Screen&) {
+                ui.rect("page.panel")
+                    .size(160.0f, 90.0f)
+                    .color(core::Color{0.2f, 0.4f, 0.6f, 1.0f})
+                    .radius(4.0f)
+                    .build();
+            });
+            runtime.update(nullptr, kFrameSeconds, 1.0f, 1.0f);
+        };
+        core::dsl::Runtime second;
+        composeFreshPage(second);
+        host.attach(&second, {});
+        // The app composes again, which is also the moment the panel's store would put its
+        // patches back on the tree — if it still held any from the page before.
+        composeFreshPage(second);
+        frame();
+        frame();
+        const core::dsl::Element* fresh = second.findElement("page.panel");
+        assert(fresh != nullptr && fresh->opacity == 1.0f);
+        assert(host.propertyOverrideCount() == 0);
+        host.detach();
+        second.shutdown(false);
+
         // Detaching lets go of the page: the mark goes with the panel, and the panel stops
         // touching the page it inspected.
         host.detach();
@@ -1048,6 +1088,21 @@ int main() {
         assert(host.handleHotkey(F12Key(core::KeyAction::Press)));
         assert(!host.visible());
     }
+
+    // The session owns what it registers: while it lives the app loop asks the panel, and
+    // when it goes away both the app loop and the page stop calling it — an application is
+    // not asked to get that order right. The panel's place in the app loop is one slot, so
+    // it is taken and given back, never shared.
+    {
+        modules::devtools::Session owner;
+        assert(app::detail::overlayHooks() != nullptr);
+    }
+    assert(app::detail::overlayHooks() == nullptr);
+    {
+        modules::devtools::Session again;
+        assert(app::detail::overlayHooks() != nullptr);
+    }
+    assert(app::detail::overlayHooks() == nullptr);
 
     detachedRuntime.shutdown(false);
     host.shutdown();

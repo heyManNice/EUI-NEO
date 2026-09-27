@@ -14,8 +14,9 @@
 
 namespace modules::devtools {
 
-// Attaches or detaches the panel. Called by Session.
-void attachDevtoolsHost();
+// Attaches or detaches the panel. Called by Session. Attaching returns false when another
+// session already owns the panel's place in the app loop, which keeps one owner per slot.
+bool attachDevtoolsHost();
 void detachDevtoolsHost();
 
 // Debug panel host. It owns the panel Runtime, the dock geometry, the window it detaches
@@ -102,12 +103,53 @@ public:
     ElementTreeSnapshot panelElementTree() const;
 
 private:
+    // Everything the panel knows about the page it is attached to, and everything it wrote
+    // on it. `attach` creates one and `detach` throws it away whole, so a second page — a
+    // restarted app, a second window — can never inherit a patch, a copied snapshot or a
+    // picked element that names something the new page does not have. What the user chose
+    // for the panel itself (dock, size, tab, scroll offsets) lives outside this and stays.
+    struct PageSession {
+        core::dsl::Runtime* page = nullptr;
+        app::detail::OverlayWindows windows;
+
+        // What the panel wrote on the page, and the store that puts it back after every
+        // compose. It is the panel's own state: the framework is never told what a patch is.
+        ElementPatches patches;
+        // Edits the panel asked for and the host has not applied to the page yet.
+        std::deque<ElementPropertyEdit> edits;
+        std::size_t overrideCount = 0;
+
+        // What the panel asked to be copied and when it was last copied: the tree and the
+        // values are rebuilt on a structural change and refreshed at most this often in
+        // between, so a hover or an animation does not cost a page-sized walk every frame.
+        std::uint64_t treeRevision = 0;
+        double treeRefreshTime = 0.0;
+        std::string propertiesId;
+        std::uint64_t propertiesRevision = 0;
+        double propertiesRefreshTime = 0.0;
+        bool propertiesStale = true;
+        ElementTreeSnapshot tree;
+        modules::devtools::ElementValues properties;
+        app::PerformanceSnapshot performance;
+
+        // Picking: the pointer the panel wants answered, the element it landed on, and
+        // whether the next answer commits it as the selection.
+        core::PointerEvent pickedPointer;
+        std::string elementUnderPointer;
+        bool pickCommitPending = false;
+    };
+
     // Copying the page to the panel and writing the panel's edits back, each throttled by
     // the panel's own state so the page pays only for what the panel shows.
     void publishElementTree();
     void publishElementProperties();
     void publishPickedElement();
     void applyElementPropertyEdits();
+
+    bool hasPage() const { return session_.page != nullptr; }
+    // The panel's preferences (dock, size, tab, expansion) kept in its own runtime; the
+    // elements they name belong to the page, so they go with it.
+    void forgetPageSelection();
 
     int panelSize() const;
     int minimumPanelSize() const;
@@ -128,25 +170,12 @@ private:
     void queueElementPropertyEdit(const ElementPropertyEdit& edit);
     bool overResizeBoundary(double x, double y) const;
 
-    // The page the panel inspects, null until it is attached (and in tests that drive the
-    // panel alone).
-    core::dsl::Runtime* page_ = nullptr;
-    app::detail::OverlayWindows windows_;
+    // The page the panel inspects and what it wrote there. It is empty until the panel is
+    // attached, and `detach` empties it again in one move.
+    PageSession session_;
 
-    // What the panel wrote on the page, and the store that puts it back after every
-    // compose. It is the panel's own state: the framework is never told what a patch is.
-    ElementPatches patches_;
-
-    // What the panel asked to be copied and when it was last copied: the tree and the
-    // values are rebuilt on a structural change and refreshed at most this often in
-    // between, so a hover or an animation does not cost a page-sized walk every frame.
+    // How long a copied tree or value set is reused while the page does not change shape.
     static constexpr double kRefreshSeconds = 0.25;
-    std::uint64_t treeRevision_ = 0;
-    double treeRefreshTime_ = 0.0;
-    std::string propertiesId_;
-    std::uint64_t propertiesRevision_ = 0;
-    double propertiesRefreshTime_ = 0.0;
-    bool propertiesStale_ = true;
 
     core::dsl::Runtime runtime_;
     DevtoolsPanelState* panelState_ = nullptr;
@@ -162,18 +191,8 @@ private:
     // The panel edge owns the pointer: it is what takes a press that resizes the
     // panel away from the panel's own controls.
     bool panelEdgeActive_ = false;
-    // Picking: the pointer the panel wants answered, the element it landed on, and
-    // whether the next answer commits it as the selection.
-    core::PointerEvent pickedPointer_;
-    std::string elementUnderPointer_;
-    bool pickCommitPending_ = false;
     bool visible_ = false;
     DockPosition dockPosition_ = DockPosition::Bottom;
-    app::PerformanceSnapshot performanceSnapshot_;
-    ElementTreeSnapshot elementTree_;
-    modules::devtools::ElementValues properties_;
-    std::deque<ElementPropertyEdit> propertyEdits_;
-    std::size_t propertyOverrideCount_ = 0;
     bool composeRequested_ = true;
     // The primitive the box model preview is drawn with. The overlay owns what it draws
     // with, which is what lets the framework hand over the render pass without keeping a

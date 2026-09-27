@@ -16,12 +16,13 @@ bool available() {
 
 #if defined(EUI_DEBUG_BUILD)
 
-Session::Session() {
-    attachDevtoolsHost();
-}
+Session::Session() : attached_(attachDevtoolsHost()) {}
 
 Session::~Session() {
-    detachDevtoolsHost();
+    // A refused session never owned anything, so it has nothing to take back down.
+    if (attached_) {
+        detachDevtoolsHost();
+    }
 }
 
 #endif

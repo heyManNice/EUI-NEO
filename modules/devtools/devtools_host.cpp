@@ -7,6 +7,7 @@
 #include "modules/devtools/devtools_tree.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 
 namespace modules::devtools {
@@ -36,9 +37,20 @@ DevtoolsHost& devtoolsHost() {
     return host;
 }
 
+// The panel is one place in the app loop, so there is one owner. A second live session is
+// an application mistake: a debug build stops on it, and the session is refused the
+// panel rather than left sharing it with the first — which keeps the first one working
+// exactly as it was.
+int liveSessions = 0;
+
 } // namespace
 
-void attachDevtoolsHost() {
+bool attachDevtoolsHost() {
+    if (liveSessions > 0) {
+        assert(false && "modules::devtools::Session: one live session per application");
+        return false;
+    }
+    ++liveSessions;
     // The framework's side of the panel: the app loop asks these, and the panel answers.
     // Everything the panel reads and writes it does on the page runtime it is handed in
     // `attach`, so nothing here is stored in the framework.
@@ -65,49 +77,75 @@ void attachDevtoolsHost() {
         return value;
     }();
     app::detail::setOverlayHooks(&hooks);
+    return true;
 }
 
 void detachDevtoolsHost() {
+    // Leaving is both halves of what attaching did: the app loop stops asking the panel, and
+    // the page stops calling it. The second half is the one an application cannot be asked
+    // to get right, so the session does it instead of leaving a panel wired to a page it no
+    // longer belongs to.
     app::detail::setOverlayHooks(nullptr);
+    devtoolsHost().detach();
+    --liveSessions;
 }
 
 void DevtoolsHost::attach(core::dsl::Runtime* page, const app::detail::OverlayWindows& windows) {
-    page_ = page;
-    windows_ = windows;
-    if (page_ == nullptr) {
+    // A page arrives: the session starts empty, so nothing of a previous page — a patch, a
+    // copied snapshot, a pick in progress — can be read back or written onto this one.
+    session_ = PageSession{};
+    session_.page = page;
+    session_.windows = windows;
+    if (page == nullptr) {
         return;
     }
     // The panel owns what it does to the page: the pointer it takes, the frame it draws,
     // and the preview. All three are runtime hooks, so there is no framework layer in
     // between the panel and the page.
-    page_->setInputFilter([this](std::vector<core::PointerEvent>& pointerEvents, core::ScrollEvent& scrollEvent) {
+    page->setInputFilter([this](std::vector<core::PointerEvent>& pointerEvents, core::ScrollEvent& scrollEvent) {
         filterInput(pointerEvents, scrollEvent);
     });
-    page_->setOverlayRenderer([this](int width, int height, float dpiScale, const core::Rect* dirtyRect) {
+    page->setOverlayRenderer([this](int width, int height, float dpiScale, const core::Rect* dirtyRect) {
         render(width, height, dpiScale, dirtyRect);
     });
-    page_->setPassRenderer([this](const core::dsl::runtime::RenderPassContext& pass) {
+    page->setPassRenderer([this](const core::dsl::runtime::RenderPassContext& pass) {
         renderPageOverlay(pass);
     });
     // The page rebuilds every element on every compose, so what the panel wrote is put back
     // on the fresh tree between the compose and its layout.
-    page_->setAfterCompose([this] { patches_.apply(*page_); });
+    page->setAfterCompose([this] { session_.patches.apply(*session_.page); });
 }
 
 void DevtoolsHost::detach() {
-    if (page_ != nullptr) {
-        page_->setInputFilter(nullptr);
-        page_->setOverlayRenderer(nullptr);
-        page_->setPassRenderer(nullptr);
-        page_->setAfterCompose(nullptr);
-        page_->setHoveredElement(std::string{});
+    if (core::dsl::Runtime* page = session_.page) {
+        page->setInputFilter(nullptr);
+        page->setOverlayRenderer(nullptr);
+        page->setPassRenderer(nullptr);
+        page->setAfterCompose(nullptr);
+        page->setHoveredElement(std::string{});
     }
-    page_ = nullptr;
-    windows_ = {};
-    // What the panel knew about the page is stale the moment the page goes away.
-    propertiesStale_ = true;
-    treeRevision_ = 0;
-    propertiesId_.clear();
+    // One whole session goes away: the page pointer, the windows, everything the panel
+    // wrote on it, everything it copied from it and the pick in progress. The panel's own
+    // preferences are not in here and survive to be used on the next page.
+    session_ = PageSession{};
+    forgetPageSelection();
+}
+
+// The selection, the hover and the expansion all name elements of the page that just went
+// away, so the panel forgets which ones it was looking at. What the user chose for the
+// panel itself — the dock, its size, the tab, the scroll offsets — is not page state and
+// stays where it is.
+void DevtoolsHost::forgetPageSelection() {
+    if (panelState_ == nullptr) {
+        return;
+    }
+    panelState_->selectedElement.clear();
+    panelState_->hoveredElement.clear();
+    panelState_->revealedSelection.clear();
+    panelState_->expandedElements.clear();
+    panelState_->pickingElement = false;
+    panelState_->moreMenuOpen = false;
+    composeRequested_ = true;
 }
 
 bool DevtoolsHost::frame(int framebufferWidth, int framebufferHeight, float dpiScale, float deltaSeconds) {
@@ -120,92 +158,92 @@ bool DevtoolsHost::frame(int framebufferWidth, int framebufferHeight, float dpiS
     //   4. the element a picker points at, before the preview, so the page marks what the
     //      pointer is on in the frame it moved
     //   5. the preview it asked for, and then the panel itself
-    if (page_ != nullptr) {
+    if (hasPage()) {
         publishElementTree();
         applyElementPropertyEdits();
         publishElementProperties();
         publishPickedElement();
-        page_->setHoveredElement(hoveredElement());
+        session_.page->setHoveredElement(hoveredElement());
     }
     return updatePanel(framebufferWidth, framebufferHeight, dpiScale, deltaSeconds);
 }
 
 void DevtoolsHost::publishElementTree() {
-    if (page_ == nullptr || !wantsElementTree()) {
+    if (!hasPage() || !wantsElementTree()) {
         return;
     }
-    const std::uint64_t revision = page_->elementStructureRevision();
+    const std::uint64_t revision = session_.page->elementStructureRevision();
     const double now = core::window::timeSeconds();
-    if (revision == treeRevision_ && now - treeRefreshTime_ < kRefreshSeconds) {
+    if (revision == session_.treeRevision && now - session_.treeRefreshTime < kRefreshSeconds) {
         return;
     }
-    treeRevision_ = revision;
-    treeRefreshTime_ = now;
-    setElementTree(buildElementTree(*page_));
+    session_.treeRevision = revision;
+    session_.treeRefreshTime = now;
+    setElementTree(buildElementTree(*session_.page));
 }
 
 void DevtoolsHost::publishElementProperties() {
-    if (page_ == nullptr) {
+    if (!hasPage()) {
         return;
     }
     const std::string& id = propertiesElement();
     if (id.empty()) {
         return;
     }
-    const std::uint64_t revision = page_->elementStructureRevision();
+    const std::uint64_t revision = session_.page->elementStructureRevision();
     const double now = core::window::timeSeconds();
-    const bool sameElement = id == propertiesId_;
-    const bool throttled = revision == propertiesRevision_ && now - propertiesRefreshTime_ < kRefreshSeconds;
-    if (sameElement && !propertiesStale_ && throttled) {
+    const bool sameElement = id == session_.propertiesId;
+    const bool throttled = revision == session_.propertiesRevision && now - session_.propertiesRefreshTime < kRefreshSeconds;
+    if (sameElement && !session_.propertiesStale && throttled) {
         return;
     }
-    propertiesId_ = id;
-    propertiesRevision_ = revision;
-    propertiesRefreshTime_ = now;
-    propertiesStale_ = false;
-    setElementProperties(readElementValues(*page_, id, patches_.written(id)));
-    setElementPropertyOverrideCount(patches_.count());
+    session_.propertiesId = id;
+    session_.propertiesRevision = revision;
+    session_.propertiesRefreshTime = now;
+    session_.propertiesStale = false;
+    setElementProperties(readElementValues(*session_.page, id, session_.patches.written(id)));
+    setElementPropertyOverrideCount(session_.patches.count());
 }
 
 // The panel is the only writer, and what it writes is its own business: the values live in
 // its own store, go onto the live element in the same frame, and are put back on every
 // freshly composed tree by the hook the host registered.
 void DevtoolsHost::applyElementPropertyEdits() {
-    if (page_ == nullptr) {
+    if (!hasPage()) {
         return;
     }
     bool touched = false;
     ElementPropertyEdit edit;
     while (takeElementPropertyEdit(edit)) {
         if (edit.clear && edit.id.empty()) {
-            patches_.clearAll();
+            session_.patches.clearAll();
         } else if (edit.clear) {
-            patches_.clear(edit.id, edit.field);
+            session_.patches.clear(edit.id, edit.field);
         } else {
-            patches_.set(edit.id, edit.field, edit.value);
+            session_.patches.set(edit.id, edit.field, edit.value);
         }
         // The value lands on the live element in the same frame; a cleared patch only shows
         // once the page composes again, because the element keeps what it was built with.
-        if (core::dsl::Element* element = page_->findElement(edit.id)) {
-            if (const ElementPatch* patch = patches_.find(edit.id)) {
+        if (core::dsl::Element* element = session_.page->findElement(edit.id)) {
+            if (const ElementPatch* patch = session_.patches.find(edit.id)) {
                 applyElementPatch(*element, *patch);
             }
         }
-        propertiesStale_ = true;
+        session_.propertiesStale = true;
         touched = true;
     }
     if (touched) {
         // The page was written to outside its compose pass: the next capture reads every
         // element, and the next frame is painted.
-        page_->requestElementRefresh();
+        session_.page->requestElementRefresh();
     }
-    setElementPropertyOverrideCount(patches_.count());
+    setElementPropertyOverrideCount(session_.patches.count());
 }
 
 // A picking panel owns the pointer: the page is asked what is under it, and the answer
 // comes from the page's own hit test, so it is the element the frame drew there.
 void DevtoolsHost::publishPickedElement() {
-    if (page_ == nullptr) {
+    if (!hasPage()) {
         return;
     }
     if (!pickingElement()) {
@@ -213,7 +251,7 @@ void DevtoolsHost::publishPickedElement() {
         return;
     }
     const core::PointerEvent pointer = pickedPointer();
-    setElementUnderPointer(page_->elementIdAt(pointer.x, pointer.y, dpiScale_));
+    setElementUnderPointer(session_.page->elementIdAt(pointer.x, pointer.y, dpiScale_));
 }
 
 bool DevtoolsHost::handleHotkey(const core::KeyEvent& key) {
@@ -240,10 +278,10 @@ bool DevtoolsHost::handleHotkey(const core::KeyEvent& key) {
 }
 
 void DevtoolsHost::setPerformanceSnapshot(const app::PerformanceSnapshot& snapshot) {
-    if (performanceSnapshot_.revision == snapshot.revision) {
+    if (session_.performance.revision == snapshot.revision) {
         return;
     }
-    performanceSnapshot_ = snapshot;
+    session_.performance = snapshot;
     if (visible_) {
         requestCompose();
     }
@@ -256,7 +294,7 @@ bool DevtoolsHost::wantsElementTree() const {
 }
 
 void DevtoolsHost::setElementTree(const ElementTreeSnapshot& tree) {
-    elementTree_ = tree;
+    session_.tree = tree;
     if (visible_) {
         requestCompose();
     }
@@ -270,7 +308,7 @@ const std::string& DevtoolsHost::hoveredElement() const {
     // While the panel picks, the preview follows the pointer on the page; otherwise it
     // is the tree row under the mouse.
     if (panelState_->pickingElement) {
-        return elementUnderPointer_;
+        return session_.elementUnderPointer;
     }
     if (panelState_->activeTab != DevtoolsTab::Elements) {
         return empty;
@@ -283,12 +321,12 @@ bool DevtoolsHost::pickingElement() const {
 }
 
 core::PointerEvent DevtoolsHost::pickedPointer() const {
-    return pickedPointer_;
+    return session_.pickedPointer;
 }
 
 void DevtoolsHost::setPickingElement(bool picking) {
-    pickCommitPending_ = false;
-    elementUnderPointer_.clear();
+    session_.pickCommitPending = false;
+    session_.elementUnderPointer.clear();
     if (panelState_ == nullptr || panelState_->pickingElement == picking) {
         return;
     }
@@ -307,11 +345,11 @@ void DevtoolsHost::setElementUnderPointer(const std::string& id) {
     }
     // A pick is committed by the answer that follows the click, so the selection is
     // the element the user saw under the pointer when they pressed.
-    const bool commit = panelState_->pickingElement && pickCommitPending_ && !id.empty();
-    if (elementUnderPointer_ == id && !commit) {
+    const bool commit = panelState_->pickingElement && session_.pickCommitPending && !id.empty();
+    if (session_.elementUnderPointer == id && !commit) {
         return;
     }
-    elementUnderPointer_ = id;
+    session_.elementUnderPointer = id;
     if (!commit) {
         return;
     }
@@ -332,48 +370,48 @@ const std::string& DevtoolsHost::propertiesElement() const {
 }
 
 void DevtoolsHost::setElementProperties(const modules::devtools::ElementValues& values) {
-    properties_ = values;
+    session_.properties = values;
     if (visible_) {
         requestCompose();
     }
 }
 
 bool DevtoolsHost::takeElementPropertyEdit(ElementPropertyEdit& edit) {
-    if (propertyEdits_.empty()) {
+    if (session_.edits.empty()) {
         return false;
     }
-    edit = propertyEdits_.front();
-    propertyEdits_.pop_front();
+    edit = session_.edits.front();
+    session_.edits.pop_front();
     return true;
 }
 
 void DevtoolsHost::setElementPropertyOverrideCount(std::size_t count) {
-    if (propertyOverrideCount_ == count) {
+    if (session_.overrideCount == count) {
         return;
     }
-    propertyOverrideCount_ = count;
+    session_.overrideCount = count;
     if (visible_) {
         requestCompose();
     }
 }
 
 void DevtoolsHost::queueElementPropertyEdit(const ElementPropertyEdit& edit) {
-    propertyEdits_.push_back(edit);
+    session_.edits.push_back(edit);
     // The app layer pulls the edits while it owns the page, so the panel only has to
     // make sure another frame happens.
     requestCompose();
 }
 
 const modules::devtools::ElementValues& DevtoolsHost::properties() const {
-    return properties_;
+    return session_.properties;
 }
 
 std::size_t DevtoolsHost::propertyOverrideCount() const {
-    return propertyOverrideCount_;
+    return session_.overrideCount;
 }
 
 const ElementTreeSnapshot& DevtoolsHost::elementTree() const {
-    return elementTree_;
+    return session_.tree;
 }
 
 ElementTreeSnapshot DevtoolsHost::panelElementTree() const {
@@ -466,7 +504,7 @@ void DevtoolsHost::selectDockPosition(DockPosition position) {
 }
 
 void DevtoolsHost::openDetachedWindow() {
-    if (!windows_.open) {
+    if (!session_.windows.open) {
         return;
     }
     app::detail::OverlayWindowRequest request;
@@ -478,7 +516,7 @@ void DevtoolsHost::openDetachedWindow() {
         composeDetached(ui, screen);
     };
     request.closed = [this] { detachedWindowClosed(); };
-    windows_.open(request);
+    session_.windows.open(request);
 }
 
 void DevtoolsHost::detachedWindowClosed() {
@@ -491,8 +529,8 @@ void DevtoolsHost::detachedWindowClosed() {
 }
 
 void DevtoolsHost::closeDetachedWindow() {
-    if (windows_.close) {
-        windows_.close();
+    if (session_.windows.close) {
+        session_.windows.close();
     }
 }
 
@@ -595,9 +633,9 @@ bool DevtoolsHost::overResizeBoundary(double x, double y) const {
 void DevtoolsHost::capturePickPointer(core::PointerEvent& event) {
     // The picker owns the pointer: it remembers where to ask, and the page never sees
     // the click that picks, so picking an element does not also press it.
-    pickedPointer_ = event;
+    session_.pickedPointer = event;
     if (event.isRelease(core::PointerButton::Left)) {
-        pickCommitPending_ = true;
+        session_.pickCommitPending = true;
     }
     event.x = kOutsidePointer;
     event.y = kOutsidePointer;
@@ -701,10 +739,10 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
     state.detached = detached;
     state.dockPosition = dockPosition_;
     state.panelState = &panelState;
-    state.performance = &performanceSnapshot_;
-    state.elementTree = &elementTree_;
-    state.properties = &properties_;
-    state.propertyOverrideCount = propertyOverrideCount_;
+    state.performance = &session_.performance;
+    state.elementTree = &session_.tree;
+    state.properties = &session_.properties;
+    state.propertyOverrideCount = session_.overrideCount;
     composeDevtoolsUi(ui, state, buildActions(panelState));
 }
 
@@ -948,11 +986,11 @@ void DevtoolsHost::shutdown() {
     panelState_ = nullptr;
     visible_ = false;
     dockPosition_ = DockPosition::Bottom;
-    performanceSnapshot_ = {};
+    session_.performance = {};
     resizing_ = false;
     panelEdgeActive_ = false;
-    pickCommitPending_ = false;
-    elementUnderPointer_.clear();
+    session_.pickCommitPending = false;
+    session_.elementUnderPointer.clear();
     panelHeightLogical_ = 0.0f;
     panelWidthLogical_ = 0.0f;
     composeRequested_ = true;
