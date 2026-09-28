@@ -13,9 +13,7 @@ namespace modules::devtools {
 
 enum class DockPosition { Floating, Left, Bottom, Right };
 
-// Tabs the panel shows. Performance and Elements have content; every other tab is a
-// name the panel reserves for the panel it promises, and says so while it has nothing
-// to show yet. What each planned panel will read is written down in the module README.
+// Tabs shown in the devtools panel.
 enum class DevtoolsTab {
     Performance,
     Elements,
@@ -102,12 +100,7 @@ struct DevtoolsUiState {
 // Commands the panel can request. None of them own state or draw. A host fills the
 // fields it handles and leaves the rest empty, which turns the control that would
 // raise an empty command into a control that does nothing.
-//
-// Each field is assigned by name rather than by position, so a command that is renamed,
-// added or moved fails to compile at the call site instead of silently wiring the
-// neighbouring control.
 struct DevtoolsUiActions {
-    // The panel itself: its tabs, where it is docked, and closing it.
     struct Shell {
         std::function<void(DevtoolsTab)> selectTab;
         std::function<void(DockPosition)> selectDockPosition;
@@ -118,17 +111,14 @@ struct DevtoolsUiActions {
         std::function<void(float)> setTabScrollOffset;
     };
 
-    // The performance page.
     struct Performance {
         std::function<void(float)> setScrollOffset;
     };
 
-    // The element tree: what the user selects, opens and previews.
     struct Tree {
         std::function<void(float)> setScrollOffset;
         std::function<void(const std::string&)> selectElement;
         std::function<void(const std::string&, bool)> hoverElement;
-        // The two view options above the tree.
         std::function<void(bool)> setTrimIdPrefix;
         std::function<void(bool)> setShowElementBounds;
         // Turns picking on or off. While it is on the panel owns the pointer and the
@@ -139,8 +129,6 @@ struct DevtoolsUiActions {
         std::function<void(const std::string&)> setRevealedSelection;
     };
 
-    // The property area: which element it shows, how tall it is, and the edits the
-    // user makes on it.
     struct Properties {
         std::function<void(const std::string&)> copyElementId;
         std::function<void(float)> setScrollOffset;

@@ -744,7 +744,6 @@ void DevtoolsHost::filterInput(std::vector<core::PointerEvent>& pointerEvents, c
         event.deltaY = 0.0;
     }
     if (pointerInPanel) {
-        // The pointer is on the panel: it owns the wheel until it leaves.
         runtime_.pushScrollEvent(scrollEvent);
         scrollEvent = {};
     }

@@ -286,9 +286,7 @@ void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRo
         .build();
 }
 
-// Where the divider and the property area go, and the drag limits. They all describe
-// one area, so they travel together instead of as a run of floats a call site can hand
-// over in the wrong order.
+// Geometry and drag limits for the property area and its divider.
 struct PropertyAreaGeometry {
     float x = 0.0f;
     float y = 0.0f;
@@ -373,7 +371,6 @@ void composeElementsNotice(core::dsl::Ui& ui, const std::string& id, const std::
 
 } // namespace
 
-// The kind of an element as the tree row and the property area print it.
 const char* elementKindName(core::dsl::ElementKind kind) {
     switch (kind) {
     case core::dsl::ElementKind::Row: return "row";

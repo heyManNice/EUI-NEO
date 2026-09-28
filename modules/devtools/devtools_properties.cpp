@@ -33,7 +33,6 @@ struct PropertyDescriptor {
     std::uint32_t kinds;
 };
 
-// One bit per element kind, and the mask a row is built from.
 constexpr std::uint32_t elementKindBit(ElementKind kind) {
     return 1u << static_cast<std::uint32_t>(kind);
 }
@@ -43,7 +42,6 @@ constexpr std::uint32_t kindsOf(Kinds... kinds) {
     return (elementKindBit(kinds) | ...);
 }
 
-// Every kind there is, for a property that applies to all of them.
 constexpr std::uint32_t kEveryKind = (elementKindBit(ElementKind::Shadertoy) << 1u) - 1u;
 
 // Which kinds carry a property. Only a rect draws the rounded box that has a border, a

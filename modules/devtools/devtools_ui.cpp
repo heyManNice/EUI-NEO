@@ -75,7 +75,6 @@ void composePlannedTab(core::dsl::Ui& ui, const TabEntry& entry, float width, fl
         .color(theme.mutedText)
         .horizontalAlign(core::HorizontalAlign::Center)
         .verticalAlign(core::VerticalAlign::Center)
-        // A note is a sentence, so it wraps instead of running off a narrow panel.
         .wrap()
         .build();
 }
@@ -319,8 +318,6 @@ void composePanelContent(core::dsl::Ui& ui, const DevtoolsUiState& state, const 
         composeElementsTab(ui, state, actions);
         return;
     }
-    // Every other tab is only named so far. It says what it will read instead of
-    // leaving an empty page; the plan behind the name is in the module README.
     const float contentHeight = std::max(
         0.0f, state.panel.height - devtoolsTheme().toolbarHeight - (state.detached ? 0.0f : 1.0f));
     for (const TabEntry& entry : kTabs) {
