@@ -8,11 +8,17 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cmath>
 
 namespace modules::devtools {
 
 namespace {
+
+inline double monotonicSeconds() {
+    using namespace std::chrono;
+    return duration_cast<duration<double>>(steady_clock::now().time_since_epoch()).count();
+}
 
 // Pointer motion that belongs to the panel is moved far outside the window for
 // the page, which is the same state the page would see when the pointer leaves
@@ -825,13 +831,48 @@ DevtoolsUiActions DevtoolsHost::buildActions(DevtoolsPanelState& state) {
             session_.page->requestFullPaint();
         }
     };
-    actions.tree.selectElement = [this, &state](const std::string& id) {
-        if (state.selectedElement == id) {
-            return;
+    const auto toggleElementCollapsed = [this, &state](const std::string& id) {
+        const auto expanded = std::find(state.expandedElements.begin(), state.expandedElements.end(), id);
+        if (expanded == state.expandedElements.end()) {
+            state.expandedElements.push_back(id);
+        } else {
+            state.expandedElements.erase(expanded);
         }
-        state.selectedElement = id;
-        state.revealedSelection.clear();
         requestCompose();
+    };
+
+    actions.tree.toggleElementCollapsed = [&state, toggleElementCollapsed](const std::string& id) {
+        state.lastClickTime = 0.0;
+        state.lastClickedElement.clear();
+        toggleElementCollapsed(id);
+    };
+    actions.tree.selectElement = [this, &state, toggleElementCollapsed](const std::string& id) {
+        const double now = monotonicSeconds();
+        const bool isDoubleClick = (!state.lastClickedElement.empty() &&
+                                    state.lastClickedElement == id &&
+                                    state.lastClickTime > 0.0 &&
+                                    (now - state.lastClickTime) < 0.35);
+        state.lastClickedElement = id;
+        state.lastClickTime = isDoubleClick ? 0.0 : now;
+
+        if (state.selectedElement != id) {
+            state.selectedElement = id;
+            state.revealedSelection.clear();
+            requestCompose();
+        }
+        if (isDoubleClick) {
+            bool hasChildren = false;
+            for (std::size_t i = 0; i < session_.tree.nodes.size(); ++i) {
+                if (session_.tree.nodes[i].id == id) {
+                    hasChildren = (i + 1 < session_.tree.nodes.size() &&
+                                   session_.tree.nodes[i + 1].depth > session_.tree.nodes[i].depth);
+                    break;
+                }
+            }
+            if (hasChildren) {
+                toggleElementCollapsed(id);
+            }
+        }
     };
     actions.tree.hoverElement = [&state](const std::string& id, bool hovered) {
         // Leaving a row only clears the preview if that row still owns it, so
@@ -845,15 +886,6 @@ DevtoolsUiActions DevtoolsHost::buildActions(DevtoolsPanelState& state) {
         }
     };
     actions.tree.toggleElementPicker = [this] { setPickingElement(!pickingElement()); };
-    actions.tree.toggleElementCollapsed = [this, &state](const std::string& id) {
-        const auto expanded = std::find(state.expandedElements.begin(), state.expandedElements.end(), id);
-        if (expanded == state.expandedElements.end()) {
-            state.expandedElements.push_back(id);
-        } else {
-            state.expandedElements.erase(expanded);
-        }
-        requestCompose();
-    };
     actions.tree.setRevealedSelection = [&state](const std::string& id) {
         // The tree has shown the selection; from now on it is the user's to move.
         if (state.revealedSelection != id) {

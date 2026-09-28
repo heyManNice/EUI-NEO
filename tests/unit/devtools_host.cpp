@@ -712,6 +712,27 @@ int main() {
         frame();
         assert(countPanelRows(host) == 1);
 
+        // Double-clicking a row with children also expands or collapses it.
+        clickPanel(200.0, rowY);
+        clickPanel(200.0, rowY);
+        assert(host.expandedElements().size() == 1);
+        assert(host.expandedElements()[0] == "page.root");
+        frame();
+        assert(countPanelRows(host) == 3);
+
+        // Double-clicking a leaf element does not expand it.
+        const double leafRowY = rowY + theme.elementRowHeight;
+        clickPanel(200.0, leafRowY);
+        clickPanel(200.0, leafRowY);
+        assert(host.expandedElements().size() == 1);
+        assert(host.expandedElements()[0] == "page.root");
+
+        clickPanel(200.0, rowY);
+        clickPanel(200.0, rowY);
+        assert(host.expandedElements().empty());
+        frame();
+        assert(countPanelRows(host) == 1);
+
         // The id option only changes what a row prints. A row drops what its parent's id
         // already says, which for these ids means the page scope rather than the parent's whole
         // id: `page.ok` hangs under `page.buttons` and shares nothing with it but `page.`.
@@ -735,20 +756,20 @@ int main() {
             frame();
             assert(countPanelRows(host) == 5);
             assert(sortedRowLabels(host) ==
-                   std::vector<std::string>({"page.other", "page.root", "page.root.row", "page.solo", "widget"}));
+                   std::vector<std::string>({"other", "page.root", "page.solo", "row", "widget"}));
 
             const core::Rect option = panelElementFrame(host, "elements.options.trimPrefix");
             clickPanel(option.x + option.width * 0.5, option.y + option.height * 0.5);
             frame();
             assert(sortedRowLabels(host) ==
-                   std::vector<std::string>({"other", "page.root", "page.solo", "row", "widget"}));
+                   std::vector<std::string>({"page.other", "page.root", "page.root.row", "page.solo", "widget"}));
 
-            // Clicking it again puts the ids back, and the rows the rest of the test reads
+            // Clicking it again puts the trimmed ids back, and the rows the rest of the test reads
             // are the ones it published.
             clickPanel(option.x + option.width * 0.5, option.y + option.height * 0.5);
             frame();
             assert(sortedRowLabels(host) ==
-                   std::vector<std::string>({"page.other", "page.root", "page.root.row", "page.solo", "widget"}));
+                   std::vector<std::string>({"other", "page.root", "page.solo", "row", "widget"}));
             clickPanel(theme.toolbarPadding * 0.5f + theme.elementDisclosureSize * 0.5, rowY);
             frame();
             host.setElementTree(before);

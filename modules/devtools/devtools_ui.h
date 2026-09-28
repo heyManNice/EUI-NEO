@@ -73,11 +73,14 @@ struct DevtoolsPanelState {
     // only remembers what the user expanded inside it: every node with children
     // starts collapsed, which keeps a deep page readable from the first frame.
     std::vector<std::string> expandedElements;
-    // View options of the Elements tab, both off until the user asks for them: whether a
-    // row prints its id without the prefix it shares with its parent, and whether the page
+    // View options of the Elements tab: whether a row prints its id without the
+    // prefix it shares with its parent (on by default), and whether the page
     // marks every element's bounds instead of only the one the pointer is on.
-    bool trimIdPrefix = false;
+    bool trimIdPrefix = true;
     bool showElementBounds = false;
+    // Tracks the most recent row click to detect double-clicks for expand/collapse.
+    std::string lastClickedElement;
+    double lastClickTime = 0.0;
 };
 
 // Everything the panel needs for one composition. The host owns geometry, the
