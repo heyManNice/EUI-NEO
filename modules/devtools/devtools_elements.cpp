@@ -223,9 +223,10 @@ void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRo
                 .build();
             // The highlight above spans the whole row, so the content keeps the inset
             // the numbers need: without it the size column would touch the scrollbar.
+            // Left padding aligns the disclosure arrow with the toolbar margin.
             ui.row(base + ".content")
                 .fill()
-                .padding(0.0f, 0.0f, theme.elementDetailsPadding, 0.0f)
+                .padding(theme.toolbarPadding * 0.5f, 0.0f, theme.elementDetailsPadding, 0.0f)
                 .content([&] {
                     if (node.depth > 0) {
                         ui.stack(base + ".indent")
@@ -399,38 +400,54 @@ float elementOptionWidth(const std::string& label, const DevtoolsTheme& theme,
     return inset + theme.elementOptionBoxSize + inset + text + inset;
 }
 
-// The view options of the Elements tab: one line of checkboxes above the tree. They say
-// what the panel shows, not what the page is, so they stay out of the more menu and sit
-// with the tree they change.
+// The view options of the Elements tab: one line of checkboxes above the tree, framed
+// as a sub-toolbar with a background and a bottom border. The options align with the
+// toolbar margin so they sit cleanly over the tree.
 void composeElementsOptions(core::dsl::Ui& ui, const DevtoolsUiState& state, const DevtoolsUiActions& actions) {
     const DevtoolsTheme& theme = devtoolsTheme();
-    const components::theme::ThemeColorTokens& control = devtoolsControlTheme();
     const DevtoolsPanelState* panel = state.panelState;
     const std::string trimLabel = "Omit prefix";
     const std::string boundsLabel = "Show bounds";
-    ui.row("elements.options")
-        .position(state.panel.x, state.panel.y + theme.toolbarHeight + (state.detached ? 0.0f : 1.0f))
+    const bool compact = state.panel.width < theme.compactWidth;
+    components::theme::ThemeColorTokens control = devtoolsControlTheme();
+    control.metrics.spacing.control = compact ? theme.toolbarCompactPadding : theme.toolbarPadding;
+    control.metrics.radius.small = 2.0f;
+    const float y = state.panel.y + theme.toolbarHeight + (state.detached ? 0.0f : 1.0f);
+
+    ui.stack("elements.options")
+        .position(state.panel.x, y)
         .size(state.panel.width, theme.elementOptionsHeight)
-        .gap(theme.elementOptionGap)
-        .alignItems(core::Align::CENTER)
         .content([&] {
-            components::checkbox(ui, "elements.options.trimPrefix")
-                .size(elementOptionWidth(trimLabel, theme, control.metrics), theme.elementOptionsHeight)
-                .text(trimLabel)
-                .fontSize(theme.elementRowFontSize)
-                .boxSize(theme.elementOptionBoxSize)
-                .theme(control)
-                .checked(panel != nullptr && panel->trimIdPrefix)
-                .onChange(actions.tree.setTrimIdPrefix)
+            ui.rect("elements.options.border")
+                .position(0.0f, theme.elementOptionsHeight - 1.0f)
+                .size(state.panel.width, 1.0f)
+                .ignoreLayout()
+                .color(theme.panelBorder)
                 .build();
-            components::checkbox(ui, "elements.options.showBounds")
-                .size(elementOptionWidth(boundsLabel, theme, control.metrics), theme.elementOptionsHeight)
-                .text(boundsLabel)
-                .fontSize(theme.elementRowFontSize)
-                .boxSize(theme.elementOptionBoxSize)
-                .theme(control)
-                .checked(panel != nullptr && panel->showElementBounds)
-                .onChange(actions.tree.setShowElementBounds)
+            ui.row("elements.options.items")
+                .fill()
+                .alignItems(core::Align::CENTER)
+                .gap(theme.elementOptionGap)
+                .content([&] {
+                    components::checkbox(ui, "elements.options.trimPrefix")
+                        .size(elementOptionWidth(trimLabel, theme, control.metrics), theme.elementOptionsHeight)
+                        .text(trimLabel)
+                        .fontSize(theme.elementRowFontSize)
+                        .boxSize(theme.elementOptionBoxSize)
+                        .theme(control)
+                        .checked(panel != nullptr && panel->trimIdPrefix)
+                        .onChange(actions.tree.setTrimIdPrefix)
+                        .build();
+                    components::checkbox(ui, "elements.options.showBounds")
+                        .size(elementOptionWidth(boundsLabel, theme, control.metrics), theme.elementOptionsHeight)
+                        .text(boundsLabel)
+                        .fontSize(theme.elementRowFontSize)
+                        .boxSize(theme.elementOptionBoxSize)
+                        .theme(control)
+                        .checked(panel != nullptr && panel->showElementBounds)
+                        .onChange(actions.tree.setShowElementBounds)
+                        .build();
+                })
                 .build();
         })
         .build();

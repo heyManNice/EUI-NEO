@@ -701,13 +701,13 @@ int main() {
 
         // The disclosure glyph of the root opens its subtree, and clicking it again
         // puts the subtree back. Leaf rows have no glyph to click.
-        clickPanel(theme.elementDisclosureSize * 0.5, rowY);
+        clickPanel(theme.toolbarPadding * 0.5f + theme.elementDisclosureSize * 0.5, rowY);
         assert(host.expandedElements().size() == 1);
         assert(host.expandedElements()[0] == "page.root");
         frame();
         assert(countPanelRows(host) == 3);
 
-        clickPanel(theme.elementDisclosureSize * 0.5, rowY);
+        clickPanel(theme.toolbarPadding * 0.5f + theme.elementDisclosureSize * 0.5, rowY);
         assert(host.expandedElements().empty());
         frame();
         assert(countPanelRows(host) == 1);
@@ -731,7 +731,7 @@ int main() {
                                     {0.0f, 60.0f, 120.0f, 20.0f}});
             host.setElementTree(nested);
             frame();
-            clickPanel(theme.elementDisclosureSize * 0.5, rowY);
+            clickPanel(theme.toolbarPadding * 0.5f + theme.elementDisclosureSize * 0.5, rowY);
             frame();
             assert(countPanelRows(host) == 5);
             assert(sortedRowLabels(host) ==
@@ -749,7 +749,7 @@ int main() {
             frame();
             assert(sortedRowLabels(host) ==
                    std::vector<std::string>({"page.other", "page.root", "page.root.row", "page.solo", "widget"}));
-            clickPanel(theme.elementDisclosureSize * 0.5, rowY);
+            clickPanel(theme.toolbarPadding * 0.5f + theme.elementDisclosureSize * 0.5, rowY);
             frame();
             host.setElementTree(before);
             frame();
