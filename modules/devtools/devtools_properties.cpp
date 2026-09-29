@@ -573,6 +573,7 @@ void composeControlSlot(core::dsl::Ui& ui,
 void composeValueText(core::dsl::Ui& ui, const std::string& id, const PropertyRow& row) {
     const DevtoolsTheme& theme = devtoolsTheme();
     ui.text(id + ".value")
+        .fontFamily(theme.fontFamily)
         .size(theme.propertyValueWidth, theme.elementRowHeight)
         .text(row.value)
         .fontSize(theme.elementRowFontSize)
@@ -607,6 +608,7 @@ void composePropertyRow(core::dsl::Ui& ui,
     const float sliderWidth = std::max(24.0f, editorWidth - controlInset * 2.0f);
 
     ui.text(id + ".label")
+        .fontFamily(theme.fontFamily)
         .size(theme.propertyLabelWidth, theme.elementRowHeight)
         .text(row.label)
         .fontSize(theme.elementRowFontSize)
@@ -621,6 +623,7 @@ void composePropertyRow(core::dsl::Ui& ui,
             ? std::function<void()>([copy = actions.properties.copyElementId, elementId] { copy(elementId); })
             : std::function<void()>{};
         ui.text(id + ".value")
+            .fontFamily(theme.fontFamily)
             .width(core::SizeValue::fill())
             .height(theme.elementRowHeight)
             .text(row.value)
@@ -677,6 +680,7 @@ void composePropertyRow(core::dsl::Ui& ui,
                     .build();
             });
             ui.text(id + ".value")
+                .fontFamily(theme.fontFamily)
                 .size(theme.propertyValueWidth, theme.elementRowHeight)
                 .text(formatNumber(row.channel == 0 ? channelValue * 360.0f : channelValue))
                 .fontSize(theme.elementRowFontSize)
@@ -697,6 +701,7 @@ void composePropertyRow(core::dsl::Ui& ui,
                                actions);
         });
         ui.text(id + ".value")
+            .fontFamily(theme.fontFamily)
             .size(theme.propertyValueWidth, theme.elementRowHeight)
             .text(row.value)
             .fontSize(theme.elementRowFontSize)
@@ -775,6 +780,7 @@ void composePropertyFooter(core::dsl::Ui& ui,
         std::snprintf(buffer, sizeof(buffer), "%zu element(s) overridden", properties.overrideCount);
     }
     ui.text(id + ".text")
+        .fontFamily(theme.fontFamily)
         .size(std::max(0.0f, width - theme.propertyResetWidth), theme.elementRowHeight)
         .text(buffer)
         .fontSize(theme.elementRowFontSize - 1.0f)
@@ -785,6 +791,7 @@ void composePropertyFooter(core::dsl::Ui& ui,
         return;
     }
     ui.text(id + ".reset")
+        .fontFamily(theme.fontFamily)
         .size(theme.propertyResetWidth, theme.elementRowHeight)
         .text("Reset")
         .fontSize(theme.elementRowFontSize)
@@ -819,6 +826,7 @@ void composePropertySubTab(core::dsl::Ui& ui, const std::string& id, const std::
                 .padding(theme.tabHorizontalPadding + 2.0f, 0.0f)
                 .content([&] {
                     ui.text(id + ".label")
+                        .fontFamily(theme.fontFamily)
                         .width(core::SizeValue::wrapContent())
                         .height(theme.elementRowHeight)
                         .text(label)
@@ -885,6 +893,7 @@ void composeElementProperties(core::dsl::Ui& ui,
                 .build();
             if (properties.properties == nullptr || !properties.properties->active) {
                 ui.text(id + ".empty")
+                    .fontFamily(theme.fontFamily)
                     .width(core::SizeValue::fill())
                     .height(theme.elementRowHeight * 2.0f)
                     .text("Select an element to inspect it.")

@@ -3,6 +3,8 @@
 #include "components/theme.h"
 #include "core/dsl.h"
 
+#include <filesystem>
+
 namespace modules::devtools {
 
 // The panel keeps its own dark palette instead of following the page theme, so
@@ -121,10 +123,49 @@ struct DevtoolsTheme {
     unsigned int iconElementSvg = 0xF1C5;
     unsigned int iconElementShadertoy = 0xF085;
     unsigned int iconRevert = 0xF2EA;
+
+    // Font family for DevTools UI text, isolated from host application styling.
+    // TODO(devtools): When EUI core adds a generic "SystemUI" alias in resolveFontPath(),
+    // this candidate path probe can be replaced with a single "SystemUI" identifier.
+    std::string fontFamily;
 };
 
 inline const DevtoolsTheme& devtoolsTheme() {
-    static const DevtoolsTheme theme;
+    static const DevtoolsTheme theme = [] {
+        DevtoolsTheme t;
+        // Probe common system UI fonts on the host OS so DevTools remains clear and
+        // immune to any custom artistic font overrides set by the user application.
+#if defined(_WIN32)
+        const char* const candidates[] = {
+            "C:/Windows/Fonts/segoeui.ttf",
+            "C:/Windows/Fonts/msyh.ttc",
+            "C:/Windows/Fonts/arial.ttf"
+        };
+#elif defined(__APPLE__)
+        const char* const candidates[] = {
+            "/System/Library/Fonts/SFNS.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+            "/System/Library/Fonts/Supplemental/Arial.ttf"
+        };
+#else
+        const char* const candidates[] = {
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"
+        };
+#endif
+        for (const char* path : candidates) {
+            std::error_code error;
+            if (std::filesystem::exists(path, error)) {
+                t.fontFamily = path;
+                break;
+            }
+        }
+        return t;
+    }();
     return theme;
 }
 

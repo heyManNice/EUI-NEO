@@ -263,6 +263,7 @@ void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRo
                         .verticalAlign(core::VerticalAlign::Center)
                         .build();
                     ui.text(base + ".label")
+                        .fontFamily(theme.fontFamily)
                         .width(core::SizeValue::fill())
                         .height(theme.elementRowHeight)
                         .text(label)
@@ -273,6 +274,7 @@ void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRo
                     char sizeText[48];
                     std::snprintf(sizeText, sizeof(sizeText), "%.0f x %.0f", node.frame.width, node.frame.height);
                     ui.text(base + ".size")
+                        .fontFamily(theme.fontFamily)
                         .width(core::SizeValue::wrapContent())
                         .height(theme.elementRowHeight)
                         .text(sizeText)
@@ -360,6 +362,7 @@ void composeElementsNotice(core::dsl::Ui& ui, const std::string& id, const std::
                            float height) {
     const DevtoolsTheme& theme = devtoolsTheme();
     ui.text(id)
+        .fontFamily(theme.fontFamily)
         .size(width, height)
         .text(text)
         .fontSize(theme.sectionFontSize)
@@ -393,7 +396,7 @@ const char* elementKindName(core::dsl::ElementKind kind) {
 float elementOptionWidth(const std::string& label, const DevtoolsTheme& theme,
                          const components::theme::ThemeMetricTokens& metrics) {
     const float inset = metrics.spacing.control;
-    const float text = core::TextPrimitive::measureTextWidth(label, {}, theme.elementRowFontSize, 400);
+    const float text = core::TextPrimitive::measureTextWidth(label, theme.fontFamily, theme.elementRowFontSize, 400);
     return inset + theme.elementOptionBoxSize + inset + text + inset;
 }
 
@@ -428,6 +431,7 @@ void composeElementsOptions(core::dsl::Ui& ui, const DevtoolsUiState& state, con
                 .content([&] {
                     components::checkbox(ui, "elements.options.trimPrefix")
                         .size(elementOptionWidth(trimLabel, theme, control.metrics), theme.elementOptionsHeight)
+                        .fontFamily(theme.fontFamily)
                         .text(trimLabel)
                         .fontSize(theme.elementRowFontSize)
                         .boxSize(theme.elementOptionBoxSize)
@@ -437,6 +441,7 @@ void composeElementsOptions(core::dsl::Ui& ui, const DevtoolsUiState& state, con
                         .build();
                     components::checkbox(ui, "elements.options.showBounds")
                         .size(elementOptionWidth(boundsLabel, theme, control.metrics), theme.elementOptionsHeight)
+                        .fontFamily(theme.fontFamily)
                         .text(boundsLabel)
                         .fontSize(theme.elementRowFontSize)
                         .boxSize(theme.elementOptionBoxSize)

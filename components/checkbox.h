@@ -58,6 +58,7 @@ public:
         return *this;
     }
     CheckboxBuilder& text(std::string value) { text_ = std::move(value); return *this; }
+    CheckboxBuilder& fontFamily(std::string value) { fontFamily_ = std::move(value); return *this; }
     CheckboxBuilder& fontSize(float value) { fontSize_ = std::max(1.0f, value); return *this; }
     CheckboxBuilder& boxSize(float value) { boxSize_ = std::max(10.0f, value); return *this; }
     CheckboxBuilder& style(const CheckboxStyle& value) { style_ = value; return *this; }
@@ -120,7 +121,7 @@ public:
         markTransition.ease = core::Ease::OutCubic;
         const float hitWidth = text_.empty()
             ? box + horizontalInset * 2.0f
-            : std::min(width_, labelX + textWidth(text_, fontSize) + horizontalInset * 2.0f);
+            : std::min(width_, labelX + textWidth(text_, fontSize, fontFamily_) + horizontalInset * 2.0f);
         const core::Color idle = checked_ ? style_.checked : style_.box;
         const core::Color hover = checked_ ? style_.checkedHover : style_.boxHover;
         const core::Color pressed = checked_ ? style_.checkedPressed : style_.boxPressed;
@@ -180,8 +181,11 @@ public:
                     .build();
 
                 if (!text_.empty()) {
-                    ui_.text(id_ + ".label")
-                        .x(contentX + labelX)
+                    auto label = ui_.text(id_ + ".label");
+                    if (!fontFamily_.empty()) {
+                        label.fontFamily(fontFamily_);
+                    }
+                    label.x(contentX + labelX)
                         .y(labelY)
                         .size(labelWidth, labelLineHeight)
                         .text(text_)
@@ -196,8 +200,8 @@ public:
     }
 
 private:
-    static float textWidth(const std::string& value, float fontSize) {
-        return core::TextPrimitive::measureTextWidth(value, {}, fontSize, 400);
+    static float textWidth(const std::string& value, float fontSize, const std::string& fontFamily = {}) {
+        return core::TextPrimitive::measureTextWidth(value, fontFamily, fontSize, 400);
     }
 
     core::dsl::Ui& ui_;
@@ -207,6 +211,7 @@ private:
     core::Transition transition_ = core::Transition::make(0.16f, core::Ease::OutCubic);
     std::function<void(bool)> onChange_;
     std::string text_;
+    std::string fontFamily_;
     bool checked_ = false;
     float width_ = 180.0f;
     float height_ = 30.0f;

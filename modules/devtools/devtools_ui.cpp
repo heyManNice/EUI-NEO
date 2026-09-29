@@ -69,6 +69,7 @@ constexpr TabEntry kTabs[] = {
 void composePlannedTab(core::dsl::Ui& ui, const TabEntry& entry, float width, float height) {
     const DevtoolsTheme& theme = devtoolsTheme();
     ui.text(std::string(entry.id) + ".planned")
+        .fontFamily(theme.fontFamily)
         .size(width, height)
         .text(std::string(entry.label) + " is planned: " + entry.summary + ".")
         .fontSize(theme.sectionFontSize)
@@ -99,6 +100,7 @@ void composeToolbarTab(core::dsl::Ui& ui, const std::string& id, const std::stri
                 .padding(theme.tabHorizontalPadding, 0.0f)
                 .content([&] {
                     ui.text(id + ".label")
+                        .fontFamily(theme.fontFamily)
                         .width(core::SizeValue::wrapContent())
                         .height(theme.toolbarHeight)
                         .text(label)
@@ -158,6 +160,7 @@ void composeDockOption(core::dsl::Ui& ui, const std::string& id, unsigned int co
                         .verticalAlign(core::VerticalAlign::Center)
                         .build();
                     ui.text(id + ".label")
+                        .fontFamily(theme.fontFamily)
                         .width(core::SizeValue::fill())
                         .height(theme.menuRowHeight)
                         .text(label)

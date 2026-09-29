@@ -20,6 +20,7 @@ std::string metricValue(double value, int decimals = 1, const char* suffix = "")
 void composeSection(core::dsl::Ui& ui, const std::string& id, const std::string& label) {
     const DevtoolsTheme& theme = devtoolsTheme();
     ui.text(id)
+        .fontFamily(theme.fontFamily)
         .width(core::SizeValue::fill())
         .height(theme.sectionHeight)
         .text(label)
@@ -36,6 +37,7 @@ void composeMetric(core::dsl::Ui& ui, const std::string& id, const std::string& 
         .alignItems(core::Align::CENTER)
         .content([&] {
             ui.text(id + ".label")
+                .fontFamily(theme.fontFamily)
                 .width(core::SizeValue::fill())
                 .height(theme.metricHeight)
                 .text(label)
@@ -43,6 +45,7 @@ void composeMetric(core::dsl::Ui& ui, const std::string& id, const std::string& 
                 .color(theme.metricLabel)
                 .build();
             ui.text(id + ".value")
+                .fontFamily(theme.fontFamily)
                 .width(core::SizeValue::wrapContent())
                 .height(theme.metricHeight)
                 .text(value)
@@ -64,6 +67,7 @@ void composePerformanceMetrics(core::dsl::Ui& ui, const app::PerformanceSnapshot
         .content([&] {
             if (snapshot.revision == 0) {
                 ui.text("performance.waiting")
+                    .fontFamily(theme.fontFamily)
                     .width(core::SizeValue::fill())
                     .height(theme.sectionHeight)
                     .text("Waiting for the first sample...")
