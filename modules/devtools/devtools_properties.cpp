@@ -174,6 +174,68 @@ std::string formatHex(const core::Color& color) {
     return buffer;
 }
 
+const char* alignName(core::Align align) {
+    switch (align) {
+    case core::Align::START: return "Start";
+    case core::Align::CENTER: return "Center";
+    case core::Align::END: return "End";
+    }
+    return "Unknown";
+}
+
+const char* sizeModeName(core::SizeMode mode) {
+    switch (mode) {
+    case core::SizeMode::Fixed: return "Fixed";
+    case core::SizeMode::WrapContent: return "WrapContent";
+    case core::SizeMode::Fill: return "Fill";
+    }
+    return "Unknown";
+}
+
+std::string formatSizeValue(const core::SizeValue& size) {
+    if (size.mode == core::SizeMode::Fixed) {
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "Fixed(%.0f)", size.value);
+        return buf;
+    }
+    return sizeModeName(size.mode);
+}
+
+const char* horizontalAlignName(core::HorizontalAlign align) {
+    switch (align) {
+    case core::HorizontalAlign::Left: return "Left";
+    case core::HorizontalAlign::Center: return "Center";
+    case core::HorizontalAlign::Right: return "Right";
+    }
+    return "Unknown";
+}
+
+const char* verticalAlignName(core::VerticalAlign align) {
+    switch (align) {
+    case core::VerticalAlign::Top: return "Top";
+    case core::VerticalAlign::Center: return "Center";
+    case core::VerticalAlign::Bottom: return "Bottom";
+    }
+    return "Unknown";
+}
+
+const char* imageFitName(core::ImageFit fit) {
+    switch (fit) {
+    case core::ImageFit::Cover: return "Cover";
+    case core::ImageFit::Contain: return "Contain";
+    case core::ImageFit::Stretch: return "Stretch";
+    }
+    return "Unknown";
+}
+
+const char* cursorShapeName(core::CursorShape cursor) {
+    switch (cursor) {
+    case core::CursorShape::Arrow: return "Arrow";
+    case core::CursorShape::Hand: return "Hand";
+    }
+    return "Unknown";
+}
+
 // The property area is a flat list of uniform rows, so it reuses the virtualized list
 // the tree uses: a colour editor that opens adds rows instead of nesting a layout.
 enum class PropertyRowKind { Summary, Header, Property, Channel };
@@ -198,8 +260,8 @@ void appendSummary(std::vector<PropertyRow>& rows, const char* label, std::strin
     rows.push_back(std::move(row));
 }
 
-std::vector<PropertyRow> buildPropertyRows(const ElementValues& properties,
-                                           const DevtoolsPanelState* panelState) {
+std::vector<PropertyRow> buildVisualPropertyRows(const ElementValues& properties,
+                                                 const DevtoolsPanelState* panelState) {
     std::vector<PropertyRow> rows;
     rows.reserve(propertyDescriptors().size() + 10);
 
@@ -275,6 +337,155 @@ std::vector<PropertyRow> buildPropertyRows(const ElementValues& properties,
         }
     }
     return rows;
+}
+
+std::vector<PropertyRow> buildLayoutPropertyRows(const ElementValues& properties) {
+    std::vector<PropertyRow> rows;
+    rows.reserve(16);
+
+    PropertyRow header;
+    header.kind = PropertyRowKind::Header;
+    header.label = "Layout Sizing";
+    rows.push_back(header);
+
+    char buffer[128];
+    appendSummary(rows, "Width", formatSizeValue(properties.widthSize));
+    appendSummary(rows, "Height", formatSizeValue(properties.heightSize));
+
+    std::snprintf(buffer, sizeof(buffer), "%.0f x %.0f", properties.minLayoutWidth, properties.minLayoutHeight);
+    appendSummary(rows, "Min size", buffer);
+
+    std::snprintf(buffer, sizeof(buffer), "%.0f x %.0f", properties.maxLayoutWidth, properties.maxLayoutHeight);
+    appendSummary(rows, "Max size", buffer);
+
+    header.label = "Alignment & Flow";
+    rows.push_back(header);
+
+    std::snprintf(buffer, sizeof(buffer), "grow %.1f, shrink %.1f", properties.flexGrow, properties.flexShrink);
+    appendSummary(rows, "Flex", buffer);
+    appendSummary(rows, "Main align", alignName(properties.mainAlign));
+    appendSummary(rows, "Cross align", alignName(properties.crossAlign));
+    appendSummary(rows, "Spacing", formatNumber(properties.spacing));
+    appendSummary(rows, "Ignore layout", properties.ignoreLayout ? "yes" : "no");
+
+    header.label = "Box Model";
+    rows.push_back(header);
+
+    std::snprintf(buffer, sizeof(buffer), "%.0f, %.0f   %.0f x %.0f", properties.frame.x, properties.frame.y,
+                  properties.frame.width, properties.frame.height);
+    appendSummary(rows, "Frame", buffer);
+
+    std::snprintf(buffer, sizeof(buffer), "%.0f / %.0f / %.0f / %.0f", properties.margin.left, properties.margin.top,
+                  properties.margin.right, properties.margin.bottom);
+    appendSummary(rows, "Margin", buffer);
+
+    std::snprintf(buffer, sizeof(buffer), "%.0f / %.0f / %.0f / %.0f", properties.padding.left, properties.padding.top,
+                  properties.padding.right, properties.padding.bottom);
+    appendSummary(rows, "Padding", buffer);
+
+    return rows;
+}
+
+std::vector<PropertyRow> buildContentPropertyRows(const ElementValues& properties) {
+    std::vector<PropertyRow> rows;
+    rows.reserve(16);
+
+    PropertyRow header;
+    header.kind = PropertyRowKind::Header;
+
+    if (properties.kind == ElementKind::Text || !properties.text.empty()) {
+        header.label = "Text Content";
+        rows.push_back(header);
+
+        appendSummary(rows, "Text", properties.text.empty() ? "(empty)" : properties.text);
+        appendSummary(rows, "Font family", properties.fontFamily.empty() ? "(default)" : properties.fontFamily);
+        appendSummary(rows, "Font size", formatNumber(properties.fontSize));
+        appendSummary(rows, "Weight", std::to_string(properties.fontWeight));
+        appendSummary(rows, "Line height", formatNumber(properties.lineHeight));
+        appendSummary(rows, "Wrap", properties.wrap ? "yes" : "no");
+        if (properties.maxWidth > 0.0f) {
+            appendSummary(rows, "Max width", formatNumber(properties.maxWidth));
+        }
+        std::string align = std::string(horizontalAlignName(properties.horizontalAlign)) + ", " +
+                            verticalAlignName(properties.verticalAlign);
+        appendSummary(rows, "Align", align);
+    }
+
+    if (properties.kind == ElementKind::Image || !properties.imageSource.empty()) {
+        header.label = "Image Content";
+        rows.push_back(header);
+
+        appendSummary(rows, "Source", properties.imageSource.empty() ? "(none)" : properties.imageSource);
+        appendSummary(rows, "Fit", imageFitName(properties.imageFit));
+    }
+
+    if (properties.kind == ElementKind::Svg || !properties.svgSource.empty()) {
+        header.label = "SVG Content";
+        rows.push_back(header);
+
+        appendSummary(rows, "SVG Source", properties.svgSource.empty() ? "(none)" : properties.svgSource);
+    }
+
+    if (rows.empty()) {
+        header.label = "Content";
+        rows.push_back(header);
+        appendSummary(rows, "Kind", elementKindName(properties.kind));
+        appendSummary(rows, "Media / Text", "none");
+    }
+
+    return rows;
+}
+
+std::vector<PropertyRow> buildBehaviorPropertyRows(const ElementValues& properties) {
+    std::vector<PropertyRow> rows;
+    rows.reserve(16);
+
+    PropertyRow header;
+    header.kind = PropertyRowKind::Header;
+    header.label = "Interaction & State";
+    rows.push_back(header);
+
+    appendSummary(rows, "Interactive", properties.interactive ? "yes" : "no");
+    appendSummary(rows, "Disabled", properties.disabled ? "yes" : "no");
+    appendSummary(rows, "Focusable", properties.focusable ? "yes" : "no");
+    appendSummary(rows, "Cursor", cursorShapeName(properties.cursor));
+
+    header.label = "Event Listeners";
+    rows.push_back(header);
+
+    appendSummary(rows, "onClick", properties.hasOnClick ? "bound" : "none");
+    appendSummary(rows, "onPress", properties.hasOnPress ? "bound" : "none");
+    appendSummary(rows, "onRelease", properties.hasOnRelease ? "bound" : "none");
+    appendSummary(rows, "onHover", properties.hasOnHoverChanged ? "bound" : "none");
+    appendSummary(rows, "onFocus", properties.hasOnFocusChanged ? "bound" : "none");
+    appendSummary(rows, "onScroll", properties.hasOnScroll ? "bound" : "none");
+    appendSummary(rows, "onDrag", properties.hasOnDrag ? "bound" : "none");
+    appendSummary(rows, "onKey", properties.hasOnKeyEvent ? "bound" : "none");
+
+    if (properties.hasStateColors) {
+        header.label = "State Colors";
+        rows.push_back(header);
+        appendSummary(rows, "Hover", formatHex(properties.hoverColor));
+        appendSummary(rows, "Pressed", formatHex(properties.pressedColor));
+    }
+
+    return rows;
+}
+
+std::vector<PropertyRow> buildPropertyRows(const ElementValues& properties,
+                                           const DevtoolsPanelState* panelState) {
+    const PropertiesTab tab = panelState != nullptr ? panelState->activePropertiesTab : PropertiesTab::Visual;
+    switch (tab) {
+    case PropertiesTab::Visual:
+        return buildVisualPropertyRows(properties, panelState);
+    case PropertiesTab::Layout:
+        return buildLayoutPropertyRows(properties);
+    case PropertiesTab::Content:
+        return buildContentPropertyRows(properties);
+    case PropertiesTab::Behavior:
+        return buildBehaviorPropertyRows(properties);
+    }
+    return buildVisualPropertyRows(properties, panelState);
 }
 
 // The way back to the element's own value. It only exists while the field is written,
@@ -588,6 +799,50 @@ void composePropertyFooter(core::dsl::Ui& ui,
         .build();
 }
 
+void composePropertySubTab(core::dsl::Ui& ui, const std::string& id, const std::string& label,
+                           bool selected, const std::function<void()>& onClick) {
+    const DevtoolsTheme& theme = devtoolsTheme();
+    ui.stack(id)
+        .width(core::SizeValue::wrapContent())
+        .height(theme.elementRowHeight)
+        .content([&] {
+            ui.rect(id + ".background")
+                .fill()
+                .ignoreLayout()
+                .states(theme.transparent, theme.tabHover, theme.tabHover)
+                .instantStates()
+                .onClick(onClick)
+                .build();
+            ui.row(id + ".content")
+                .width(core::SizeValue::wrapContent())
+                .height(theme.elementRowHeight)
+                .padding(theme.tabHorizontalPadding + 2.0f, 0.0f)
+                .content([&] {
+                    ui.text(id + ".label")
+                        .width(core::SizeValue::wrapContent())
+                        .height(theme.elementRowHeight)
+                        .text(label)
+                        .fontSize(theme.elementRowFontSize)
+                        .color(selected ? theme.primaryText : theme.mutedText)
+                        .horizontalAlign(core::HorizontalAlign::Center)
+                        .verticalAlign(core::VerticalAlign::Center)
+                        .build();
+                })
+                .build();
+            if (selected) {
+                ui.rect(id + ".indicator")
+                    .width(core::SizeValue::fill())
+                    .height(theme.tabIndicatorHeight)
+                    .margin(2.0f, 0.0f, 2.0f, 0.0f)
+                    .y(theme.elementRowHeight - theme.tabIndicatorHeight)
+                    .ignoreLayout()
+                    .color(theme.accent)
+                    .build();
+            }
+        })
+        .build();
+}
+
 } // namespace
 
 const std::vector<ElementField>& elementPropertyIds() {
@@ -645,10 +900,47 @@ void composeElementProperties(core::dsl::Ui& ui,
             const std::vector<PropertyRow> rows = buildPropertyRows(*properties.properties, state.panelState);
             const float padding = theme.elementDetailsPadding;
             const float contentWidth = std::max(0.0f, area.width - padding * 2.0f);
+            const float subtabHeight = theme.elementRowHeight;
             const float footerHeight = theme.elementRowHeight;
-            const float listHeight = std::max(0.0f, area.height - footerHeight);
+            const float listHeight = std::max(0.0f, area.height - subtabHeight - footerHeight);
             const float scrollOffset =
                 state.panelState != nullptr ? state.panelState->propertiesScrollOffset : 0.0f;
+            const PropertiesTab activeTab =
+                state.panelState != nullptr ? state.panelState->activePropertiesTab : PropertiesTab::Visual;
+
+            ui.stack(id + ".subtabs")
+                .position(0.0f, 0.0f)
+                .size(area.width, subtabHeight)
+                .content([&] {
+                    ui.rect(id + ".subtabs.border")
+                        .width(core::SizeValue::fill())
+                        .height(1.0f)
+                        .y(subtabHeight - 1.0f)
+                        .ignoreLayout()
+                        .color(theme.panelBorder)
+                        .build();
+                    ui.row(id + ".subtabs.list")
+                        .position(padding, 0.0f)
+                        .size(contentWidth, subtabHeight)
+                        .gap(4.0f)
+                        .content([&] {
+                            const auto select = actions.properties.selectTab;
+                            composePropertySubTab(ui, id + ".subtabs.visual", "Visual",
+                                                  activeTab == PropertiesTab::Visual,
+                                                  [select] { if (select) select(PropertiesTab::Visual); });
+                            composePropertySubTab(ui, id + ".subtabs.layout", "Layout",
+                                                  activeTab == PropertiesTab::Layout,
+                                                  [select] { if (select) select(PropertiesTab::Layout); });
+                            composePropertySubTab(ui, id + ".subtabs.content", "Content",
+                                                  activeTab == PropertiesTab::Content,
+                                                  [select] { if (select) select(PropertiesTab::Content); });
+                            composePropertySubTab(ui, id + ".subtabs.behavior", "Behavior",
+                                                  activeTab == PropertiesTab::Behavior,
+                                                  [select] { if (select) select(PropertiesTab::Behavior); });
+                        })
+                        .build();
+                })
+                .build();
 
             // The list spans the whole area, so its scrollbar sits on the panel edge
             // instead of a padding away from it. The rows keep the padding and their
@@ -657,7 +949,7 @@ void composeElementProperties(core::dsl::Ui& ui,
             // Everything inside the area is placed relative to it, which is what a
             // positioned stack expects of its children.
             components::virtualList(ui, id + ".list")
-                .position(0.0f, 0.0f)
+                .position(0.0f, subtabHeight)
                 .size(area.width, listHeight)
                 .itemCount(static_cast<std::int64_t>(rows.size()))
                 .rowHeight(theme.elementRowHeight)
@@ -682,12 +974,10 @@ void composeElementProperties(core::dsl::Ui& ui,
                 .build();
 
             ui.row(id + ".footer")
-                .position(padding, listHeight)
+                .position(padding, subtabHeight + listHeight)
                 .size(contentWidth, footerHeight)
                 .content([&] {
-                    composePropertyFooter(ui, id + ".footer.inner",
-                                          std::max(0.0f, area.width - theme.elementDetailsPadding * 2.0f),
-                                          properties, actions);
+                    composePropertyFooter(ui, id + ".footer.inner", contentWidth, properties, actions);
                 })
                 .build();
         })

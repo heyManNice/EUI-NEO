@@ -27,10 +27,18 @@ enum class DevtoolsTab {
     Scale
 };
 
+enum class PropertiesTab {
+    Visual,
+    Layout,
+    Content,
+    Behavior
+};
+
 // Panel state lives in the overlay Runtime state store, so it follows the panel
 // Runtime lifetime instead of a process-wide object.
 struct DevtoolsPanelState {
     DevtoolsTab activeTab = DevtoolsTab::Performance;
+    PropertiesTab activePropertiesTab = PropertiesTab::Visual;
     bool moreMenuOpen = false;
     // How far the tab row is scrolled sideways, in the logical units the panel composes in.
     // A narrow panel clips the tabs it cannot show, and this is what brings them back.
@@ -130,6 +138,7 @@ struct DevtoolsUiActions {
     };
 
     struct Properties {
+        std::function<void(PropertiesTab)> selectTab;
         std::function<void(const std::string&)> copyElementId;
         std::function<void(float)> setScrollOffset;
         std::function<void(float)> setHeight;

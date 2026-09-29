@@ -290,6 +290,49 @@ struct ElementValues {
     bool interactive = false;
     bool disabled = false;
     std::string text;
+
+    // Layout
+    core::SizeValue widthSize = core::SizeValue::wrapContent();
+    core::SizeValue heightSize = core::SizeValue::wrapContent();
+    float minLayoutWidth = 0.0f;
+    float minLayoutHeight = 0.0f;
+    float maxLayoutWidth = 0.0f;
+    float maxLayoutHeight = 0.0f;
+    float flexGrow = 0.0f;
+    float flexShrink = 0.0f;
+    core::Align mainAlign = core::Align::START;
+    core::Align crossAlign = core::Align::START;
+    float spacing = 0.0f;
+    bool ignoreLayout = false;
+
+    // Typography & Content
+    std::string fontFamily;
+    float fontSize = 0.0f;
+    int fontWeight = 400;
+    float lineHeight = 0.0f;
+    bool wrap = false;
+    float maxWidth = 0.0f;
+    core::HorizontalAlign horizontalAlign = core::HorizontalAlign::Left;
+    core::VerticalAlign verticalAlign = core::VerticalAlign::Top;
+    std::string imageSource;
+    core::ImageFit imageFit = core::ImageFit::Cover;
+    std::string svgSource;
+
+    // Behavior & Input
+    bool focusable = false;
+    core::CursorShape cursor = core::CursorShape::Arrow;
+    bool hasOnClick = false;
+    bool hasOnPress = false;
+    bool hasOnRelease = false;
+    bool hasOnHoverChanged = false;
+    bool hasOnFocusChanged = false;
+    bool hasOnScroll = false;
+    bool hasOnDrag = false;
+    bool hasOnKeyEvent = false;
+    bool hasStateColors = false;
+    core::Color hoverColor{1.0f, 1.0f, 1.0f, 1.0f};
+    core::Color pressedColor{1.0f, 1.0f, 1.0f, 1.0f};
+
     std::array<FieldValue, kElementFieldCount> fields{};
     std::uint32_t written = 0;
 

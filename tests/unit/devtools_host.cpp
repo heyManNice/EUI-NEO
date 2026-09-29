@@ -637,6 +637,43 @@ int main() {
             assert(edit.id.empty());
         }
 
+        // Sub-tabs organize element attributes into Visual, Layout, Content, and Behavior.
+        // Clicking each tab switches the displayed property rows.
+        {
+            assert(hasPanelElement(host, "elements.properties.subtabs.visual"));
+            assert(hasPanelElement(host, "elements.properties.subtabs.layout"));
+            assert(hasPanelElement(host, "elements.properties.subtabs.content"));
+            assert(hasPanelElement(host, "elements.properties.subtabs.behavior"));
+
+            // Switch to Layout tab
+            const core::Rect layoutTab = panelElementFrame(host, "elements.properties.subtabs.layout");
+            clickPanel(layoutTab.x + layoutTab.width * 0.5, layoutTab.y + layoutTab.height * 0.5);
+            frame();
+            assert(hasPanelElement(host, "elements.properties.subtabs.layout.indicator"));
+            assert(!hasPanelElement(host, "elements.properties.subtabs.visual.indicator"));
+
+            // Switch to Content tab
+            const core::Rect contentTab = panelElementFrame(host, "elements.properties.subtabs.content");
+            clickPanel(contentTab.x + contentTab.width * 0.5, contentTab.y + contentTab.height * 0.5);
+            frame();
+            assert(hasPanelElement(host, "elements.properties.subtabs.content.indicator"));
+            assert(!hasPanelElement(host, "elements.properties.subtabs.layout.indicator"));
+
+            // Switch to Behavior tab
+            const core::Rect behaviorTab = panelElementFrame(host, "elements.properties.subtabs.behavior");
+            clickPanel(behaviorTab.x + behaviorTab.width * 0.5, behaviorTab.y + behaviorTab.height * 0.5);
+            frame();
+            assert(hasPanelElement(host, "elements.properties.subtabs.behavior.indicator"));
+            assert(!hasPanelElement(host, "elements.properties.subtabs.content.indicator"));
+
+            // Switch back to Visual tab
+            const core::Rect visualTab = panelElementFrame(host, "elements.properties.subtabs.visual");
+            clickPanel(visualTab.x + visualTab.width * 0.5, visualTab.y + visualTab.height * 0.5);
+            frame();
+            assert(hasPanelElement(host, "elements.properties.subtabs.visual.indicator"));
+            assert(!hasPanelElement(host, "elements.properties.subtabs.behavior.indicator"));
+        }
+
         // The divider resizes the area: dragging it up gives the area more room, and
         // dragging down past the minimum stops there instead of collapsing the area.
         // The area's background spans it, so its frame is the height the divider set.

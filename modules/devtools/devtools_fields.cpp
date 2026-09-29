@@ -70,6 +70,49 @@ ElementValues readElementValues(const core::dsl::Runtime& page, const std::strin
     values.interactive = element->interactive;
     values.disabled = element->disabled;
     values.text = truncateElementText(element->text, kElementValueTextLimit);
+
+    // Layout
+    values.widthSize = element->width;
+    values.heightSize = element->height;
+    values.minLayoutWidth = element->minLayoutWidth;
+    values.minLayoutHeight = element->minLayoutHeight;
+    values.maxLayoutWidth = element->maxLayoutWidth;
+    values.maxLayoutHeight = element->maxLayoutHeight;
+    values.flexGrow = element->flexGrow;
+    values.flexShrink = element->flexShrink;
+    values.mainAlign = element->mainAlign;
+    values.crossAlign = element->crossAlign;
+    values.spacing = element->spacing;
+    values.ignoreLayout = element->ignoreLayout;
+
+    // Typography & Content
+    values.fontFamily = element->fontFamily;
+    values.fontSize = element->fontSize;
+    values.fontWeight = element->fontWeight;
+    values.lineHeight = element->lineHeight;
+    values.wrap = element->wrap;
+    values.maxWidth = element->maxWidth;
+    values.horizontalAlign = element->horizontalAlign;
+    values.verticalAlign = element->verticalAlign;
+    values.imageSource = truncateElementText(element->imageSource, kElementValueTextLimit);
+    values.imageFit = element->imageFit;
+    values.svgSource = truncateElementText(element->svgSource, kElementValueTextLimit);
+
+    // Behavior & Input
+    values.focusable = element->focusable;
+    values.cursor = element->cursor;
+    values.hasOnClick = static_cast<bool>(element->onClick);
+    values.hasOnPress = static_cast<bool>(element->onPress);
+    values.hasOnRelease = static_cast<bool>(element->onRelease);
+    values.hasOnHoverChanged = static_cast<bool>(element->onHoverChanged);
+    values.hasOnFocusChanged = static_cast<bool>(element->onFocusChanged);
+    values.hasOnScroll = static_cast<bool>(element->onScroll);
+    values.hasOnDrag = static_cast<bool>(element->onDrag);
+    values.hasOnKeyEvent = static_cast<bool>(element->onKeyEvent);
+    values.hasStateColors = element->hasStateColors;
+    values.hoverColor = element->hoverColor;
+    values.pressedColor = element->pressedColor;
+
     for (int index = 0; index < kElementFieldCount; ++index) {
         const ElementField field = static_cast<ElementField>(index);
         values.fields[static_cast<std::size_t>(index)] = readElementField(*element, field);

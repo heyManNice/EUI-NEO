@@ -892,6 +892,14 @@ DevtoolsUiActions DevtoolsHost::buildActions(DevtoolsPanelState& state) {
         }
     };
 
+    actions.properties.selectTab = [this, &state](PropertiesTab tab) {
+        if (state.activePropertiesTab == tab) {
+            return;
+        }
+        state.activePropertiesTab = tab;
+        state.propertiesScrollOffset = 0.0f;
+        requestCompose();
+    };
     actions.properties.copyElementId = [](const std::string& id) {
         core::window::setClipboardText(id);
     };

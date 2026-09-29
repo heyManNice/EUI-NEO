@@ -78,7 +78,7 @@ struct DevtoolsTheme {
     float elementDetailsHeight = 98.0f;
     float elementDetailsPadding = 10.0f;
     float elementDetailsLabelWidth = 56.0f;
-    float propertyLabelWidth = 78.0f;
+    float propertyLabelWidth = 104.0f;
     // Wide enough for a `#RRGGBB` value at elementRowFontSize, which is the longest value
     // a row prints.
     float propertyValueWidth = 58.0f;
@@ -94,7 +94,7 @@ struct DevtoolsTheme {
     float propertyColumnGap = 6.0f;
     // The property area starts at this share of the space the tab has, and the divider
     // moves it between the minimum height and what the tree can spare.
-    float propertiesInitialFraction = 0.45f;
+    float propertiesInitialFraction = 0.52f;
     float propertiesMinimumHeight = 66.0f;
     float propertiesMinimumTreeHeight = 66.0f;
     float propertiesHandleHeight = 6.0f;
