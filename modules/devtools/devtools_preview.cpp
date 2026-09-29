@@ -1,9 +1,12 @@
 #include "modules/devtools/devtools_preview.h"
 
 #include "core/render/render_backend.h"
+#include "core/render/text.h"
 #include "core/runtime/runtime_geometry.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
 
 namespace modules::devtools {
 
@@ -109,7 +112,8 @@ void drawElementBounds(const std::vector<ElementBounds>& bounds,
 void drawBoxPreview(const core::dsl::runtime::ElementBox& box,
                     const core::dsl::runtime::RenderPassContext& pass,
                     const BoxPreviewPalette& palette,
-                    core::RoundedRectPrimitive& primitive) {
+                    core::RoundedRectPrimitive& primitive,
+                    core::TextPrimitive* textPrimitive) {
     if (!box.active || pass.backend == nullptr) {
         return;
     }
@@ -187,8 +191,75 @@ void drawBoxPreview(const core::dsl::runtime::ElementBox& box,
         paint(contentBox, palette.content);
     }
 
-    // Leave the backend scissor to the pass's next draw, like page content does.
+    // Leave the backend scissor for the floating badge and subsequent draws.
     pass.clipToNothing();
+
+    // Floating coordinate badge at the element's bottom-left corner.
+    if (textPrimitive != nullptr) {
+        char label[128];
+        if (std::floor(box.frame.width) == box.frame.width &&
+            std::floor(box.frame.height) == box.frame.height &&
+            std::floor(box.frame.x) == box.frame.x &&
+            std::floor(box.frame.y) == box.frame.y) {
+            std::snprintf(label, sizeof(label), "%.0f × %.0f  (x: %.0f, y: %.0f)",
+                          box.frame.width, box.frame.height, box.frame.x, box.frame.y);
+        } else {
+            std::snprintf(label, sizeof(label), "%.1f × %.1f  (x: %.1f, y: %.1f)",
+                          box.frame.width, box.frame.height, box.frame.x, box.frame.y);
+        }
+
+        const float fontSize = 11.0f * dpiScale;
+        const float textWidth = core::TextPrimitive::measureTextWidth(label, {}, fontSize, 500);
+        const float lineHeight = fontSize * 1.25f;
+        const float padX = 7.0f * dpiScale;
+        const float padY = 3.5f * dpiScale;
+        const float badgeWidth = textWidth + padX * 2.0f;
+        const float badgeHeight = lineHeight + padY * 2.0f;
+
+        const core::Rect screenBox = box.transform.active
+            ? core::dsl::applyRenderTransform(frame, box.transform)
+            : frame;
+        const float gap = 4.0f * dpiScale;
+        float badgeX = screenBox.x;
+        float badgeY = screenBox.y + screenBox.height + gap;
+
+        // If overflowing the bottom of the window, flip to the top of the element.
+        if (badgeY + badgeHeight > static_cast<float>(pass.windowHeight) - gap) {
+            badgeY = screenBox.y - badgeHeight - gap;
+        }
+
+        badgeX = std::clamp(badgeX, gap, std::max(gap, static_cast<float>(pass.windowWidth) - badgeWidth - gap));
+        badgeY = std::clamp(badgeY, gap, std::max(gap, static_cast<float>(pass.windowHeight) - badgeHeight - gap));
+
+        // Background pill
+        primitive.setBounds(badgeX, badgeY, badgeWidth, badgeHeight);
+        primitive.setColor(core::Color{0.10f, 0.10f, 0.13f, 0.92f});
+        primitive.setCornerRadius(3.5f * dpiScale);
+        primitive.setBorder(core::Border{1.0f * dpiScale, core::Color{0.32f, 0.35f, 0.42f, 0.70f}});
+        primitive.setShadow(core::Shadow{true, {0.0f, 2.0f * dpiScale}, 6.0f * dpiScale, 0.0f, {0.0f, 0.0f, 0.0f, 0.35f}, false});
+        primitive.setGradient({});
+        primitive.setBlur(0.0f);
+        primitive.setOpacity(1.0f);
+        primitive.setTransformMatrix(core::TransformMatrix{});
+        ++core::render::currentRenderFrameStats().rectDraws;
+        primitive.render(pass.windowWidth, pass.windowHeight);
+
+        // Badge text
+        textPrimitive->setPosition(badgeX + padX, badgeY + padY);
+        textPrimitive->setText(label);
+        textPrimitive->setFontSize(fontSize);
+        textPrimitive->setFontWeight(500);
+        textPrimitive->setColor(core::Color{0.96f, 0.96f, 0.98f, 1.0f});
+        textPrimitive->setMaxWidth(0.0f);
+        textPrimitive->setWrap(false);
+        textPrimitive->setHorizontalAlign(core::HorizontalAlign::Left);
+        textPrimitive->setVerticalAlign(core::VerticalAlign::Top);
+        textPrimitive->setLineHeight(lineHeight);
+        textPrimitive->setTransformMatrix(core::TransformMatrix{});
+        textPrimitive->prepare();
+        ++core::render::currentRenderFrameStats().textDraws;
+        textPrimitive->render(pass.windowWidth, pass.windowHeight);
+    }
 }
 
 } // namespace modules::devtools

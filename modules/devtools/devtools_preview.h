@@ -15,6 +15,10 @@
 // translucent fill per box model region, the hues the browsers use for them, and how the
 // regions are cut so no colour blends twice — is a display decision and lives here.
 
+namespace core {
+class TextPrimitive;
+}
+
 namespace modules::devtools {
 
 // One fill per box model region. The values are fixed instead of themed, because the
@@ -78,12 +82,15 @@ void drawElementBounds(const std::vector<ElementBounds>& bounds,
                        const core::dsl::runtime::RenderPassContext& pass,
                        core::RoundedRectPrimitive& primitive);
 
-// Draws the wash of one resolved box, inside the pass's clip. The caller owns `primitive`
-// and is what releases it with the device.
+
+// Draws the wash of one resolved box, inside the pass's clip, and floats a coordinate badge
+// at the element's bottom-left corner when textPrimitive is provided. The caller owns primitive
+// and textPrimitive and is what releases them with the device.
 void drawBoxPreview(const core::dsl::runtime::ElementBox& box,
                     const core::dsl::runtime::RenderPassContext& pass,
                     const BoxPreviewPalette& palette,
-                    core::RoundedRectPrimitive& primitive);
+                    core::RoundedRectPrimitive& primitive,
+                    core::TextPrimitive* textPrimitive = nullptr);
 
 } // namespace modules::devtools
 

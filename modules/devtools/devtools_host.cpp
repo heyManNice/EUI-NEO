@@ -1071,7 +1071,11 @@ void DevtoolsHost::renderPageOverlay(const core::dsl::runtime::RenderPassContext
         drawElementBounds(bounds, pass, boxPreviewPrimitive_);
     }
     if (pass.hover.active) {
-        drawBoxPreview(pass.hover, pass, kHoverBoxPreviewPalette, boxPreviewPrimitive_);
+        if (!boxPreviewTextPrimitiveInitialized_) {
+            boxPreviewTextPrimitiveInitialized_ = boxPreviewTextPrimitive_.initialize();
+        }
+        drawBoxPreview(pass.hover, pass, kHoverBoxPreviewPalette, boxPreviewPrimitive_,
+                       boxPreviewTextPrimitiveInitialized_ ? &boxPreviewTextPrimitive_ : nullptr);
     }
 }
 
@@ -1081,6 +1085,10 @@ void DevtoolsHost::releaseGraphicsResources() {
     if (boxPreviewPrimitiveInitialized_) {
         boxPreviewPrimitive_.destroy();
         boxPreviewPrimitiveInitialized_ = false;
+    }
+    if (boxPreviewTextPrimitiveInitialized_) {
+        boxPreviewTextPrimitive_.destroy();
+        boxPreviewTextPrimitiveInitialized_ = false;
     }
     panelState_ = nullptr;
     composeRequested_ = true;
@@ -1100,6 +1108,14 @@ void DevtoolsHost::shutdown() {
             boxPreviewPrimitive_ = core::RoundedRectPrimitive{};
         }
         boxPreviewPrimitiveInitialized_ = false;
+    }
+    if (boxPreviewTextPrimitiveInitialized_) {
+        if (core::render::activeRenderBackend() != nullptr) {
+            boxPreviewTextPrimitive_.destroy();
+        } else {
+            boxPreviewTextPrimitive_ = core::TextPrimitive{};
+        }
+        boxPreviewTextPrimitiveInitialized_ = false;
     }
     panelState_ = nullptr;
     visible_ = false;

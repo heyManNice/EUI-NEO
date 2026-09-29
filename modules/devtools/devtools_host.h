@@ -4,6 +4,7 @@
 
 #include "core/dsl_runtime.h"
 #include "core/render/primitive.h"
+#include "core/render/text.h"
 #include "eui/detail/overlay_hooks.h"
 #include "modules/devtools/devtools_tree.h"
 #include "modules/devtools/devtools_ui.h"
@@ -211,6 +212,8 @@ private:
     // graphics object of the tool's alive for it.
     core::RoundedRectPrimitive boxPreviewPrimitive_;
     bool boxPreviewPrimitiveInitialized_ = false;
+    core::TextPrimitive boxPreviewTextPrimitive_;
+    bool boxPreviewTextPrimitiveInitialized_ = false;
 };
 
 } // namespace modules::devtools
