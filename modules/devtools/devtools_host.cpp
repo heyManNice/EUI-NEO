@@ -1082,8 +1082,29 @@ void DevtoolsHost::renderPageOverlay(const core::dsl::runtime::RenderPassContext
         if (!boxPreviewTextPrimitiveInitialized_) {
             boxPreviewTextPrimitiveInitialized_ = boxPreviewTextPrimitive_.initialize();
         }
+        core::Vec2 relativeOffset{0.0f, 0.0f};
+        bool hasParent = false;
+        const std::string& hovered = hoveredElement();
+        if (!hovered.empty()) {
+            const auto& nodes = session_.tree.nodes;
+            for (std::size_t i = 0; i < nodes.size(); ++i) {
+                if (nodes[i].id == hovered) {
+                    const int currentDepth = nodes[i].depth;
+                    for (std::size_t j = i; j > 0; --j) {
+                        if (nodes[j - 1].depth == currentDepth - 1) {
+                            relativeOffset.x = nodes[i].frame.x - nodes[j - 1].frame.x;
+                            relativeOffset.y = nodes[i].frame.y - nodes[j - 1].frame.y;
+                            hasParent = true;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
         drawBoxPreview(pass.hover, pass, kHoverBoxPreviewPalette, boxPreviewPrimitive_,
-                       boxPreviewTextPrimitiveInitialized_ ? &boxPreviewTextPrimitive_ : nullptr);
+                       boxPreviewTextPrimitiveInitialized_ ? &boxPreviewTextPrimitive_ : nullptr,
+                       hasParent ? &relativeOffset : nullptr);
     }
 }
 

@@ -1,4 +1,5 @@
 #include "modules/devtools/devtools_preview.h"
+#include "modules/devtools/devtools_theme.h"
 
 #include "core/render/render_backend.h"
 #include "core/render/text.h"
@@ -113,7 +114,8 @@ void drawBoxPreview(const core::dsl::runtime::ElementBox& box,
                     const core::dsl::runtime::RenderPassContext& pass,
                     const BoxPreviewPalette& palette,
                     core::RoundedRectPrimitive& primitive,
-                    core::TextPrimitive* textPrimitive) {
+                    core::TextPrimitive* textPrimitive,
+                    const core::Vec2* relativeOffset) {
     if (!box.active || pass.backend == nullptr) {
         return;
     }
@@ -196,20 +198,38 @@ void drawBoxPreview(const core::dsl::runtime::ElementBox& box,
 
     // Floating coordinate badge at the element's bottom-left corner.
     if (textPrimitive != nullptr) {
-        char label[128];
-        if (std::floor(box.frame.width) == box.frame.width &&
-            std::floor(box.frame.height) == box.frame.height &&
-            std::floor(box.frame.x) == box.frame.x &&
-            std::floor(box.frame.y) == box.frame.y) {
-            std::snprintf(label, sizeof(label), "%.0f × %.0f  (x: %.0f, y: %.0f)",
-                          box.frame.width, box.frame.height, box.frame.x, box.frame.y);
+        char label[160];
+        if (relativeOffset != nullptr) {
+            if (std::floor(box.frame.width) == box.frame.width &&
+                std::floor(box.frame.height) == box.frame.height &&
+                std::floor(box.frame.x) == box.frame.x &&
+                std::floor(box.frame.y) == box.frame.y &&
+                std::floor(relativeOffset->x) == relativeOffset->x &&
+                std::floor(relativeOffset->y) == relativeOffset->y) {
+                std::snprintf(label, sizeof(label), "%.0f × %.0f  (x: %.0f, y: %.0f  rel: %.0f, %.0f)",
+                              box.frame.width, box.frame.height, box.frame.x, box.frame.y,
+                              relativeOffset->x, relativeOffset->y);
+            } else {
+                std::snprintf(label, sizeof(label), "%.1f × %.1f  (x: %.1f, y: %.1f  rel: %.1f, %.1f)",
+                              box.frame.width, box.frame.height, box.frame.x, box.frame.y,
+                              relativeOffset->x, relativeOffset->y);
+            }
         } else {
-            std::snprintf(label, sizeof(label), "%.1f × %.1f  (x: %.1f, y: %.1f)",
-                          box.frame.width, box.frame.height, box.frame.x, box.frame.y);
+            if (std::floor(box.frame.width) == box.frame.width &&
+                std::floor(box.frame.height) == box.frame.height &&
+                std::floor(box.frame.x) == box.frame.x &&
+                std::floor(box.frame.y) == box.frame.y) {
+                std::snprintf(label, sizeof(label), "%.0f × %.0f  (x: %.0f, y: %.0f)",
+                              box.frame.width, box.frame.height, box.frame.x, box.frame.y);
+            } else {
+                std::snprintf(label, sizeof(label), "%.1f × %.1f  (x: %.1f, y: %.1f)",
+                              box.frame.width, box.frame.height, box.frame.x, box.frame.y);
+            }
         }
 
+        const DevtoolsTheme& theme = devtoolsTheme();
         const float fontSize = 11.0f * dpiScale;
-        const float textWidth = core::TextPrimitive::measureTextWidth(label, {}, fontSize, 500);
+        const float textWidth = core::TextPrimitive::measureTextWidth(label, theme.fontFamily, fontSize, 500);
         const float lineHeight = fontSize * 1.25f;
         const float padX = 7.0f * dpiScale;
         const float padY = 3.5f * dpiScale;
@@ -247,6 +267,7 @@ void drawBoxPreview(const core::dsl::runtime::ElementBox& box,
         // Badge text
         textPrimitive->setPosition(badgeX + padX, badgeY + padY);
         textPrimitive->setText(label);
+        textPrimitive->setFontFamily(theme.fontFamily);
         textPrimitive->setFontSize(fontSize);
         textPrimitive->setFontWeight(500);
         textPrimitive->setColor(core::Color{0.96f, 0.96f, 0.98f, 1.0f});
