@@ -115,7 +115,8 @@ void drawBoxPreview(const core::dsl::runtime::ElementBox& box,
                     const BoxPreviewPalette& palette,
                     core::RoundedRectPrimitive& primitive,
                     core::TextPrimitive* textPrimitive,
-                    const core::Vec2* relativeOffset) {
+                    const core::Vec2* relativeOffset,
+                    unsigned int iconCodepoint) {
     if (!box.active || pass.backend == nullptr) {
         return;
     }
@@ -198,7 +199,7 @@ void drawBoxPreview(const core::dsl::runtime::ElementBox& box,
 
     // Floating coordinate badge at the element's bottom-left corner.
     if (textPrimitive != nullptr) {
-        char label[160];
+        char coords[160];
         if (relativeOffset != nullptr) {
             if (std::floor(box.frame.width) == box.frame.width &&
                 std::floor(box.frame.height) == box.frame.height &&
@@ -206,11 +207,11 @@ void drawBoxPreview(const core::dsl::runtime::ElementBox& box,
                 std::floor(box.frame.y) == box.frame.y &&
                 std::floor(relativeOffset->x) == relativeOffset->x &&
                 std::floor(relativeOffset->y) == relativeOffset->y) {
-                std::snprintf(label, sizeof(label), "%.0f × %.0f  (x: %.0f, y: %.0f  rel: %.0f, %.0f)",
+                std::snprintf(coords, sizeof(coords), "%.0f × %.0f  (x: %.0f, y: %.0f  rel: %.0f, %.0f)",
                               box.frame.width, box.frame.height, box.frame.x, box.frame.y,
                               relativeOffset->x, relativeOffset->y);
             } else {
-                std::snprintf(label, sizeof(label), "%.1f × %.1f  (x: %.1f, y: %.1f  rel: %.1f, %.1f)",
+                std::snprintf(coords, sizeof(coords), "%.1f × %.1f  (x: %.1f, y: %.1f  rel: %.1f, %.1f)",
                               box.frame.width, box.frame.height, box.frame.x, box.frame.y,
                               relativeOffset->x, relativeOffset->y);
             }
@@ -219,20 +220,32 @@ void drawBoxPreview(const core::dsl::runtime::ElementBox& box,
                 std::floor(box.frame.height) == box.frame.height &&
                 std::floor(box.frame.x) == box.frame.x &&
                 std::floor(box.frame.y) == box.frame.y) {
-                std::snprintf(label, sizeof(label), "%.0f × %.0f  (x: %.0f, y: %.0f)",
+                std::snprintf(coords, sizeof(coords), "%.0f × %.0f  (x: %.0f, y: %.0f)",
                               box.frame.width, box.frame.height, box.frame.x, box.frame.y);
             } else {
-                std::snprintf(label, sizeof(label), "%.1f × %.1f  (x: %.1f, y: %.1f)",
+                std::snprintf(coords, sizeof(coords), "%.1f × %.1f  (x: %.1f, y: %.1f)",
                               box.frame.width, box.frame.height, box.frame.x, box.frame.y);
             }
         }
 
         const DevtoolsTheme& theme = devtoolsTheme();
         const float fontSize = 11.0f * dpiScale;
-        const float textWidth = core::TextPrimitive::measureTextWidth(label, theme.fontFamily, fontSize, 500);
+        const float iconFontSize = fontSize * (2.0f / 3.0f);
         const float lineHeight = fontSize * 1.25f;
         const float padX = 7.0f * dpiScale;
         const float padY = 3.5f * dpiScale;
+        const float iconGap = 5.0f * dpiScale;
+        const float iconOffsetY = 3.0f * dpiScale;
+
+        float iconWidth = 0.0f;
+        std::string iconText;
+        if (iconCodepoint > 0) {
+            iconText = core::dsl::utf8(iconCodepoint);
+            iconWidth = core::TextPrimitive::measureTextWidth(iconText, theme.fontFamily, iconFontSize, 500);
+        }
+
+        const float coordsWidth = core::TextPrimitive::measureTextWidth(coords, theme.fontFamily, fontSize, 500);
+        const float textWidth = coordsWidth + (iconCodepoint > 0 ? (iconWidth + iconGap) : 0.0f);
         const float badgeWidth = textWidth + padX * 2.0f;
         const float badgeHeight = lineHeight + padY * 2.0f;
 
@@ -264,9 +277,29 @@ void drawBoxPreview(const core::dsl::runtime::ElementBox& box,
         ++core::render::currentRenderFrameStats().rectDraws;
         primitive.render(pass.windowWidth, pass.windowHeight);
 
-        // Badge text
-        textPrimitive->setPosition(badgeX + padX, badgeY + padY);
-        textPrimitive->setText(label);
+        // Icon
+        if (iconCodepoint > 0) {
+            textPrimitive->setPosition(badgeX + padX, badgeY + padY + iconOffsetY);
+            textPrimitive->setText(iconText);
+            textPrimitive->setFontFamily(theme.fontFamily);
+            textPrimitive->setFontSize(iconFontSize);
+            textPrimitive->setFontWeight(500);
+            textPrimitive->setColor(core::Color{0.96f, 0.96f, 0.98f, 1.0f});
+            textPrimitive->setMaxWidth(0.0f);
+            textPrimitive->setWrap(false);
+            textPrimitive->setHorizontalAlign(core::HorizontalAlign::Left);
+            textPrimitive->setVerticalAlign(core::VerticalAlign::Top);
+            textPrimitive->setLineHeight(lineHeight);
+            textPrimitive->setTransformMatrix(core::TransformMatrix{});
+            textPrimitive->prepare();
+            ++core::render::currentRenderFrameStats().textDraws;
+            textPrimitive->render(pass.windowWidth, pass.windowHeight);
+        }
+
+        // Coordinates text
+        const float coordsX = badgeX + padX + (iconCodepoint > 0 ? (iconWidth + iconGap) : 0.0f);
+        textPrimitive->setPosition(coordsX, badgeY + padY);
+        textPrimitive->setText(coords);
         textPrimitive->setFontFamily(theme.fontFamily);
         textPrimitive->setFontSize(fontSize);
         textPrimitive->setFontWeight(500);

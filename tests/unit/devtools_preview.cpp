@@ -85,6 +85,13 @@ int main() {
                          modules::devtools::elementBoundsColor(0)));
     }
 
+    {
+        const std::string text = core::dsl::utf8(0xF5FD) + "  100 × 100";
+        const float w1 = core::TextPrimitive::measureTextWidth("100 × 100", {}, 11.0f, 500);
+        const float w2 = core::TextPrimitive::measureTextWidth(text, {}, 11.0f, 500);
+        assert(w2 > w1);
+    }
+
     return 0;
 }
 

@@ -31,29 +31,6 @@ struct ElementRow {
     bool collapsed = false;
 };
 
-unsigned int elementKindIcon(core::dsl::ElementKind kind) {
-    const DevtoolsTheme& theme = devtoolsTheme();
-    switch (kind) {
-    case core::dsl::ElementKind::Row:
-    case core::dsl::ElementKind::Column:
-    case core::dsl::ElementKind::Stack:
-    case core::dsl::ElementKind::Flow:
-        return theme.iconElementLayout;
-    case core::dsl::ElementKind::Text:
-        return theme.iconElementText;
-    case core::dsl::ElementKind::Image:
-        return theme.iconElementImage;
-    case core::dsl::ElementKind::Svg:
-        return theme.iconElementSvg;
-    case core::dsl::ElementKind::Shadertoy:
-        return theme.iconElementShadertoy;
-    case core::dsl::ElementKind::Rect:
-    case core::dsl::ElementKind::Polygon:
-        break;
-    }
-    return theme.iconElementShape;
-}
-
 // Nodes start collapsed: a row is only opened if the user expanded it, so a tree
 // of a whole page does not unfold itself the moment the tab is shown.
 bool isExpanded(const std::vector<std::string>& expanded, const std::string& id) {

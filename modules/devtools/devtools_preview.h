@@ -91,7 +91,8 @@ void drawBoxPreview(const core::dsl::runtime::ElementBox& box,
                     const BoxPreviewPalette& palette,
                     core::RoundedRectPrimitive& primitive,
                     core::TextPrimitive* textPrimitive = nullptr,
-                    const core::Vec2* relativeOffset = nullptr);
+                    const core::Vec2* relativeOffset = nullptr,
+                    unsigned int iconCodepoint = 0);
 
 } // namespace modules::devtools
 

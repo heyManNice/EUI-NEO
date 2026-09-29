@@ -116,12 +116,18 @@ struct DevtoolsTheme {
     // colour row whose channels are open.
     unsigned int iconDisclosureExpanded = 0xF0D7;
     unsigned int iconDisclosureCollapsed = 0xF0DA;
+    unsigned int iconElementStack = 0xF5FD;     // fa-layer-group
+    unsigned int iconElementRow = 0xF0DB;       // fa-table-columns
+    unsigned int iconElementColumn = 0xF0C9;    // fa-bars
+    unsigned int iconElementFlow = 0xF149;      // fa-arrow-turn-down
+    unsigned int iconElementRect = 0xF0C8;      // fa-square
+    unsigned int iconElementPolygon = 0xF5EE;   // fa-draw-polygon
+    unsigned int iconElementText = 0xF031;      // fa-font
+    unsigned int iconElementImage = 0xF03E;     // fa-image
+    unsigned int iconElementSvg = 0xF55B;       // fa-bezier-curve
+    unsigned int iconElementShadertoy = 0xF0D0; // fa-wand-magic-sparkles
     unsigned int iconElementLayout = 0xF0C9;
     unsigned int iconElementShape = 0xF0C8;
-    unsigned int iconElementText = 0xF031;
-    unsigned int iconElementImage = 0xF03E;
-    unsigned int iconElementSvg = 0xF1C5;
-    unsigned int iconElementShadertoy = 0xF085;
     unsigned int iconRevert = 0xF2EA;
 
     // Font family for DevTools UI text, isolated from host application styling.
@@ -185,6 +191,33 @@ inline const components::theme::ThemeColorTokens& devtoolsControlTheme() {
         return value;
     }();
     return tokens;
+}
+
+inline unsigned int elementKindIcon(core::dsl::ElementKind kind) {
+    const DevtoolsTheme& theme = devtoolsTheme();
+    switch (kind) {
+    case core::dsl::ElementKind::Stack:
+        return theme.iconElementStack;
+    case core::dsl::ElementKind::Row:
+        return theme.iconElementRow;
+    case core::dsl::ElementKind::Column:
+        return theme.iconElementColumn;
+    case core::dsl::ElementKind::Flow:
+        return theme.iconElementFlow;
+    case core::dsl::ElementKind::Rect:
+        return theme.iconElementRect;
+    case core::dsl::ElementKind::Polygon:
+        return theme.iconElementPolygon;
+    case core::dsl::ElementKind::Text:
+        return theme.iconElementText;
+    case core::dsl::ElementKind::Image:
+        return theme.iconElementImage;
+    case core::dsl::ElementKind::Svg:
+        return theme.iconElementSvg;
+    case core::dsl::ElementKind::Shadertoy:
+        return theme.iconElementShadertoy;
+    }
+    return theme.iconElementShape;
 }
 
 } // namespace modules::devtools
