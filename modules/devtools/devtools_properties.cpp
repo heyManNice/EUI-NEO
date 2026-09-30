@@ -260,14 +260,55 @@ void appendSummary(std::vector<PropertyRow>& rows, const char* label, std::strin
     rows.push_back(std::move(row));
 }
 
+void appendHeader(std::vector<PropertyRow>& rows, const char* label) {
+    PropertyRow row;
+    row.kind = PropertyRowKind::Header;
+    row.label = label;
+    rows.push_back(std::move(row));
+}
+
+const char* hitTestModeName(core::dsl::HitTestMode mode) {
+    switch (mode) {
+    case core::dsl::HitTestMode::Layout: return "Layout";
+    case core::dsl::HitTestMode::Transformed: return "Transformed";
+    case core::dsl::HitTestMode::None: return "None";
+    }
+    return "Layout";
+}
+
+const char* easeName(core::Ease ease) {
+    switch (ease) {
+    case core::Ease::Linear: return "Linear";
+    case core::Ease::InQuad: return "InQuad";
+    case core::Ease::OutQuad: return "OutQuad";
+    case core::Ease::InOutQuad: return "InOutQuad";
+    case core::Ease::OutCubic: return "OutCubic";
+    case core::Ease::InOutCubic: return "InOutCubic";
+    case core::Ease::OutExpo: return "OutExpo";
+    case core::Ease::OutBack: return "OutBack";
+    }
+    return "Custom";
+}
+
+std::string acceptedButtonsName(core::PointerButtons buttons) {
+    std::string result;
+    if (buttons.contains(core::PointerButton::Left)) result += "Left ";
+    if (buttons.contains(core::PointerButton::Right)) result += "Right ";
+    if (buttons.contains(core::PointerButton::Middle)) result += "Middle ";
+    if (buttons.contains(core::PointerButton::X1)) result += "X1 ";
+    if (buttons.contains(core::PointerButton::X2)) result += "X2 ";
+    if (result.empty()) return "None";
+    if (result.back() == ' ') result.pop_back();
+    return result;
+}
+
 std::vector<PropertyRow> buildVisualPropertyRows(const ElementValues& properties,
                                                  const DevtoolsPanelState* panelState) {
     std::vector<PropertyRow> rows;
-    rows.reserve(propertyDescriptors().size() + 10);
+    rows.reserve(propertyDescriptors().size() + 20);
 
     char buffer[128];
     appendSummary(rows, "Id", properties.id);
-    // The id is the one value worth copying out of the panel.
     rows.back().copyable = true;
     std::snprintf(buffer, sizeof(buffer), "%.0f, %.0f   %.0f x %.0f", properties.frame.x, properties.frame.y,
                   properties.frame.width, properties.frame.height);
@@ -293,11 +334,8 @@ std::vector<PropertyRow> buildVisualPropertyRows(const ElementValues& properties
     std::snprintf(buffer, sizeof(buffer), "%d", properties.zIndex);
     appendSummary(rows, "Z", buffer);
 
-    PropertyRow header;
-    header.kind = PropertyRowKind::Header;
-    header.label = "Visual";
-    rows.push_back(header);
-
+    // Section 1: Visual Styling (interactive controls)
+    appendHeader(rows, "Visual Styling");
     for (const PropertyDescriptor& descriptor : propertyDescriptors()) {
         if ((descriptor.kinds & elementKindBit(properties.kind)) == 0) {
             continue;
@@ -320,8 +358,6 @@ std::vector<PropertyRow> buildVisualPropertyRows(const ElementValues& properties
         }
         rows.push_back(std::move(row));
 
-        // The channels of the colour being edited sit right under their row, so the
-        // list stays the only thing that scrolls.
         if (panelState == nullptr || !panelState->colorEditorOpen ||
             panelState->colorEditorField != descriptor.field ||
             fieldKind(descriptor.field) != FieldKind::Color) {
@@ -336,67 +372,79 @@ std::vector<PropertyRow> buildVisualPropertyRows(const ElementValues& properties
             rows.push_back(std::move(channelRow));
         }
     }
+
+    // Section 2: Spatial Transform & 2.5D
+    appendHeader(rows, "Spatial Transform");
+    std::snprintf(buffer, sizeof(buffer), "%.1f, %.1f", properties.transform.translate.x,
+                  properties.transform.translate.y);
+    appendSummary(rows, "Translate", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%.2f, %.2f", properties.transform.scale.x,
+                  properties.transform.scale.y);
+    appendSummary(rows, "Scale", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%.1f deg", properties.transform.rotate);
+    appendSummary(rows, "Rotate", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%.0f", properties.transform.perspective);
+    appendSummary(rows, "Perspective", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%.2f", properties.pressedScale);
+    appendSummary(rows, "Pressed scale", buffer);
+    appendSummary(rows, "Hit test", hitTestModeName(properties.hitTestMode));
+
     return rows;
 }
 
 std::vector<PropertyRow> buildLayoutPropertyRows(const ElementValues& properties) {
     std::vector<PropertyRow> rows;
-    rows.reserve(16);
-
-    PropertyRow header;
-    header.kind = PropertyRowKind::Header;
-    header.label = "Layout Sizing";
-    rows.push_back(header);
-
+    rows.reserve(24);
     char buffer[128];
+
+    // Section 1: Box Model
+    appendHeader(rows, "Box Model");
+    std::snprintf(buffer, sizeof(buffer), "%.0f, %.0f   %.0f x %.0f", properties.frame.x, properties.frame.y,
+                  properties.frame.width, properties.frame.height);
+    appendSummary(rows, "Frame", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%.0f / %.0f / %.0f / %.0f", properties.margin.left, properties.margin.top,
+                  properties.margin.right, properties.margin.bottom);
+    appendSummary(rows, "Margin", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%.0f / %.0f / %.0f / %.0f", properties.padding.left, properties.padding.top,
+                  properties.padding.right, properties.padding.bottom);
+    appendSummary(rows, "Padding", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%.0f", properties.borderWidth);
+    appendSummary(rows, "Border width", buffer);
+
+    // Section 2: Sizing & Constraints
+    appendHeader(rows, "Sizing & Constraints");
     appendSummary(rows, "Width", formatSizeValue(properties.widthSize));
     appendSummary(rows, "Height", formatSizeValue(properties.heightSize));
-
     std::snprintf(buffer, sizeof(buffer), "%.0f x %.0f", properties.minLayoutWidth, properties.minLayoutHeight);
     appendSummary(rows, "Min size", buffer);
-
     std::snprintf(buffer, sizeof(buffer), "%.0f x %.0f", properties.maxLayoutWidth, properties.maxLayoutHeight);
     appendSummary(rows, "Max size", buffer);
 
-    header.label = "Alignment & Flow";
-    rows.push_back(header);
-
+    // Section 3: Alignment & Flow
+    appendHeader(rows, "Alignment & Flow");
+    if (properties.hasX || properties.hasY) {
+        std::snprintf(buffer, sizeof(buffer), "x: %.0f, y: %.0f", properties.explicitX, properties.explicitY);
+        appendSummary(rows, "Position", buffer);
+    } else {
+        appendSummary(rows, "Position", "auto");
+    }
     std::snprintf(buffer, sizeof(buffer), "grow %.1f, shrink %.1f", properties.flexGrow, properties.flexShrink);
     appendSummary(rows, "Flex", buffer);
     appendSummary(rows, "Main align", alignName(properties.mainAlign));
     appendSummary(rows, "Cross align", alignName(properties.crossAlign));
     appendSummary(rows, "Spacing", formatNumber(properties.spacing));
+    appendSummary(rows, "Line spacing", formatNumber(properties.lineSpacing));
     appendSummary(rows, "Ignore layout", properties.ignoreLayout ? "yes" : "no");
-
-    header.label = "Box Model";
-    rows.push_back(header);
-
-    std::snprintf(buffer, sizeof(buffer), "%.0f, %.0f   %.0f x %.0f", properties.frame.x, properties.frame.y,
-                  properties.frame.width, properties.frame.height);
-    appendSummary(rows, "Frame", buffer);
-
-    std::snprintf(buffer, sizeof(buffer), "%.0f / %.0f / %.0f / %.0f", properties.margin.left, properties.margin.top,
-                  properties.margin.right, properties.margin.bottom);
-    appendSummary(rows, "Margin", buffer);
-
-    std::snprintf(buffer, sizeof(buffer), "%.0f / %.0f / %.0f / %.0f", properties.padding.left, properties.padding.top,
-                  properties.padding.right, properties.padding.bottom);
-    appendSummary(rows, "Padding", buffer);
 
     return rows;
 }
 
 std::vector<PropertyRow> buildContentPropertyRows(const ElementValues& properties) {
     std::vector<PropertyRow> rows;
-    rows.reserve(16);
-
-    PropertyRow header;
-    header.kind = PropertyRowKind::Header;
+    rows.reserve(24);
 
     if (properties.kind == ElementKind::Text || !properties.text.empty()) {
-        header.label = "Text Content";
-        rows.push_back(header);
-
+        appendHeader(rows, "Text Content");
         appendSummary(rows, "Text", properties.text.empty() ? "(empty)" : properties.text);
         appendSummary(rows, "Font family", properties.fontFamily.empty() ? "(default)" : properties.fontFamily);
         appendSummary(rows, "Font size", formatNumber(properties.fontSize));
@@ -411,24 +459,36 @@ std::vector<PropertyRow> buildContentPropertyRows(const ElementValues& propertie
         appendSummary(rows, "Align", align);
     }
 
-    if (properties.kind == ElementKind::Image || !properties.imageSource.empty()) {
-        header.label = "Image Content";
-        rows.push_back(header);
-
+    if (properties.kind == ElementKind::Image || !properties.imageSource.empty() ||
+        properties.hasImageStream || properties.hasGpuImage) {
+        appendHeader(rows, "Image & Media Stream");
         appendSummary(rows, "Source", properties.imageSource.empty() ? "(none)" : properties.imageSource);
         appendSummary(rows, "Fit", imageFitName(properties.imageFit));
+        appendSummary(rows, "Flip vertical", properties.imageFlipVertically ? "yes" : "no");
+        appendSummary(rows, "Stream", properties.hasImageStream ? "active" : "none");
+        appendSummary(rows, "GPU Image", properties.hasGpuImage
+                      ? ("rev " + std::to_string(properties.gpuImageRevision))
+                      : "none");
     }
 
     if (properties.kind == ElementKind::Svg || !properties.svgSource.empty()) {
-        header.label = "SVG Content";
-        rows.push_back(header);
-
+        appendHeader(rows, "SVG Vector");
         appendSummary(rows, "SVG Source", properties.svgSource.empty() ? "(none)" : properties.svgSource);
     }
 
+    if (properties.kind == ElementKind::Polygon || properties.polygonPointsCount > 0) {
+        appendHeader(rows, "Polygon Geometry");
+        appendSummary(rows, "Vertices", std::to_string(properties.polygonPointsCount) + " points");
+    }
+
+    if (properties.isShadertoy) {
+        appendHeader(rows, "Shadertoy Effects");
+        appendSummary(rows, "Time scale", formatNumber(properties.shaderToyTimeScale));
+        appendSummary(rows, "Resolution", formatNumber(properties.shaderToyResolutionScale));
+        appendSummary(rows, "Paused", properties.shaderToyPaused ? "yes" : "no");
+    }
+
     if (rows.empty()) {
-        header.label = "Content";
-        rows.push_back(header);
         appendSummary(rows, "Kind", elementKindName(properties.kind));
         appendSummary(rows, "Media / Text", "none");
     }
@@ -438,21 +498,20 @@ std::vector<PropertyRow> buildContentPropertyRows(const ElementValues& propertie
 
 std::vector<PropertyRow> buildBehaviorPropertyRows(const ElementValues& properties) {
     std::vector<PropertyRow> rows;
-    rows.reserve(16);
+    rows.reserve(24);
 
-    PropertyRow header;
-    header.kind = PropertyRowKind::Header;
-    header.label = "Interaction & State";
-    rows.push_back(header);
-
+    // Section 1: Interaction & Input
+    appendHeader(rows, "Interaction & Input");
     appendSummary(rows, "Interactive", properties.interactive ? "yes" : "no");
     appendSummary(rows, "Disabled", properties.disabled ? "yes" : "no");
     appendSummary(rows, "Focusable", properties.focusable ? "yes" : "no");
+    appendSummary(rows, "Preserve focus", properties.preserveFocusOnPress ? "yes" : "no");
     appendSummary(rows, "Cursor", cursorShapeName(properties.cursor));
+    appendSummary(rows, "Buttons", acceptedButtonsName(properties.acceptedButtons));
+    appendSummary(rows, "Drag threshold", formatNumber(properties.dragThreshold) + " px");
 
-    header.label = "Event Listeners";
-    rows.push_back(header);
-
+    // Section 2: Event Listeners
+    appendHeader(rows, "Event Listeners");
     appendSummary(rows, "onClick", properties.hasOnClick ? "bound" : "none");
     appendSummary(rows, "onPress", properties.hasOnPress ? "bound" : "none");
     appendSummary(rows, "onRelease", properties.hasOnRelease ? "bound" : "none");
@@ -462,11 +521,27 @@ std::vector<PropertyRow> buildBehaviorPropertyRows(const ElementValues& properti
     appendSummary(rows, "onDrag", properties.hasOnDrag ? "bound" : "none");
     appendSummary(rows, "onKey", properties.hasOnKeyEvent ? "bound" : "none");
 
+    // Section 3: State Feedback & Animation
+    appendHeader(rows, "State & Animation");
     if (properties.hasStateColors) {
-        header.label = "State Colors";
-        rows.push_back(header);
-        appendSummary(rows, "Hover", formatHex(properties.hoverColor));
-        appendSummary(rows, "Pressed", formatHex(properties.pressedColor));
+        appendSummary(rows, "Hover color", formatHex(properties.hoverColor));
+        appendSummary(rows, "Pressed color", formatHex(properties.pressedColor));
+    }
+    appendSummary(rows, "Transition", properties.hasTransition
+                  ? (formatNumber(properties.transitionDuration) + "s (" + easeName(properties.transitionEase) + ")")
+                  : "none");
+    if (properties.timerSeconds > 0.0f) {
+        appendSummary(rows, "Timer", formatNumber(properties.timerSeconds) + "s");
+    } else {
+        appendSummary(rows, "Timer", properties.hasOnTimer ? "bound" : "none");
+    }
+    appendSummary(rows, "Frame callback", properties.hasOnFrame ? "bound" : "none");
+    if (properties.hasImeRect) {
+        char buffer[64];
+        std::snprintf(buffer, sizeof(buffer), "%.0f, %.0f  %.0fx%.0f",
+                      properties.imeRect.x, properties.imeRect.y,
+                      properties.imeRect.width, properties.imeRect.height);
+        appendSummary(rows, "IME Rect", buffer);
     }
 
     return rows;
@@ -607,17 +682,29 @@ void composePropertyRow(core::dsl::Ui& ui,
     const float switchWidth = theme.propertySwitchTrackWidth + controlInset * 2.0f;
     const float sliderWidth = std::max(24.0f, editorWidth - controlInset * 2.0f);
 
+    if (row.kind == PropertyRowKind::Header) {
+        ui.text(id + ".label")
+            .fontFamily(theme.fontFamily)
+            .width(core::SizeValue::fill())
+            .height(theme.elementRowHeight)
+            .text(row.label)
+            .fontSize(theme.elementRowFontSize)
+            .fontWeight(600)
+            .color(theme.sectionLabel)
+            .horizontalAlign(core::HorizontalAlign::Left)
+            .verticalAlign(core::VerticalAlign::Center)
+            .build();
+        return;
+    }
+
     ui.text(id + ".label")
         .fontFamily(theme.fontFamily)
         .size(theme.propertyLabelWidth, theme.elementRowHeight)
         .text(row.label)
         .fontSize(theme.elementRowFontSize)
-        .color(row.kind == PropertyRowKind::Header ? theme.sectionLabel : theme.metricLabel)
+        .color(theme.metricLabel)
         .verticalAlign(core::VerticalAlign::Center)
         .build();
-    if (row.kind == PropertyRowKind::Header) {
-        return;
-    }
     if (row.kind == PropertyRowKind::Summary) {
         const std::function<void()> copy = row.copyable && actions.properties.copyElementId
             ? std::function<void()>([copy = actions.properties.copyElementId, elementId] { copy(elementId); })

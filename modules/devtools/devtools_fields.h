@@ -303,7 +303,17 @@ struct ElementValues {
     core::Align mainAlign = core::Align::START;
     core::Align crossAlign = core::Align::START;
     float spacing = 0.0f;
+    float lineSpacing = 0.0f;
     bool ignoreLayout = false;
+    bool hasX = false;
+    bool hasY = false;
+    float explicitX = 0.0f;
+    float explicitY = 0.0f;
+
+    // Transform & 2.5D
+    core::Transform transform;
+    float pressedScale = 1.0f;
+    core::dsl::HitTestMode hitTestMode = core::dsl::HitTestMode::Layout;
 
     // Typography & Content
     std::string fontFamily;
@@ -316,11 +326,25 @@ struct ElementValues {
     core::VerticalAlign verticalAlign = core::VerticalAlign::Top;
     std::string imageSource;
     core::ImageFit imageFit = core::ImageFit::Cover;
+    bool imageFlipVertically = false;
+    bool hasImageStream = false;
+    bool hasGpuImage = false;
+    std::uint64_t gpuImageRevision = 0;
     std::string svgSource;
+    std::size_t polygonPointsCount = 0;
+    bool isShadertoy = false;
+    float shaderToyTimeScale = 1.0f;
+    float shaderToyResolutionScale = 1.0f;
+    bool shaderToyPaused = false;
 
     // Behavior & Input
     bool focusable = false;
+    bool preserveFocusOnPress = false;
     core::CursorShape cursor = core::CursorShape::Arrow;
+    core::PointerButtons acceptedButtons = core::PointerButton::Left;
+    float dragThreshold = 2.0f;
+    bool hasImeRect = false;
+    core::Rect imeRect;
     bool hasOnClick = false;
     bool hasOnPress = false;
     bool hasOnRelease = false;
@@ -332,6 +356,12 @@ struct ElementValues {
     bool hasStateColors = false;
     core::Color hoverColor{1.0f, 1.0f, 1.0f, 1.0f};
     core::Color pressedColor{1.0f, 1.0f, 1.0f, 1.0f};
+    bool hasTransition = false;
+    float transitionDuration = 0.0f;
+    core::Ease transitionEase = core::Ease::OutCubic;
+    float timerSeconds = 0.0f;
+    bool hasOnTimer = false;
+    bool hasOnFrame = false;
 
     std::array<FieldValue, kElementFieldCount> fields{};
     std::uint32_t written = 0;
