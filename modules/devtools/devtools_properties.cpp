@@ -110,54 +110,6 @@ bool propertyOverridden(const ElementValues& values, ElementField field) {
     return values.wasWritten(field);
 }
 
-// The colour editor exposes the channels a picker would, so a colour can be built
-// without a text field: the panel has no keyboard input yet.
-void colorToHsv(const core::Color& color, float& hue, float& saturation, float& value) {
-    const float maximum = std::max(std::max(color.r, color.g), color.b);
-    const float minimum = std::min(std::min(color.r, color.g), color.b);
-    const float delta = maximum - minimum;
-    value = maximum;
-    saturation = maximum <= 0.0f ? 0.0f : delta / maximum;
-    if (delta <= 0.0f) {
-        hue = 0.0f;
-        return;
-    }
-    if (maximum == color.r) {
-        hue = 60.0f * std::fmod((color.g - color.b) / delta, 6.0f);
-    } else if (maximum == color.g) {
-        hue = 60.0f * (((color.b - color.r) / delta) + 2.0f);
-    } else {
-        hue = 60.0f * (((color.r - color.g) / delta) + 4.0f);
-    }
-    if (hue < 0.0f) {
-        hue += 360.0f;
-    }
-}
-
-core::Color colorFromHsv(float hue, float saturation, float value, float alpha) {
-    const float h = std::fmod(std::fmod(hue, 360.0f) + 360.0f, 360.0f) / 60.0f;
-    const float c = value * saturation;
-    const float x = c * (1.0f - std::fabs(std::fmod(h, 2.0f) - 1.0f));
-    const float m = value - c;
-    float r = 0.0f;
-    float g = 0.0f;
-    float b = 0.0f;
-    if (h < 1.0f) {
-        r = c; g = x;
-    } else if (h < 2.0f) {
-        r = x; g = c;
-    } else if (h < 3.0f) {
-        g = c; b = x;
-    } else if (h < 4.0f) {
-        g = x; b = c;
-    } else if (h < 5.0f) {
-        r = x; b = c;
-    } else {
-        r = c; b = x;
-    }
-    return {std::clamp(r + m, 0.0f, 1.0f), std::clamp(g + m, 0.0f, 1.0f), std::clamp(b + m, 0.0f, 1.0f),
-            std::clamp(alpha, 0.0f, 1.0f)};
-}
 
 std::string formatNumber(float value) {
     char buffer[32];
@@ -250,7 +202,7 @@ struct PropertyRow {
     bool copyable = false;
 };
 
-const char* const kColorChannelLabels[4] = {"Hue", "Sat", "Value", "Alpha"};
+const char* const kColorChannelLabels[4] = {"Red", "Green", "Blue", "Alpha"};
 
 void appendSummary(std::vector<PropertyRow>& rows, const char* label, std::string value) {
     PropertyRow row;
@@ -743,16 +695,12 @@ void composePropertyRow(core::dsl::Ui& ui,
     case FieldKind::Color: {
         if (row.kind == PropertyRowKind::Channel) {
             // A channel of the colour its row above opened: dragged as one number.
-            float hue = 0.0f;
-            float saturation = 0.0f;
-            float value = 0.0f;
             core::Color current{1.0f, 1.0f, 1.0f, 1.0f};
-            if (state.panelState != nullptr) {
+            if (state.panelState != nullptr && properties.properties != nullptr) {
                 current = propertyColor(*properties.properties, state.panelState->colorEditorField);
             }
-            colorToHsv(current, hue, saturation, value);
-            const float channels[4] = {hue / 360.0f, saturation, value, current.a};
-            const float channelValue = channels[row.channel];
+            const float channels[4] = {current.r, current.g, current.b, current.a};
+            const float channelValue = std::clamp(channels[row.channel], 0.0f, 1.0f);
 
             composeControlSlot(ui, id + ".control", editorWidth, core::Align::CENTER, [&] {
                 components::slider(ui, id + ".slider")
@@ -764,25 +712,28 @@ void composePropertyRow(core::dsl::Ui& ui,
                         if (!set) {
                             return;
                         }
-                        float h = 0.0f;
-                        float s = 0.0f;
-                        float v = 0.0f;
-                        colorToHsv(current, h, s, v);
+                        core::Color updated = current;
                         switch (channel) {
-                        case 0: h = normalized * 360.0f; break;
-                        case 1: s = normalized; break;
-                        case 2: v = normalized; break;
+                        case 0: updated.r = normalized; break;
+                        case 1: updated.g = normalized; break;
+                        case 2: updated.b = normalized; break;
+                        case 3: updated.a = normalized; break;
                         default: break;
                         }
-                        const float alpha = channel == 3 ? normalized : current.a;
-                        set(elementId, field, fieldValueOf(colorFromHsv(h, s, v, alpha)));
+                        set(elementId, field, fieldValueOf(updated));
                     })
                     .build();
             });
+            std::string displayText;
+            if (row.channel < 3) {
+                displayText = std::to_string(static_cast<int>(std::lround(channelValue * 255.0f)));
+            } else {
+                displayText = formatNumber(channelValue);
+            }
             ui.text(id + ".value")
                 .fontFamily(theme.fontFamily)
                 .size(theme.propertyValueWidth, theme.elementRowHeight)
-                .text(formatNumber(row.channel == 0 ? channelValue * 360.0f : channelValue))
+                .text(displayText)
                 .fontSize(theme.elementRowFontSize)
                 .color(theme.metricValue)
                 .horizontalAlign(core::HorizontalAlign::Right)
