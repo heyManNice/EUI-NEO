@@ -81,7 +81,6 @@ void compose(eui::Ui& ui, const eui::Screen& screen) {
 | `State` | `InstanceStore` 的 15 张 id→instance 表（rects / layouts / scrollStates / sliderStates / timers / dirtyKeys / paintBounds / retainedLayers …） | 某个元素的滚动、滑块、计时器状态到底是什么；哪些实例已经 unseen 却没被回收 | 只读快照 |
 | `Input` | 事件流与命中结果（`hitTestFocusable`、`focusedId_`、`hoverTargetCache`、被捕获的交互） | 这个事件被谁接走了——交互子元素会吞掉父元素的处理，是 DSL 里最难靠猜的一类问题 | 路由上报 |
 | `Frames` | `requestUiUpdate` / `requestFrame` / 动画 / 惯性滚动，加上已有的 dirty rect 计数 | 为什么一直在重绘，这一帧为什么重绘 | 帧原因上报 |
-| `Layout` | `Element::frame` 与 `LayoutInstance` | 测量值与实际 frame 的差、溢出父容器、被祖先裁掉 | 无（数据已在元素树上） |
 | `Animations` | transition / easing / timer 实例与 `isAnimating()` | 是谁让这一帧动起来的，计时器为什么没触发 | 小 |
 | `Resources` | 字体（默认 / 图标 / 回退，缺字）、图片（stb / libpng / nanosvg、远程就绪）、shadertoy | assets 丢失、字体回退没生效、纹理与字体内存增长 | 中等，要接资源缓存 |
 | `Windows` | `DslWindowManager` 与 `AppRunner` | 多窗口与 modal 状态、tray 可用与被隐藏、每窗口 fps 与 dpi | 中等，面板目前只认识主窗口 |

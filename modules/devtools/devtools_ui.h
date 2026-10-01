@@ -20,7 +20,6 @@ enum class DevtoolsTab {
     State,
     Input,
     Frames,
-    Layout,
     Animations,
     Resources,
     Windows,

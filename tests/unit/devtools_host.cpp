@@ -925,7 +925,6 @@ int main() {
             {"state.tab", DevtoolsTab::State},
             {"input.tab", DevtoolsTab::Input},
             {"frames.tab", DevtoolsTab::Frames},
-            {"layout.tab", DevtoolsTab::Layout},
             {"animations.tab", DevtoolsTab::Animations},
             {"resources.tab", DevtoolsTab::Resources},
             {"windows.tab", DevtoolsTab::Windows},

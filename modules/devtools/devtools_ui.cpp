@@ -56,8 +56,6 @@ constexpr TabEntry kTabs[] = {
     {"state.tab", "State", DevtoolsTab::State, "runtime state and the per-id instances behind each element"},
     {"input.tab", "Input", DevtoolsTab::Input, "the event stream and which element each event reached"},
     {"frames.tab", "Frames", DevtoolsTab::Frames, "why each frame repainted and what it repainted"},
-    {"layout.tab", "Layout", DevtoolsTab::Layout,
-     "measured sizes against frames, overflows and clipped elements"},
     {"animations.tab", "Animations", DevtoolsTab::Animations, "transitions, timers and what keeps animating"},
     {"resources.tab", "Resources", DevtoolsTab::Resources, "fonts, images and the caches they live in"},
     {"windows.tab", "Windows", DevtoolsTab::Windows, "the windows an app opened and the tray it may hide in"},

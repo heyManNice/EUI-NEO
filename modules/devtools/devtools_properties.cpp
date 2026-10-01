@@ -436,6 +436,19 @@ std::vector<PropertyRow> buildLayoutPropertyRows(const ElementValues& properties
     appendSummary(rows, "Line spacing", formatNumber(properties.lineSpacing));
     appendSummary(rows, "Ignore layout", properties.ignoreLayout ? "yes" : "no");
 
+    // Section 4: Diagnostics
+    appendHeader(rows, "Diagnostics");
+    appendSummary(rows, "Clip to bounds", properties.clip ? "active (clips children)" : "none");
+    if (properties.frame.width <= 0.0f || properties.frame.height <= 0.0f) {
+        appendSummary(rows, "Geometry warning", "collapsed (zero size)");
+    } else if (properties.maxLayoutWidth > 0.0f && properties.frame.width > properties.maxLayoutWidth) {
+        appendSummary(rows, "Constraint warning", "exceeds max width");
+    } else if (properties.maxLayoutHeight > 0.0f && properties.frame.height > properties.maxLayoutHeight) {
+        appendSummary(rows, "Constraint warning", "exceeds max height");
+    } else {
+        appendSummary(rows, "Geometry status", "normal");
+    }
+
     return rows;
 }
 
