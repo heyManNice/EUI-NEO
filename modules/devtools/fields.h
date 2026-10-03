@@ -363,6 +363,29 @@ struct ElementValues {
     bool hasOnTimer = false;
     bool hasOnFrame = false;
 
+    // Live Runtime Instances (read from InstanceStore)
+    bool hasScrollState = false;
+    float scrollOffset = 0.0f;
+    float scrollMaxOffset = 0.0f;
+    float scrollVelocity = 0.0f;
+    float scrollStep = 0.0f;
+
+    bool hasSliderState = false;
+    float sliderValue = 0.0f;
+    float sliderWidth = 0.0f;
+    float sliderKnobSize = 0.0f;
+    bool sliderDragging = false;
+
+    bool hasLiveInteraction = false;
+    bool liveHover = false;
+    bool livePressed = false;
+    bool liveActive = false;
+
+    bool hasLiveTimer = false;
+    float liveTimerElapsed = 0.0f;
+    float liveTimerSeconds = 0.0f;
+    bool liveTimerActive = false;
+
     std::array<FieldValue, kElementFieldCount> fields{};
     std::uint32_t written = 0;
 

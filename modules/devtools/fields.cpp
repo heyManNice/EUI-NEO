@@ -143,6 +143,44 @@ ElementValues readElementValues(const core::dsl::Runtime& page, const std::strin
     values.hasOnTimer = static_cast<bool>(element->onTimer);
     values.hasOnFrame = static_cast<bool>(element->onFrame);
 
+    // Live Runtime Instances (read from InstanceStore)
+    const auto& store = page.instances();
+    const std::string scrollId = !element->scrollStateId.empty() ? element->scrollStateId : id;
+    const auto scrollIt = store.scrollStates.find(scrollId);
+    if (scrollIt != store.scrollStates.end()) {
+        values.hasScrollState = true;
+        values.scrollOffset = scrollIt->second.offset;
+        values.scrollMaxOffset = scrollIt->second.maxOffset;
+        values.scrollVelocity = scrollIt->second.velocity;
+        values.scrollStep = scrollIt->second.step;
+    }
+
+    const std::string sliderId = !element->sliderStateId.empty() ? element->sliderStateId : id;
+    const auto sliderIt = store.sliderStates.find(sliderId);
+    if (sliderIt != store.sliderStates.end()) {
+        values.hasSliderState = true;
+        values.sliderValue = sliderIt->second.value;
+        values.sliderWidth = sliderIt->second.width;
+        values.sliderKnobSize = sliderIt->second.knobSize;
+        values.sliderDragging = sliderIt->second.dragging;
+    }
+
+    const auto interactIt = store.interactions.find(id);
+    if (interactIt != store.interactions.end()) {
+        values.hasLiveInteraction = true;
+        values.liveHover = interactIt->second.state.hover;
+        values.livePressed = interactIt->second.state.pressed;
+        values.liveActive = interactIt->second.state.active;
+    }
+
+    const auto timerIt = store.timers.find(id);
+    if (timerIt != store.timers.end()) {
+        values.hasLiveTimer = true;
+        values.liveTimerElapsed = timerIt->second.elapsed;
+        values.liveTimerSeconds = timerIt->second.seconds;
+        values.liveTimerActive = timerIt->second.active;
+    }
+
     for (int index = 0; index < kElementFieldCount; ++index) {
         const ElementField field = static_cast<ElementField>(index);
         values.fields[static_cast<std::size_t>(index)] = readElementField(*element, field);

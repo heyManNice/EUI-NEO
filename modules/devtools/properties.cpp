@@ -111,9 +111,13 @@ bool propertyOverridden(const ElementValues& values, ElementField field) {
 }
 
 
-std::string formatNumber(float value) {
+std::string formatNumber(float value, int decimals = -1) {
     char buffer[32];
-    std::snprintf(buffer, sizeof(buffer), std::fabs(value) < 10.0f ? "%.2f" : "%.1f", value);
+    if (decimals >= 0) {
+        std::snprintf(buffer, sizeof(buffer), "%.*f", decimals, value);
+    } else {
+        std::snprintf(buffer, sizeof(buffer), std::fabs(value) < 10.0f ? "%.2f" : "%.1f", value);
+    }
     return buffer;
 }
 
@@ -507,6 +511,38 @@ std::vector<PropertyRow> buildBehaviorPropertyRows(const ElementValues& properti
                       properties.imeRect.x, properties.imeRect.y,
                       properties.imeRect.width, properties.imeRect.height);
         appendSummary(rows, "IME Rect", buffer);
+    }
+
+    // Section 4: Live Runtime State (from InstanceStore)
+    if (properties.hasScrollState || properties.hasSliderState ||
+        properties.hasLiveInteraction || properties.hasLiveTimer) {
+        appendHeader(rows, "Live Runtime State");
+        if (properties.hasScrollState) {
+            appendSummary(rows, "Scroll offset",
+                          formatNumber(properties.scrollOffset) + " / " +
+                          formatNumber(properties.scrollMaxOffset) + " px");
+            appendSummary(rows, "Scroll velocity", formatNumber(properties.scrollVelocity) + " px/s");
+        }
+        if (properties.hasSliderState) {
+            appendSummary(rows, "Slider value",
+                          formatNumber(properties.sliderValue, 3) + " (" +
+                          formatNumber(properties.sliderValue * 100.0f, 1) + "%)");
+            appendSummary(rows, "Slider dragging", properties.sliderDragging ? "YES (active)" : "no");
+        }
+        if (properties.hasLiveInteraction) {
+            std::string stateStr;
+            if (properties.liveHover) stateStr += "hover ";
+            if (properties.livePressed) stateStr += "pressed ";
+            if (properties.liveActive) stateStr += "active ";
+            if (stateStr.empty()) stateStr = "idle";
+            appendSummary(rows, "Interaction", stateStr);
+        }
+        if (properties.hasLiveTimer) {
+            appendSummary(rows, "Timer elapsed",
+                          formatNumber(properties.liveTimerElapsed, 2) + "s / " +
+                          formatNumber(properties.liveTimerSeconds, 2) + "s" +
+                          (properties.liveTimerActive ? " (running)" : " (idle)"));
+        }
     }
 
     return rows;

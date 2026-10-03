@@ -732,14 +732,16 @@ if(EUI_BUILD_TEST_FIXTURES)
         # does — and the module only builds the panel where the tooling seam is. The
         # rest of the unit tests always build.
         if((unit_name STREQUAL "devtools_host" OR unit_name STREQUAL "devtools_preview"
-            OR unit_name STREQUAL "devtools_tree" OR unit_name STREQUAL "devtools_fields")
+            OR unit_name STREQUAL "devtools_tree" OR unit_name STREQUAL "devtools_fields"
+            OR unit_name STREQUAL "devtools_state")
            AND NOT TARGET eui::module_devtools)
             continue()
         endif()
         add_executable(${unit_name} "${unit_source}")
         target_link_libraries(${unit_name} PRIVATE eui::neo)
         if(unit_name STREQUAL "devtools_host" OR unit_name STREQUAL "devtools_preview"
-           OR unit_name STREQUAL "devtools_tree" OR unit_name STREQUAL "devtools_fields")
+           OR unit_name STREQUAL "devtools_tree" OR unit_name STREQUAL "devtools_fields"
+           OR unit_name STREQUAL "devtools_state")
             target_link_libraries(${unit_name} PRIVATE eui::module_devtools)
         endif()
         eui_apply_compile_options(${unit_name})

@@ -105,6 +105,12 @@ public:
     // the page changes.
     const std::vector<const Element*>& elementRoots() const { return ui_.orderedRoots(); }
 
+#if EUI_TOOLING_ENABLED
+    // The runtime's live instance store. A tool reads it to inspect retained instances
+    // (scrollStates, sliderStates, timers, retainedLayers, etc.) and GC seen flags.
+    const runtime::InstanceStore& instances() const { return instances_; }
+#endif
+
     // Looks one element up by the id a tool holds, to read it or to replace values on it.
     // The walk uses insertion order, so it also works between a compose and the next layout
     // pass. The element is handed out writable, which is the point of the seam: a tool

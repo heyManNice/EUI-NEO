@@ -187,6 +187,7 @@ bool DevtoolsHost::frame(int framebufferWidth, int framebufferHeight, float dpiS
         publishElementTree();
         applyElementPropertyEdits();
         publishElementProperties();
+        publishInstanceState();
         publishPickedElement();
         session_.page->setHoveredElement(hoveredElement());
     }
@@ -228,6 +229,23 @@ void DevtoolsHost::publishElementProperties() {
     session_.propertiesStale = false;
     setElementProperties(readElementValues(*session_.page, id, session_.patches.written(id)));
     setElementPropertyOverrideCount(session_.patches.count());
+}
+
+void DevtoolsHost::publishInstanceState() {
+    if (!hasPage() || !wantsInstanceState()) {
+        return;
+    }
+    const std::uint64_t revision = session_.page->elementStructureRevision();
+    const double now = core::window::timeSeconds();
+    if (revision == session_.stateRevision && now - session_.stateRefreshTime < kRefreshSeconds) {
+        return;
+    }
+    session_.stateRevision = revision;
+    session_.stateRefreshTime = now;
+    session_.instanceState = captureInstanceState(*session_.page);
+    if (visible_) {
+        requestCompose();
+    }
 }
 
 // The panel is the only writer, and what it writes is its own business: the values live in
@@ -316,6 +334,10 @@ bool DevtoolsHost::wantsElementTree() const {
     // The tree is only copied while the panel is visible and shows the tab that
     // displays it.
     return visible_ && panelState_ != nullptr && panelState_->activeTab == DevtoolsTab::Elements;
+}
+
+bool DevtoolsHost::wantsInstanceState() const {
+    return visible_ && panelState_ != nullptr && panelState_->activeTab == DevtoolsTab::State;
 }
 
 void DevtoolsHost::setElementTree(const ElementTreeSnapshot& tree) {
@@ -638,6 +660,14 @@ float DevtoolsHost::scaleScrollOffset() const {
     return panelState_ != nullptr ? panelState_->scaleScrollOffset : 0.0f;
 }
 
+float DevtoolsHost::stateScrollOffset() const {
+    return panelState_ != nullptr ? panelState_->stateScrollOffset : 0.0f;
+}
+
+const InstanceStateSnapshot& DevtoolsHost::instanceState() const {
+    return session_.instanceState;
+}
+
 float DevtoolsHost::scaleOverride() const {
     return panelState_ != nullptr ? panelState_->scaleOverride : 0.0f;
 }
@@ -787,6 +817,7 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
     state.elementTree = &session_.tree;
     state.properties = &session_.properties;
     state.propertyOverrideCount = session_.overrideCount;
+    state.instanceState = &session_.instanceState;
     composeDevtoolsUi(ui, state, buildActions(panelState));
 }
 
@@ -845,6 +876,26 @@ DevtoolsUiActions DevtoolsHost::buildActions(DevtoolsPanelState& state) {
                 session_.windows.setScaleOverride(multiplier);
             }
         }
+        requestCompose();
+    };
+
+    actions.state.setScrollOffset = [this, &state](float offset) {
+        state.stateScrollOffset = offset;
+        requestCompose();
+    };
+    actions.state.setCategory = [this, &state](StateCategory cat) {
+        if (state.stateCategory == cat) {
+            return;
+        }
+        state.stateCategory = cat;
+        state.stateScrollOffset = 0.0f;
+        requestCompose();
+    };
+    actions.state.selectInstance = [this, &state](const std::string& id) {
+        if (state.selectedInstanceId == id) {
+            return;
+        }
+        state.selectedInstanceId = id;
         requestCompose();
     };
 

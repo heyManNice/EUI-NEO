@@ -3,6 +3,7 @@
 #include "modules/devtools/elements.h"
 #include "modules/devtools/performance.h"
 #include "modules/devtools/scale.h"
+#include "modules/devtools/state.h"
 #include "modules/devtools/theme.h"
 
 #include <algorithm>
@@ -55,7 +56,7 @@ constexpr TabEntry kTabs[] = {
     {"performance.tab", "Performance", DevtoolsTab::Performance, nullptr},
     {"elements.tab", "Elements", DevtoolsTab::Elements, nullptr},
     {"scale.tab", "Scale", DevtoolsTab::Scale, nullptr},
-    {"state.tab", "State", DevtoolsTab::State, "runtime state and the per-id instances behind each element"},
+    {"state.tab", "State", DevtoolsTab::State, nullptr},
     {"input.tab", "Input", DevtoolsTab::Input, "the event stream and which element each event reached"},
     {"frames.tab", "Frames", DevtoolsTab::Frames, "why each frame repainted and what it repainted"},
     {"animations.tab", "Animations", DevtoolsTab::Animations, "transitions, timers and what keeps animating"},
@@ -322,6 +323,10 @@ void composePanelContent(core::dsl::Ui& ui, const DevtoolsUiState& state, const 
     }
     if (activeTab == DevtoolsTab::Scale) {
         composeScaleTab(ui, state, actions);
+        return;
+    }
+    if (activeTab == DevtoolsTab::State) {
+        composeStateTab(ui, state, actions);
         return;
     }
     const float contentHeight = std::max(

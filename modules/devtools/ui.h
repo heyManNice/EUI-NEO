@@ -33,6 +33,20 @@ enum class PropertiesTab {
     Behavior
 };
 
+enum class StateCategory {
+    All,
+    Scroll,
+    Slider,
+    Timers,
+    Interactions,
+    Primitives,
+    Layout,
+    Layers,
+    Unseen
+};
+
+struct InstanceStateSnapshot;
+
 // Panel state lives in the overlay Runtime state store, so it follows the panel
 // Runtime lifetime instead of a process-wide object.
 struct DevtoolsPanelState {
@@ -50,6 +64,9 @@ struct DevtoolsPanelState {
     float performanceScrollOffset = 0.0f;
     float elementsScrollOffset = 0.0f;
     float scaleScrollOffset = 0.0f;
+    float stateScrollOffset = 0.0f;
+    StateCategory stateCategory = StateCategory::All;
+    std::string selectedInstanceId;
     float scaleOverride = 0.0f;
     float systemDpi = 1.0f;
     std::string selectedElement;
@@ -110,6 +127,8 @@ struct DevtoolsUiState {
     // Values of the selected element, owned by the host and read once per refresh.
     const modules::devtools::ElementValues* properties = nullptr;
     std::size_t propertyOverrideCount = 0;
+    // Live runtime instances snapshot, owned by the host and read once per refresh.
+    const InstanceStateSnapshot* instanceState = nullptr;
 };
 
 // Commands the panel can request. None of them own state or draw. A host fills the
@@ -171,11 +190,18 @@ struct DevtoolsUiActions {
         std::function<void()> clearFields;
     };
 
+    struct State {
+        std::function<void(float)> setScrollOffset;
+        std::function<void(StateCategory)> setCategory;
+        std::function<void(const std::string&)> selectInstance;
+    };
+
     Shell shell;
     Performance performance;
     Scale scale;
     Tree tree;
     Properties properties;
+    State state;
 };
 
 void composeDevtoolsUi(core::dsl::Ui& ui, const DevtoolsUiState& state, const DevtoolsUiActions& actions);
