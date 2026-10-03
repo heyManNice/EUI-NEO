@@ -657,7 +657,7 @@ void composePropertyRow(core::dsl::Ui& ui,
             .width(core::SizeValue::fill())
             .height(theme.elementRowHeight)
             .text(upperLabel)
-            .fontSize(11.0f)
+            .fontSize(theme.captionFontSize)
             .fontWeight(600)
             .color(theme.sectionLabel)
             .horizontalAlign(core::HorizontalAlign::Left)
@@ -838,7 +838,7 @@ void composePropertyFooter(core::dsl::Ui& ui,
         .fontFamily(theme.fontFamily)
         .size(std::max(0.0f, width - theme.propertyResetWidth), theme.elementRowHeight)
         .text(buffer)
-        .fontSize(theme.elementRowFontSize - 1.0f)
+        .fontSize(theme.captionFontSize)
         .color(properties.overrideCount == 0 ? theme.mutedText : theme.accent)
         .verticalAlign(core::VerticalAlign::Center)
         .build();

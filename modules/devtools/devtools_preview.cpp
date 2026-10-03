@@ -229,7 +229,7 @@ void drawBoxPreview(const core::dsl::runtime::ElementBox& box,
         }
 
         const DevtoolsTheme& theme = devtoolsTheme();
-        const float fontSize = 11.0f * dpiScale;
+        const float fontSize = theme.captionFontSize * dpiScale;
         const float iconFontSize = fontSize * (2.0f / 3.0f);
         const float lineHeight = fontSize * 1.25f;
         const float padX = 7.0f * dpiScale;

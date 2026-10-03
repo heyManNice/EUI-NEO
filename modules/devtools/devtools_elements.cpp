@@ -255,7 +255,7 @@ void composeElementRow(core::dsl::Ui& ui, const std::string& id, const ElementRo
                         .width(core::SizeValue::wrapContent())
                         .height(theme.elementRowHeight)
                         .text(sizeText)
-                        .fontSize(theme.elementRowFontSize - 1.0f)
+                        .fontSize(theme.captionFontSize)
                         .color(theme.mutedText)
                         .verticalAlign(core::VerticalAlign::Center)
                         .build();

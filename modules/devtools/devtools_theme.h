@@ -41,23 +41,25 @@ struct DevtoolsTheme {
     float toolbarCompactPadding = 4.0f;
     float compactWidth = 360.0f;
     float iconButtonSize = 24.0f;
-    float iconSize = 13.0f;
+    float iconSize = 14.0f;
     float iconRadius = 5.0f;
-    float menuIconSize = 14.0f;
-    float tabFontSize = 14.0f;
+    float menuIconSize = 15.0f;
+    float tabFontSize = 16.0f;
     // Ten tabs have to fit the strip of a docked panel, so the padding stays tight.
-    float tabHorizontalPadding = 6.0f;
+    float tabHorizontalPadding = 8.0f;
     float tabIndicatorHeight = 2.0f;
-    float menuWidth = 136.0f;
-    float menuRowHeight = 23.0f;
+    float menuWidth = 152.0f;
+    float menuRowHeight = 26.0f;
     float menuPadding = 2.0f;
-    float menuRowFontSize = 13.0f;
-    float menuRowIconGap = 3.0f;
-    float menuRowIconPadding = 5.0f;
-    float sectionHeight = 28.0f;
-    float sectionFontSize = 15.0f;
-    float metricHeight = 24.0f;
-    float metricFontSize = 14.0f;
+    float menuRowFontSize = 15.0f;
+    float menuRowIconGap = 4.0f;
+    float menuRowIconPadding = 6.0f;
+    float sectionHeight = 32.0f;
+    float sectionFontSize = 17.0f;
+    float metricHeight = 28.0f;
+    float metricFontSize = 16.0f;
+    float metricValueFontSize = 24.0f;
+    float captionFontSize = 13.0f;
     float metricPaddingHorizontal = 18.0f;
     float metricPaddingVertical = 16.0f;
     float metricGap = 4.0f;
@@ -65,7 +67,7 @@ struct DevtoolsTheme {
     float menuShadowOffsetY = 5.0f;
     float indicatorInset = 4.0f;
     float elementRowHeight = 22.0f;
-    float elementRowFontSize = 13.0f;
+    float elementRowFontSize = 15.0f;
     // The row of view options above the element tree: shared with the Scale toolbar height
     // so both tab operation bars maintain an identical height across DevTools.
     float elementOptionsHeight = 34.0f;
@@ -73,15 +75,15 @@ struct DevtoolsTheme {
     float elementOptionBoxSize = iconSize;
     float elementIndent = 12.0f;
     float elementDisclosureSize = 16.0f;
-    float elementKindWidth = 22.0f;
-    float elementFontSize = 10.0f;
-    float elementDetailsHeight = 98.0f;
+    float elementKindWidth = 24.0f;
+    float elementFontSize = 13.0f;
+    float elementDetailsHeight = 108.0f;
     float elementDetailsPadding = 10.0f;
-    float elementDetailsLabelWidth = 56.0f;
-    float propertyLabelWidth = 104.0f;
+    float elementDetailsLabelWidth = 60.0f;
+    float propertyLabelWidth = 116.0f;
     // Wide enough for a `#RRGGBB` value at elementRowFontSize, which is the longest value
     // a row prints.
-    float propertyValueWidth = 58.0f;
+    float propertyValueWidth = 70.0f;
     float propertyRevertWidth = 20.0f;
     // The caret a colour row shows while its channels are open, and the swatch beside it.
     float propertyIndicatorWidth = 16.0f;
