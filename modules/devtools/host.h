@@ -21,6 +21,8 @@ namespace modules::devtools {
 // session already owns the panel's place in the app loop, which keeps one owner per slot.
 bool attachDevtoolsHost();
 void detachDevtoolsHost();
+class DevtoolsHost;
+DevtoolsHost& devtoolsHostInstance();
 
 // Debug panel host. It owns the panel Runtime, the dock geometry, the window it detaches
 // into and the input the page must not see.
@@ -123,6 +125,12 @@ public:
     // without a renderer; it is also what a future "inspect the inspector" view
     // would read.
     ElementTreeSnapshot panelElementTree() const;
+
+    // Direct controls for automation and MCP bridge
+    void openDevtools(DevtoolsTab initialTab = DevtoolsTab::Mcp);
+    void setTab(DevtoolsTab tab);
+    core::dsl::Runtime* pageRuntime() const { return session_.page; }
+    bool modifyElementProperty(const std::string& id, ElementField field, const FieldValue& value);
 
 private:
     // Everything the panel knows about the page it is attached to, and everything it wrote

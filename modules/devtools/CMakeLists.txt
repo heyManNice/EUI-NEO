@@ -29,6 +29,16 @@ add_library(eui_neo_module_devtools
     $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/state.h>
     $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/input.cpp>
     $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/input.h>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/mcp.cpp>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/mcp.h>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/mcp_vision.cpp>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/mcp_vision.h>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/mcp_semantic.cpp>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/mcp_semantic.h>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/mcp_action.cpp>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/mcp_action.h>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/mcp_server.cpp>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/mcp_server.h>
     $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/preview.cpp>
     $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/preview.h>
     $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/tree.cpp>
@@ -40,6 +50,9 @@ add_library(eui::module_devtools ALIAS eui_neo_module_devtools)
 set_target_properties(eui_neo_module_devtools PROPERTIES EXPORT_NAME module_devtools)
 
 target_link_libraries(eui_neo_module_devtools PUBLIC eui::neo)
+if(TARGET png_static)
+    target_link_libraries(eui_neo_module_devtools PRIVATE png_static)
+endif()
 eui_apply_compile_options(eui_neo_module_devtools)
 
 if(EUI_ENABLE_INSTALL)

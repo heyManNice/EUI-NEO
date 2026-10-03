@@ -20,10 +20,7 @@ enum class DevtoolsTab {
     Scale,
     State,
     Input,
-    Frames,
-    Animations,
-    Resources,
-    Windows
+    Mcp
 };
 
 enum class PropertiesTab {
@@ -119,6 +116,12 @@ struct DevtoolsPanelState {
     // Tracks the most recent row click to detect double-clicks for expand/collapse.
     std::string lastClickedElement;
     double lastClickTime = 0.0;
+
+    // MCP tab state
+    bool mcpServerRunning = false;
+    uint16_t mcpPort = 8990;
+    float mcpScrollOffset = 0.0f;
+    std::string mcpStatusMessage = "MCP Bridge Standby";
 };
 
 // Everything the panel needs for one composition. The host owns geometry, the
@@ -219,6 +222,15 @@ struct DevtoolsUiActions {
         std::function<void()> clearHistory;
     };
 
+    struct Mcp {
+        std::function<void(float)> setScrollOffset;
+        std::function<void(bool)> setServerRunning;
+        std::function<void(uint16_t)> setPort;
+        std::function<void(const std::string&)> setStatusMessage;
+        std::function<void()> triggerTestCapture;
+        std::function<void()> triggerTestSemantic;
+    };
+
     Shell shell;
     Performance performance;
     Scale scale;
@@ -226,6 +238,7 @@ struct DevtoolsUiActions {
     Properties properties;
     State state;
     Input input;
+    Mcp mcp;
 };
 
 void composeDevtoolsUi(core::dsl::Ui& ui, const DevtoolsUiState& state, const DevtoolsUiActions& actions);

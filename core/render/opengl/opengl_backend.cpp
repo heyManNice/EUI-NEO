@@ -571,4 +571,40 @@ void OpenGLRenderBackend::setScissor(bool enabled, const core::Rect& rect, int f
         scissorRectStateValid_ = true;
     }
 }
+
+bool OpenGLRenderBackend::readFramebufferPixels(int x, int y, int width, int height, unsigned char* rgbaPixels) {
+    if (rgbaPixels == nullptr || framebufferWidth_ <= 0 || framebufferHeight_ <= 0) {
+        return false;
+    }
+    flushRoundedRectBatch();
+    makeCurrent();
+
+    const int clampedX = std::clamp(x, 0, framebufferWidth_);
+    const int clampedY = std::clamp(y, 0, framebufferHeight_);
+    const int readW = std::clamp(width, 0, framebufferWidth_ - clampedX);
+    const int readH = std::clamp(height, 0, framebufferHeight_ - clampedY);
+    if (readW <= 0 || readH <= 0) {
+        return false;
+    }
+
+    // Convert top-left (clampedX, clampedY) to OpenGL bottom-left coordinates
+    const int glY = framebufferHeight_ - (clampedY + readH);
+
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(clampedX, glY, readW, readH, GL_RGBA, GL_UNSIGNED_BYTE, rgbaPixels);
+
+    // Vertically flip the rows so the output buffer is standard top-to-bottom
+    const std::size_t rowBytes = static_cast<std::size_t>(readW) * 4u;
+    std::vector<unsigned char> tempRow(rowBytes);
+    for (int r = 0; r < readH / 2; ++r) {
+        unsigned char* top = rgbaPixels + static_cast<std::size_t>(r) * rowBytes;
+        unsigned char* bottom = rgbaPixels + static_cast<std::size_t>(readH - 1 - r) * rowBytes;
+        std::memcpy(tempRow.data(), top, rowBytes);
+        std::memcpy(top, bottom, rowBytes);
+        std::memcpy(bottom, tempRow.data(), rowBytes);
+    }
+    return true;
+}
+
 } // namespace core::render::opengl
+

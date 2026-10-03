@@ -269,6 +269,16 @@ public:
         if (floatCount < 4) return false;
         return readShaderToyPixel(handle, rgba);
     }
+    virtual bool readFramebufferPixels(int x, int y, int width, int height, unsigned char* rgbaPixels) {
+        (void)x;
+        (void)y;
+        (void)width;
+        (void)height;
+        (void)rgbaPixels;
+        return false;
+    }
+    virtual int framebufferWidth() const { return 0; }
+    virtual int framebufferHeight() const { return 0; }
     virtual void clear(const core::Color& color) = 0;
     virtual void setScissor(bool enabled, const core::Rect& rect, int framebufferHeight) = 0;
     virtual void prepareBackdropBlur(const core::Rect& bounds, float blur, int windowWidth, int windowHeight) = 0;

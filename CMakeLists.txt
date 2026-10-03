@@ -733,7 +733,8 @@ if(EUI_BUILD_TEST_FIXTURES)
         # rest of the unit tests always build.
         if((unit_name STREQUAL "devtools_host" OR unit_name STREQUAL "devtools_preview"
             OR unit_name STREQUAL "devtools_tree" OR unit_name STREQUAL "devtools_fields"
-            OR unit_name STREQUAL "devtools_state" OR unit_name STREQUAL "devtools_input")
+            OR unit_name STREQUAL "devtools_state" OR unit_name STREQUAL "devtools_input"
+            OR unit_name STREQUAL "devtools_mcp")
            AND NOT TARGET eui::module_devtools)
             continue()
         endif()
@@ -741,7 +742,8 @@ if(EUI_BUILD_TEST_FIXTURES)
         target_link_libraries(${unit_name} PRIVATE eui::neo)
         if(unit_name STREQUAL "devtools_host" OR unit_name STREQUAL "devtools_preview"
            OR unit_name STREQUAL "devtools_tree" OR unit_name STREQUAL "devtools_fields"
-           OR unit_name STREQUAL "devtools_state" OR unit_name STREQUAL "devtools_input")
+           OR unit_name STREQUAL "devtools_state" OR unit_name STREQUAL "devtools_input"
+           OR unit_name STREQUAL "devtools_mcp")
             target_link_libraries(${unit_name} PRIVATE eui::module_devtools)
         endif()
         eui_apply_compile_options(${unit_name})

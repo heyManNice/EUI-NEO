@@ -2,6 +2,7 @@
 
 #include "modules/devtools/elements.h"
 #include "modules/devtools/input.h"
+#include "modules/devtools/mcp.h"
 #include "modules/devtools/performance.h"
 #include "modules/devtools/scale.h"
 #include "modules/devtools/state.h"
@@ -50,36 +51,16 @@ struct TabEntry {
     const char* id;
     const char* label;
     DevtoolsTab tab;
-    const char* summary;
 };
 
 constexpr TabEntry kTabs[] = {
-    {"performance.tab", "Performance", DevtoolsTab::Performance, nullptr},
-    {"elements.tab", "Elements", DevtoolsTab::Elements, nullptr},
-    {"scale.tab", "Scale", DevtoolsTab::Scale, nullptr},
-    {"state.tab", "State", DevtoolsTab::State, nullptr},
-    {"input.tab", "Input", DevtoolsTab::Input, nullptr},
-    {"frames.tab", "Frames", DevtoolsTab::Frames, "why each frame repainted and what it repainted"},
-    {"animations.tab", "Animations", DevtoolsTab::Animations, "transitions, timers and what keeps animating"},
-    {"resources.tab", "Resources", DevtoolsTab::Resources, "fonts, images and the caches they live in"},
-    {"windows.tab", "Windows", DevtoolsTab::Windows, "the windows an app opened and the tray it may hide in"},
+    {"performance.tab", "Performance", DevtoolsTab::Performance},
+    {"elements.tab", "Elements", DevtoolsTab::Elements},
+    {"scale.tab", "Scale", DevtoolsTab::Scale},
+    {"state.tab", "State", DevtoolsTab::State},
+    {"input.tab", "Input", DevtoolsTab::Input},
+    {"mcp.tab", "MCP", DevtoolsTab::Mcp},
 };
-
-// The note a tab shows while it has no panel of its own. The id ends in ".planned", so
-// a test can tell a placeholder from the content of a tab that works.
-void composePlannedTab(core::dsl::Ui& ui, const TabEntry& entry, float width, float height) {
-    const DevtoolsTheme& theme = devtoolsTheme();
-    ui.text(std::string(entry.id) + ".planned")
-        .fontFamily(theme.fontFamily)
-        .size(width, height)
-        .text(std::string(entry.label) + " is planned: " + entry.summary + ".")
-        .fontSize(theme.sectionFontSize)
-        .color(theme.mutedText)
-        .horizontalAlign(core::HorizontalAlign::Center)
-        .verticalAlign(core::VerticalAlign::Center)
-        .wrap()
-        .build();
-}
 
 void composeToolbarTab(core::dsl::Ui& ui, const std::string& id, const std::string& label,
                        bool selected, const std::function<void()>& onClick) {
@@ -334,13 +315,9 @@ void composePanelContent(core::dsl::Ui& ui, const DevtoolsUiState& state, const 
         composeInputTab(ui, state, actions);
         return;
     }
-    const float contentHeight = std::max(
-        0.0f, state.panel.height - devtoolsTheme().toolbarHeight - (state.detached ? 0.0f : 1.0f));
-    for (const TabEntry& entry : kTabs) {
-        if (entry.tab == activeTab) {
-            composePlannedTab(ui, entry, state.panel.width, contentHeight);
-            return;
-        }
+    if (activeTab == DevtoolsTab::Mcp) {
+        composeMcpTab(ui, state, actions);
+        return;
     }
 }
 

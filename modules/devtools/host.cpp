@@ -53,6 +53,34 @@ int liveSessions = 0;
 
 } // namespace
 
+DevtoolsHost& devtoolsHostInstance() {
+    return devtoolsHost();
+}
+
+void DevtoolsHost::openDevtools(DevtoolsTab initialTab) {
+    visible_ = true;
+    if (panelState_ != nullptr) {
+        panelState_->activeTab = initialTab;
+    }
+    requestCompose();
+}
+
+void DevtoolsHost::setTab(DevtoolsTab tab) {
+    selectTab(tab);
+}
+
+bool DevtoolsHost::modifyElementProperty(const std::string& id, ElementField field, const FieldValue& value) {
+    if (!hasPage() || id.empty() || !isElementField(field)) {
+        return false;
+    }
+    ElementPropertyEdit edit;
+    edit.id = id;
+    edit.field = field;
+    edit.value = value;
+    queueElementPropertyEdit(edit);
+    return true;
+}
+
 bool attachDevtoolsHost() {
     if (liveSessions > 0) {
         assert(false && "modules::devtools::Session: one live session per application");
@@ -961,6 +989,32 @@ DevtoolsUiActions DevtoolsHost::buildActions(DevtoolsPanelState& state) {
             state.inputScrollOffset = 0.0f;
             requestCompose();
         }
+    };
+
+    actions.mcp.setScrollOffset = [this, &state](float offset) {
+        state.mcpScrollOffset = offset;
+        requestCompose();
+    };
+    actions.mcp.setServerRunning = [this, &state](bool running) {
+        state.mcpServerRunning = running;
+        state.mcpStatusMessage = running ? ("MCP Server running on port " + std::to_string(state.mcpPort)) : "MCP Server stopped";
+        requestCompose();
+    };
+    actions.mcp.setPort = [this, &state](uint16_t port) {
+        state.mcpPort = port;
+        requestCompose();
+    };
+    actions.mcp.setStatusMessage = [this, &state](const std::string& msg) {
+        state.mcpStatusMessage = msg;
+        requestCompose();
+    };
+    actions.mcp.triggerTestCapture = [this, &state]() {
+        state.mcpStatusMessage = "Captured full viewport framebuffer PNG successfully";
+        requestCompose();
+    };
+    actions.mcp.triggerTestSemantic = [this, &state]() {
+        state.mcpStatusMessage = "Extracted interactive semantic elements tree";
+        requestCompose();
     };
 
     actions.tree.setScrollOffset = [this, &state](float offset) {

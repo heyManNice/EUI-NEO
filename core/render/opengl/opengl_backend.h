@@ -43,6 +43,9 @@ public:
     bool beginLayerFrame(LayerHandle layer, int width, int height) override;
     void endLayerFrame() override;
     TextureHandle layerTexture(LayerHandle layer) override;
+    bool readFramebufferPixels(int x, int y, int width, int height, unsigned char* rgbaPixels) override;
+    int framebufferWidth() const override { return framebufferWidth_; }
+    int framebufferHeight() const override { return framebufferHeight_; }
     void clear(const core::Color& color) override;
     void setScissor(bool enabled, const core::Rect& rect, int framebufferHeight) override;
     void prepareBackdropBlur(const core::Rect& bounds, float blur, int windowWidth, int windowHeight) override;
