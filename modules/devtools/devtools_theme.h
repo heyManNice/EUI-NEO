@@ -66,11 +66,9 @@ struct DevtoolsTheme {
     float indicatorInset = 4.0f;
     float elementRowHeight = 22.0f;
     float elementRowFontSize = 13.0f;
-    // The row of view options above the element tree: one line, one tree row tall, so it
-    // reads at the scale of the rows below it. Its labels use elementRowFontSize and its
-    // indicators iconSize, and each option is sized to its own label, so what separates the
-    // two is elementOptionGap and nothing else.
-    float elementOptionsHeight = elementRowHeight;
+    // The row of view options above the element tree: shared with the Scale toolbar height
+    // so both tab operation bars maintain an identical height across DevTools.
+    float elementOptionsHeight = 34.0f;
     float elementOptionGap = 0.0f;
     float elementOptionBoxSize = iconSize;
     float elementIndent = 12.0f;

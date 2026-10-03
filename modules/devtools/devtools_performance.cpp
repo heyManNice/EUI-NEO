@@ -23,8 +23,8 @@ void composeHeroCard(core::dsl::Ui& ui, const std::string& id, float cardWidth,
                      const char* title, const std::string& value,
                      const core::Color& valueColor, const char* subtitle) {
     const DevtoolsTheme& theme = devtoolsTheme();
-    const core::Color cardBg{theme.toolbarBackground.r, theme.toolbarBackground.g, theme.toolbarBackground.b, 0.50f};
-    const core::Color cardBorder{theme.panelBorder.r, theme.panelBorder.g, theme.panelBorder.b, 0.32f};
+    const core::Color cardBg{theme.toolbarBackground.r, theme.toolbarBackground.g, theme.toolbarBackground.b, 0.40f};
+    const core::Color cardBorder = theme.panelBorder;
 
     ui.stack(id)
         .width(cardWidth)
@@ -34,7 +34,7 @@ void composeHeroCard(core::dsl::Ui& ui, const std::string& id, float cardWidth,
                 .fill()
                 .ignoreLayout()
                 .color(cardBg)
-                .radius(6.0f)
+                .radius(0.0f)
                 .border(1.0f, cardBorder)
                 .build();
             ui.column(id + ".content")
@@ -76,7 +76,7 @@ void composeHeroCard(core::dsl::Ui& ui, const std::string& id, float cardWidth,
 
 void composeCardHeader(core::dsl::Ui& ui, const std::string& id, const std::string& title) {
     const DevtoolsTheme& theme = devtoolsTheme();
-    const core::Color dividerColor{theme.panelBorder.r, theme.panelBorder.g, theme.panelBorder.b, 0.20f};
+    const core::Color dividerColor = theme.panelBorder;
 
     ui.row(id + ".header")
         .width(core::SizeValue::fill())
@@ -88,7 +88,7 @@ void composeCardHeader(core::dsl::Ui& ui, const std::string& id, const std::stri
                 .width(core::SizeValue::fill())
                 .height(18.0f)
                 .text(title)
-                .fontSize(11.5f)
+                .fontSize(11.0f)
                 .fontWeight(600)
                 .color(theme.sectionLabel)
                 .build();
@@ -132,8 +132,8 @@ void composeMetric(core::dsl::Ui& ui, const std::string& id, const std::string& 
 template <typename ContentFn>
 void composeCard(core::dsl::Ui& ui, const std::string& id, float width, ContentFn&& content) {
     const DevtoolsTheme& theme = devtoolsTheme();
-    const core::Color cardBg{theme.toolbarBackground.r, theme.toolbarBackground.g, theme.toolbarBackground.b, 0.40f};
-    const core::Color cardBorder{theme.panelBorder.r, theme.panelBorder.g, theme.panelBorder.b, 0.28f};
+    const core::Color cardBg{theme.toolbarBackground.r, theme.toolbarBackground.g, theme.toolbarBackground.b, 0.35f};
+    const core::Color cardBorder = theme.panelBorder;
 
     ui.stack(id)
         .width(width)
@@ -143,7 +143,7 @@ void composeCard(core::dsl::Ui& ui, const std::string& id, float width, ContentF
                 .fill()
                 .ignoreLayout()
                 .color(cardBg)
-                .radius(6.0f)
+                .radius(0.0f)
                 .border(1.0f, cardBorder)
                 .build();
             ui.column(id + ".content")
