@@ -109,6 +109,26 @@ public:
     // The runtime's live instance store. A tool reads it to inspect retained instances
     // (scrollStates, sliderStates, timers, retainedLayers, etc.) and GC seen flags.
     const runtime::InstanceStore& instances() const { return instances_; }
+
+    // Live input and focus state seams for DevTools Input tab
+    const std::string& focusedId() const { return focusedId_; }
+    const std::string& hoverTargetId() const { return hoverTargetCacheId_; }
+    std::string capturedInteractionIdSeam() const { return capturedInteractionId(); }
+    const PointerEvent& lastPointerEvent() const { return hoverTargetCacheEvent_; }
+    float lastPointerDpiScale() const { return hoverTargetCacheDpiScale_; }
+    const std::vector<runtime::ToolingInputRecord>& inputHistory() const {
+        static const std::vector<runtime::ToolingInputRecord> empty;
+        return tooling_ != nullptr ? tooling_->inputHistory : empty;
+    }
+    std::uint64_t inputEventCount() const {
+        return tooling_ != nullptr ? tooling_->inputEventCount : 0;
+    }
+    void clearInputHistory() {
+        if (tooling_ != nullptr) {
+            tooling_->inputHistory.clear();
+        }
+    }
+    std::vector<runtime::ToolingHitEntry> hitTestChain(float x, float y, float dpiScale) const;
 #endif
 
     // Looks one element up by the id a tool holds, to read it or to replace values on it.
@@ -261,6 +281,18 @@ private:
                                  const Rect& clipRect,
                                  bool ancestorDisabled,
                                  std::string& targetId) const;
+
+#if EUI_TOOLING_ENABLED
+    void collectHitTestChain(const Element& element,
+                             float x,
+                             float y,
+                             float dpiScale,
+                             const RenderTransform& inheritedTransform,
+                             bool hasClip,
+                             const Rect& clipRect,
+                             bool ancestorDisabled,
+                             std::vector<runtime::ToolingHitEntry>& chain) const;
+#endif
 
     void setFocusedId(const std::string& id);
 

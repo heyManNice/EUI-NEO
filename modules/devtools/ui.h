@@ -45,7 +45,16 @@ enum class StateCategory {
     Unseen
 };
 
+enum class InputCategory {
+    All,
+    Pointer,
+    Scroll,
+    Keys,
+    Focus
+};
+
 struct InstanceStateSnapshot;
+struct InputSnapshot;
 
 // Panel state lives in the overlay Runtime state store, so it follows the panel
 // Runtime lifetime instead of a process-wide object.
@@ -67,6 +76,10 @@ struct DevtoolsPanelState {
     float stateScrollOffset = 0.0f;
     StateCategory stateCategory = StateCategory::All;
     std::string selectedInstanceId;
+    float inputScrollOffset = 0.0f;
+    float inputHitChainScrollOffset = 0.0f;
+    InputCategory inputCategory = InputCategory::All;
+    std::string selectedInputTargetId;
     float scaleOverride = 0.0f;
     float systemDpi = 1.0f;
     std::string selectedElement;
@@ -129,6 +142,8 @@ struct DevtoolsUiState {
     std::size_t propertyOverrideCount = 0;
     // Live runtime instances snapshot, owned by the host and read once per refresh.
     const InstanceStateSnapshot* instanceState = nullptr;
+    // Live input stream and hit-test stack snapshot, owned by host.
+    const InputSnapshot* input = nullptr;
 };
 
 // Commands the panel can request. None of them own state or draw. A host fills the
@@ -196,12 +211,21 @@ struct DevtoolsUiActions {
         std::function<void(const std::string&)> selectInstance;
     };
 
+    struct Input {
+        std::function<void(float)> setScrollOffset;
+        std::function<void(float)> setHitChainScrollOffset;
+        std::function<void(InputCategory)> setCategory;
+        std::function<void(const std::string&)> selectTarget;
+        std::function<void()> clearHistory;
+    };
+
     Shell shell;
     Performance performance;
     Scale scale;
     Tree tree;
     Properties properties;
     State state;
+    Input input;
 };
 
 void composeDevtoolsUi(core::dsl::Ui& ui, const DevtoolsUiState& state, const DevtoolsUiActions& actions);

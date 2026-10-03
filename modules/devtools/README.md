@@ -77,12 +77,12 @@ void compose(eui::Ui& ui, const eui::Screen& screen) {
 - `Elements`：元素树层级、盒模型预览与实时属性可视化编辑覆盖。
 - `Scale`：DPI、UI 缩放因子实时调节与预设测试。
 - `State`：核心运行时 `InstanceStore` 的 15 张表只读快照（`scrollStates`、`sliderStates`、`timers`、`interactions`、`rects`、`layouts`、`retainedLayers` 等），提供分类筛选、实例总览卡片、滚动阻滞与滑块拖拽状态诊断，以及 `seen` 标记驱动的孤儿/未回收实例（GC 泄漏）检测。
+- `Input`：事件流与焦点命中诊断（4 个状态卡片：Focus、Hover、Capture、Total Events；光标处 Z-Order 命中测试栈与 `[TARGET]` / `[BLOCKED]` / `[DISABLED]` 遮挡层级分析；实时 50 条环形事件流记录，带类型筛选与复制）。
 
 计划中的标签页（按优先级）。「读什么」写的是数据来源，最后两列说明代价：多数页只加一个只读的 Debug 钩子，不改变运行时行为。
 
 | 标签页 | 读什么 | 用来回答 | 代价 |
 | --- | --- | --- | --- |
-| `Input` | 事件流与命中结果（`hitTestFocusable`、`focusedId_`、`hoverTargetCache`、被捕获的交互） | 这个事件被谁接走了——交互子元素会吞掉父元素的处理，是 DSL 里最难靠猜的一类问题 | 路由上报 |
 | `Frames` | `requestUiUpdate` / `requestFrame` / 动画 / 惯性滚动，加上已有的 dirty rect 计数 | 为什么一直在重绘，这一帧为什么重绘 | 帧原因上报 |
 | `Animations` | transition / easing / timer 实例与 `isAnimating()` | 是谁让这一帧动起来的，计时器为什么没触发 | 小 |
 | `Resources` | 字体（默认 / 图标 / 回退，缺字）、图片（stb / libpng / nanosvg、远程就绪）、shadertoy | assets 丢失、字体回退没生效、纹理与字体内存增长 | 中等，要接资源缓存 |

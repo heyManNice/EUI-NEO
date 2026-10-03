@@ -27,6 +27,8 @@ add_library(eui_neo_module_devtools
     $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/scale.h>
     $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/state.cpp>
     $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/state.h>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/input.cpp>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/input.h>
     $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/preview.cpp>
     $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/preview.h>
     $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/tree.cpp>

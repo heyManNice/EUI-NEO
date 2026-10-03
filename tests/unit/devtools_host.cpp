@@ -941,12 +941,20 @@ int main() {
             assert(host.activeTab() == entry.tab);
             frame();
             // Only the tabs with content show a page of their own.
-            if (entry.tab != DevtoolsTab::Performance && entry.tab != DevtoolsTab::Elements && entry.tab != DevtoolsTab::Scale) {
+            if (entry.tab != DevtoolsTab::Performance && entry.tab != DevtoolsTab::Elements &&
+                entry.tab != DevtoolsTab::Scale && entry.tab != DevtoolsTab::State &&
+                entry.tab != DevtoolsTab::Input) {
                 assert(hasPanelElement(host, std::string(entry.id) + ".planned"));
                 assert(!hasPanelElement(host, "elements.list"));
             } else if (entry.tab == DevtoolsTab::Scale) {
                 assert(hasPanelElement(host, "scale.scroll"));
                 assert(!hasPanelElement(host, "scale.tab.planned"));
+            } else if (entry.tab == DevtoolsTab::State) {
+                assert(hasPanelElement(host, "state.main"));
+                assert(!hasPanelElement(host, "state.tab.planned"));
+            } else if (entry.tab == DevtoolsTab::Input) {
+                assert(hasPanelElement(host, "input.main"));
+                assert(!hasPanelElement(host, "input.tab.planned"));
             }
         }
 

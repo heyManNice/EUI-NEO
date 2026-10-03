@@ -21,6 +21,40 @@
 namespace core::dsl::runtime {
 
 #if EUI_TOOLING_ENABLED
+
+enum class ToolingInputKind {
+    PointerPress,
+    PointerRelease,
+    PointerClick,
+    Scroll,
+    KeyDown,
+    KeyUp,
+    TextInput,
+    FocusChange
+};
+
+struct ToolingInputRecord {
+    double timestamp = 0.0;
+    ToolingInputKind kind = ToolingInputKind::PointerPress;
+    std::string targetId;
+    std::string detail;
+    float x = 0.0f;
+    float y = 0.0f;
+    PointerButton button = PointerButton::None;
+    core::InputKey key = core::InputKey::Unknown;
+    std::string text;
+};
+
+struct ToolingHitEntry {
+    std::string id;
+    core::dsl::ElementKind kind = core::dsl::ElementKind::Row;
+    bool interactive = false;
+    bool disabled = false;
+    bool focusable = false;
+    core::dsl::HitTestMode hitTestMode = core::dsl::HitTestMode::Layout;
+    core::Rect frame;
+};
+
 // Everything a tool keeps on a runtime, in one place.
 //
 // A runtime owns it through a pointer that stays null until a tool first talks to the
@@ -53,6 +87,19 @@ struct ToolingState {
     // How the tool draws its own overlay. It runs inside the page render pass, so the
     // overlay becomes part of the cached frame the window blits.
     std::function<void(int, int, float, const Rect*)> overlayRenderer;
+
+    // Live input stream history and event counters
+    static constexpr std::size_t kMaxInputRecords = 50;
+    std::vector<ToolingInputRecord> inputHistory;
+    std::uint64_t inputEventCount = 0;
+
+    void recordInput(ToolingInputRecord record) {
+        inputEventCount++;
+        if (inputHistory.size() >= kMaxInputRecords) {
+            inputHistory.erase(inputHistory.begin());
+        }
+        inputHistory.push_back(std::move(record));
+    }
 };
 #else
 // No tooling in this build. The type stays so that a runtime has the same layout in

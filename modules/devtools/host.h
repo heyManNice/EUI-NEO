@@ -6,6 +6,7 @@
 #include "core/render/primitive.h"
 #include "core/render/text.h"
 #include "eui/detail/overlay_hooks.h"
+#include "modules/devtools/input.h"
 #include "modules/devtools/state.h"
 #include "modules/devtools/tree.h"
 #include "modules/devtools/ui.h"
@@ -112,6 +113,9 @@ public:
     const InstanceStateSnapshot& instanceState() const;
     bool wantsInstanceState() const;
     float stateScrollOffset() const;
+    const InputSnapshot& inputSnapshot() const;
+    bool wantsInputState() const;
+    float inputScrollOffset() const;
     const modules::devtools::ElementValues& properties() const;
     std::size_t propertyOverrideCount() const;
 
@@ -152,6 +156,9 @@ private:
         std::uint64_t stateRevision = 0;
         double stateRefreshTime = 0.0;
         InstanceStateSnapshot instanceState;
+        std::uint64_t inputEventsCount = 0;
+        double inputRefreshTime = 0.0;
+        InputSnapshot inputSnapshot;
 
         // Picking: the pointer the panel wants answered, the element it landed on, and
         // whether the next answer commits it as the selection.
@@ -165,6 +172,7 @@ private:
     void publishElementTree();
     void publishElementProperties();
     void publishInstanceState();
+    void publishInputSnapshot();
     void publishPickedElement();
     void applyElementPropertyEdits();
 

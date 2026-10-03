@@ -124,6 +124,25 @@ inline bool Runtime::update(core::window::Handle window, float deltaSeconds, flo
             setFocusedId(hitTestFocusable(event, dpiScale));
         }
         const std::string hoverTargetId = resolveHoverTarget(event, dpiScale, inputEnabled);
+#if EUI_TOOLING_ENABLED
+        if (event.action == PointerAction::Press || event.action == PointerAction::Release) {
+            runtime::ToolingInputRecord record;
+            record.timestamp = core::window::timeSeconds();
+            record.kind = event.action == PointerAction::Press
+                ? runtime::ToolingInputKind::PointerPress
+                : runtime::ToolingInputKind::PointerRelease;
+            record.targetId = hoverTargetId;
+            record.x = static_cast<float>(event.x);
+            record.y = static_cast<float>(event.y);
+            record.button = event.button;
+            const char* btnStr = "None";
+            if (event.button == PointerButton::Left) btnStr = "Left";
+            else if (event.button == PointerButton::Right) btnStr = "Right";
+            else if (event.button == PointerButton::Middle) btnStr = "Middle";
+            record.detail = std::string(btnStr) + " @ (" + std::to_string(static_cast<int>(event.x)) + ", " + std::to_string(static_cast<int>(event.y)) + ")";
+            tooling::recordInputEvent(*this, std::move(record));
+        }
+#endif
         const float eventDeltaSeconds = index + 1 == pointerEvents.size() ? deltaSeconds : 0.0f;
         updateElementTree(event, eventDeltaSeconds, dpiScale, hoverTargetId);
     }

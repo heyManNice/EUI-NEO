@@ -169,6 +169,14 @@ inline void release(Runtime& runtime) {
     state->hostScrollEvent = {};
 }
 
+inline void recordInputEvent(Runtime& runtime, runtime::ToolingInputRecord record) {
+    runtime::ToolingState* state = runtime.tooling();
+    if (state == nullptr) {
+        return;
+    }
+    state->recordInput(std::move(record));
+}
+
 #else
 
 inline void beforeCompose(Runtime&) {}
@@ -180,6 +188,7 @@ inline void drawPassOverlay(Ui&, runtime::InstanceStore&, runtime::ToolingState*
 inline void drawOverlay(Runtime&, int, int, float, const Rect*) {}
 inline void releaseGraphics(Runtime&) {}
 inline void release(Runtime&) {}
+inline void recordInputEvent(Runtime&, runtime::ToolingInputRecord) {}
 
 #endif
 

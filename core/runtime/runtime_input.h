@@ -244,6 +244,15 @@ inline void Runtime::setFocusedId(const std::string& id) {
     imeCursorRectValid_ = false;
     ui_.setFocusedId(focusedId_);
 
+#if EUI_TOOLING_ENABLED
+    runtime::ToolingInputRecord focusRecord;
+    focusRecord.timestamp = core::window::timeSeconds();
+    focusRecord.kind = runtime::ToolingInputKind::FocusChange;
+    focusRecord.targetId = id;
+    focusRecord.detail = oldId.empty() ? ("Focused: " + id) : ("Focus: " + oldId + " -> " + (id.empty() ? "None" : id));
+    tooling::recordInputEvent(*this, std::move(focusRecord));
+#endif
+
     if (const Element* oldElement = ui_.find(oldId)) {
         if (oldElement->onFocusChanged) {
             oldElement->onFocusChanged(false);
@@ -259,6 +268,15 @@ inline void Runtime::setFocusedId(const std::string& id) {
 }
 
 inline void Runtime::updateScroll(const ScrollEvent& event, const std::string& targetId) {
+#if EUI_TOOLING_ENABLED
+    runtime::ToolingInputRecord scrollRecord;
+    scrollRecord.timestamp = core::window::timeSeconds();
+    scrollRecord.kind = runtime::ToolingInputKind::Scroll;
+    scrollRecord.targetId = targetId;
+    scrollRecord.detail = "dy: " + std::to_string(static_cast<int>(event.y)) + ", dx: " + std::to_string(static_cast<int>(event.x));
+    tooling::recordInputEvent(*this, std::move(scrollRecord));
+#endif
+
     const Element* element = targetId.empty() ? nullptr : ui_.find(targetId);
     const std::string activeScrollStateId = element != nullptr && !element->disabled
         ? element->scrollStateId
@@ -292,6 +310,16 @@ inline void Runtime::updateTextInput(const TextInputEvent& event) {
         return;
     }
 
+#if EUI_TOOLING_ENABLED
+    runtime::ToolingInputRecord textRecord;
+    textRecord.timestamp = core::window::timeSeconds();
+    textRecord.kind = runtime::ToolingInputKind::TextInput;
+    textRecord.targetId = focusedId_;
+    textRecord.text = event.text;
+    textRecord.detail = "text: '" + event.text + "'";
+    tooling::recordInputEvent(*this, std::move(textRecord));
+#endif
+
     if (const Element* element = ui_.find(focusedId_)) {
         if (element->onTextInput && !element->disabled) {
             element->onTextInput(event);
@@ -309,6 +337,15 @@ inline void Runtime::updateKeyInput(const std::vector<KeyEvent>& events) {
     }
 
     for (const KeyEvent& key : events) {
+#if EUI_TOOLING_ENABLED
+        runtime::ToolingInputRecord keyRecord;
+        keyRecord.timestamp = core::window::timeSeconds();
+        keyRecord.kind = key.action == KeyAction::Release ? runtime::ToolingInputKind::KeyUp : runtime::ToolingInputKind::KeyDown;
+        keyRecord.targetId = focusedId_;
+        keyRecord.key = key.key;
+        keyRecord.detail = key.action == KeyAction::Repeat ? "Key repeat" : (key.action == KeyAction::Release ? "Key release" : "Key press");
+        tooling::recordInputEvent(*this, std::move(keyRecord));
+#endif
         bool handled = false;
         if (focused != nullptr && focused->onKeyEvent) {
             handled = focused->onKeyEvent(key);
@@ -473,6 +510,14 @@ inline void Runtime::updateInteraction(
     }
 
     if (enabled && instance.state.clicked && element.onClick) {
+#if EUI_TOOLING_ENABLED
+        runtime::ToolingInputRecord clickRecord;
+        clickRecord.timestamp = core::window::timeSeconds();
+        clickRecord.kind = runtime::ToolingInputKind::PointerClick;
+        clickRecord.targetId = element.id;
+        clickRecord.detail = "onClick dispatched";
+        tooling::recordInputEvent(*this, std::move(clickRecord));
+#endif
         element.onClick();
         composeRequested_ = true;
         paintRequested_ = true;
@@ -599,5 +644,69 @@ inline bool Runtime::hitContains(
     }
     return bounds.contains(event.x, event.y);
 }
+
+#if EUI_TOOLING_ENABLED
+inline void Runtime::collectHitTestChain(
+    const Element& element,
+    float x,
+    float y,
+    float dpiScale,
+    const RenderTransform& inheritedTransform,
+    bool hasClip,
+    const Rect& clipRect,
+    bool ancestorDisabled,
+    std::vector<runtime::ToolingHitEntry>& chain) const {
+    const bool disabledTree = ancestorDisabled || element.disabled;
+    const RenderTransform renderTransform = instances_.renderTransform(element, dpiScale, inheritedTransform);
+    Rect effectiveClip = clipRect;
+    bool effectiveHasClip = hasClip;
+    const Rect bounds = toPixelRect(element.frame, dpiScale);
+    if (element.clip) {
+        const Rect clipBounds = applyRenderTransform(bounds, renderTransform);
+        if (effectiveHasClip) {
+            if (!intersectRect(effectiveClip, clipBounds, effectiveClip)) {
+                return;
+            }
+        } else {
+            effectiveClip = clipBounds;
+            effectiveHasClip = true;
+        }
+    }
+
+    if (effectiveHasClip && !effectiveClip.contains(x, y)) {
+        return;
+    }
+
+    const std::vector<const Element*>& children = element.orderedChildren;
+    for (auto it = children.rbegin(); it != children.rend(); ++it) {
+        collectHitTestChain(**it, x, y, dpiScale, renderTransform, effectiveHasClip, effectiveClip, disabledTree, chain);
+    }
+
+    PointerEvent dummyEvent;
+    dummyEvent.x = x;
+    dummyEvent.y = y;
+    if (hitContains(element, dummyEvent, dpiScale, bounds, renderTransform)) {
+        runtime::ToolingHitEntry entry;
+        entry.id = element.id;
+        entry.kind = element.kind;
+        entry.interactive = element.interactive;
+        entry.disabled = disabledTree;
+        entry.focusable = element.focusable;
+        entry.hitTestMode = element.hitTestMode;
+        entry.frame = Rect{element.frame.x, element.frame.y, element.frame.width, element.frame.height};
+        chain.push_back(std::move(entry));
+    }
+}
+
+inline std::vector<runtime::ToolingHitEntry> Runtime::hitTestChain(float x, float y, float dpiScale) const {
+    std::vector<runtime::ToolingHitEntry> chain;
+    const RenderTransform identity;
+    const std::vector<const Element*>& roots = ui_.orderedRoots();
+    for (auto it = roots.rbegin(); it != roots.rend(); ++it) {
+        collectHitTestChain(**it, x, y, dpiScale, identity, false, {}, false, chain);
+    }
+    return chain;
+}
+#endif
 
 } // namespace core::dsl

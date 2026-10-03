@@ -651,15 +651,21 @@ void composeStateTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devt
                             ? theme.elementRowSelected
                             : core::Color{0.0f, 0.0f, 0.0f, 0.0f};
 
+                        const auto onSelectRow = [onSelect = actions.state.selectInstance, id = entry.id] {
+                            core::window::setClipboardText(id);
+                            if (onSelect) onSelect(id);
+                        };
+
                         rowUi.stack(rowId)
                             .size(width, height)
                             .content([&] {
-                                rowUi.rect(rowId + ".bg")
-                                    .fill()
+                                auto bgRect = rowUi.rect(rowId + ".bg");
+                                bgRect.fill()
                                     .ignoreLayout()
                                     .color(rowBg)
-                                    .states(rowBg, theme.elementRowHover, theme.elementRowHover)
-                                    .build();
+                                    .states(rowBg, theme.elementRowHover, theme.elementRowHover);
+                                bgRect.onClick(onSelectRow);
+                                bgRect.build();
                                 rowUi.rect(rowId + ".border")
                                     .position(0.0f, height - 1.0f)
                                     .width(core::SizeValue::fill())
@@ -740,10 +746,7 @@ void composeStateTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devt
                                     })
                                     .build();
                             })
-                            .onClick([onSelect = actions.state.selectInstance, id = entry.id] {
-                                core::window::setClipboardText(id);
-                                if (onSelect) onSelect(id);
-                            })
+                            .onClick(onSelectRow)
                             .build();
                     })
                     .build();
