@@ -648,12 +648,16 @@ void composePropertyRow(core::dsl::Ui& ui,
     const float sliderWidth = std::max(24.0f, editorWidth - controlInset * 2.0f);
 
     if (row.kind == PropertyRowKind::Header) {
+        std::string upperLabel = row.label;
+        for (char& c : upperLabel) {
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        }
         ui.text(id + ".label")
             .fontFamily(theme.fontFamily)
             .width(core::SizeValue::fill())
             .height(theme.elementRowHeight)
-            .text(row.label)
-            .fontSize(theme.elementRowFontSize)
+            .text(upperLabel)
+            .fontSize(11.0f)
             .fontWeight(600)
             .color(theme.sectionLabel)
             .horizontalAlign(core::HorizontalAlign::Left)
@@ -972,6 +976,11 @@ void composeElementProperties(core::dsl::Ui& ui,
                 .position(0.0f, 0.0f)
                 .size(area.width, subtabHeight)
                 .content([&] {
+                    ui.rect(id + ".subtabs.bg")
+                        .fill()
+                        .ignoreLayout()
+                        .color(theme.toolbarBackground)
+                        .build();
                     ui.rect(id + ".subtabs.border")
                         .width(core::SizeValue::fill())
                         .height(1.0f)
@@ -1021,23 +1030,61 @@ void composeElementProperties(core::dsl::Ui& ui,
                     if (index < 0 || index >= static_cast<std::int64_t>(rows.size())) {
                         return;
                     }
+                    const PropertyRow& row = rows[static_cast<std::size_t>(index)];
+                    const bool isHeader = row.kind == PropertyRowKind::Header;
+
+                    if (isHeader) {
+                        rowUi.rect(rowId + ".bg")
+                            .fill()
+                            .ignoreLayout()
+                            .color(core::Color{theme.toolbarBackground.r, theme.toolbarBackground.g, theme.toolbarBackground.b, 0.60f})
+                            .build();
+                        rowUi.rect(rowId + ".border")
+                            .position(0.0f, theme.elementRowHeight - 1.0f)
+                            .size(width, 1.0f)
+                            .ignoreLayout()
+                            .color(theme.panelBorder)
+                            .build();
+                    } else {
+                        rowUi.rect(rowId + ".border")
+                            .position(0.0f, theme.elementRowHeight - 1.0f)
+                            .size(width, 1.0f)
+                            .ignoreLayout()
+                            .color(core::Color{theme.panelBorder.r, theme.panelBorder.g, theme.panelBorder.b, 0.18f})
+                            .build();
+                    }
+
                     rowUi.row(rowId + ".row")
                         .position(padding, 0.0f)
                         .size(std::max(0.0f, width - padding * 2.0f), theme.elementRowHeight)
                         .gap(theme.propertyColumnGap)
+                        .alignItems(core::Align::CENTER)
                         .content([&] {
-                            composePropertyRow(rowUi, rowId, rows[static_cast<std::size_t>(index)], elementId,
+                            composePropertyRow(rowUi, rowId, row, elementId,
                                                properties, state, actions);
                         })
                         .build();
                 })
                 .build();
 
-            ui.row(id + ".footer")
-                .position(padding, subtabHeight + listHeight)
-                .size(contentWidth, footerHeight)
+            ui.stack(id + ".footer.container")
+                .position(0.0f, subtabHeight + listHeight)
+                .size(area.width, footerHeight)
                 .content([&] {
-                    composePropertyFooter(ui, id + ".footer.inner", contentWidth, properties, actions);
+                    ui.rect(id + ".footer.border")
+                        .position(0.0f, 0.0f)
+                        .size(area.width, 1.0f)
+                        .ignoreLayout()
+                        .color(theme.panelBorder)
+                        .build();
+                    ui.row(id + ".footer")
+                        .position(padding, 0.0f)
+                        .size(contentWidth, footerHeight)
+                        .alignItems(core::Align::CENTER)
+                        .content([&] {
+                            composePropertyFooter(ui, id + ".footer.inner", contentWidth, properties, actions);
+                        })
+                        .build();
                 })
                 .build();
         })
