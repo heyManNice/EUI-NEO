@@ -1,7 +1,7 @@
-#include "modules/devtools/devtools_performance.h"
+#include "modules/devtools/performance.h"
 
 #include "components/scrollview.h"
-#include "modules/devtools/devtools_theme.h"
+#include "modules/devtools/theme.h"
 
 #include <algorithm>
 #include <cmath>

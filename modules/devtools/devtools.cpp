@@ -1,7 +1,7 @@
 #include "modules/devtools/devtools.h"
 
 #if defined(EUI_TOOLING)
-#include "modules/devtools/devtools_host.h"
+#include "modules/devtools/host.h"
 #endif
 
 namespace modules::devtools {

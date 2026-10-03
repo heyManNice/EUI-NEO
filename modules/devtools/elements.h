@@ -2,7 +2,7 @@
 
 #if defined(EUI_TOOLING)
 
-#include "modules/devtools/devtools_ui.h"
+#include "modules/devtools/ui.h"
 
 namespace modules::devtools {
 

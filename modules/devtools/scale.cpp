@@ -1,7 +1,7 @@
-#include "modules/devtools/devtools_scale.h"
+#include "modules/devtools/scale.h"
 
 #include "components/scrollview.h"
-#include "modules/devtools/devtools_theme.h"
+#include "modules/devtools/theme.h"
 
 #include <algorithm>
 #include <cmath>

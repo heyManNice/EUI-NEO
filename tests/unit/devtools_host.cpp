@@ -21,9 +21,9 @@ struct HasOverlayHooks<T, std::void_t<decltype(&T::setInputFilter),
 #if defined(EUI_TOOLING)
 
 #include "modules/devtools/devtools.h"
-#include "modules/devtools/devtools_host.h"
-#include "modules/devtools/devtools_properties.h"
-#include "modules/devtools/devtools_theme.h"
+#include "modules/devtools/host.h"
+#include "modules/devtools/properties.h"
+#include "modules/devtools/theme.h"
 
 #include <algorithm>
 #include <cassert>

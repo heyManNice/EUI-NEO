@@ -1,10 +1,10 @@
-#include "modules/devtools/devtools_host.h"
+#include "modules/devtools/host.h"
 
 #if defined(EUI_TOOLING)
 
-#include "modules/devtools/devtools_preview.h"
-#include "modules/devtools/devtools_theme.h"
-#include "modules/devtools/devtools_tree.h"
+#include "modules/devtools/preview.h"
+#include "modules/devtools/theme.h"
+#include "modules/devtools/tree.h"
 
 #include <algorithm>
 #include <cassert>

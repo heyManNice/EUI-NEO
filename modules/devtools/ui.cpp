@@ -1,9 +1,9 @@
-#include "modules/devtools/devtools_ui.h"
+#include "modules/devtools/ui.h"
 
-#include "modules/devtools/devtools_elements.h"
-#include "modules/devtools/devtools_performance.h"
-#include "modules/devtools/devtools_scale.h"
-#include "modules/devtools/devtools_theme.h"
+#include "modules/devtools/elements.h"
+#include "modules/devtools/performance.h"
+#include "modules/devtools/scale.h"
+#include "modules/devtools/theme.h"
 
 #include <algorithm>
 

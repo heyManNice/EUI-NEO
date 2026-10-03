@@ -1,4 +1,4 @@
-#include "modules/devtools/devtools_tree.h"
+#include "modules/devtools/tree.h"
 
 #ifdef NDEBUG
 #undef NDEBUG

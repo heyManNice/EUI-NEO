@@ -3,8 +3,8 @@
 #if defined(EUI_TOOLING)
 
 #include "core/dsl.h"
-#include "modules/devtools/devtools_fields.h"
-#include "modules/devtools/devtools_ui.h"
+#include "modules/devtools/fields.h"
+#include "modules/devtools/ui.h"
 
 #include <cstddef>
 #include <vector>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "modules/devtools/devtools_ui.h"
+#include "modules/devtools/ui.h"
 
 namespace modules::devtools {
 

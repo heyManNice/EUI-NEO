@@ -1,10 +1,10 @@
-#include "modules/devtools/devtools_properties.h"
+#include "modules/devtools/properties.h"
 
 #include "components/slider.h"
 #include "components/switch.h"
 #include "components/theme.h"
 #include "components/virtuallist.h"
-#include "modules/devtools/devtools_theme.h"
+#include "modules/devtools/theme.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>

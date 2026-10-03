@@ -6,8 +6,8 @@
 #include "core/render/primitive.h"
 #include "core/render/text.h"
 #include "eui/detail/overlay_hooks.h"
-#include "modules/devtools/devtools_tree.h"
-#include "modules/devtools/devtools_ui.h"
+#include "modules/devtools/tree.h"
+#include "modules/devtools/ui.h"
 
 #include <deque>
 #include <functional>

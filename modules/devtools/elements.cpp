@@ -1,11 +1,11 @@
-#include "modules/devtools/devtools_elements.h"
+#include "modules/devtools/elements.h"
 
 #include "components/checkbox.h"
 #include "components/virtuallist.h"
 #include "core/render/text.h"
-#include "modules/devtools/devtools_properties.h"
-#include "modules/devtools/devtools_theme.h"
-#include "modules/devtools/devtools_tree.h"
+#include "modules/devtools/properties.h"
+#include "modules/devtools/theme.h"
+#include "modules/devtools/tree.h"
 
 #include <algorithm>
 #include <cstdio>

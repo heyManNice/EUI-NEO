@@ -1,4 +1,4 @@
-#include "modules/devtools/devtools_fields.h"
+#include "modules/devtools/fields.h"
 
 #include "core/dsl_runtime.h"
 

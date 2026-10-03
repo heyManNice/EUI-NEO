@@ -1,6 +1,6 @@
-#include "modules/devtools/devtools_tree.h"
+#include "modules/devtools/tree.h"
 
-#include "modules/devtools/devtools_fields.h"
+#include "modules/devtools/fields.h"
 
 #if defined(EUI_TOOLING)
 

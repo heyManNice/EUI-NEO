@@ -1,5 +1,5 @@
-#include "modules/devtools/devtools_preview.h"
-#include "modules/devtools/devtools_theme.h"
+#include "modules/devtools/preview.h"
+#include "modules/devtools/theme.h"
 
 #include "core/render/render_backend.h"
 #include "core/render/text.h"

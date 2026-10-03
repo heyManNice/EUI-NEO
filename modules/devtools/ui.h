@@ -1,8 +1,8 @@
 #pragma once
 
 #include "core/app/performance_snapshot.h"
-#include "modules/devtools/devtools_fields.h"
-#include "modules/devtools/devtools_tree.h"
+#include "modules/devtools/fields.h"
+#include "modules/devtools/tree.h"
 #include "core/dsl.h"
 
 #include <functional>
