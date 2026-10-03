@@ -922,13 +922,13 @@ int main() {
         } tabs[] = {
             {"performance.tab", DevtoolsTab::Performance},
             {"elements.tab", DevtoolsTab::Elements},
+            {"scale.tab", DevtoolsTab::Scale},
             {"state.tab", DevtoolsTab::State},
             {"input.tab", DevtoolsTab::Input},
             {"frames.tab", DevtoolsTab::Frames},
             {"animations.tab", DevtoolsTab::Animations},
             {"resources.tab", DevtoolsTab::Resources},
             {"windows.tab", DevtoolsTab::Windows},
-            {"scale.tab", DevtoolsTab::Scale},
         };
         const core::Rect strip = panelElementFrame(host, "toolbar.tabs");
         for (const auto& entry : tabs) {
@@ -941,11 +941,30 @@ int main() {
             assert(host.activeTab() == entry.tab);
             frame();
             // Only the tabs with content show a page of their own.
-            if (entry.tab != DevtoolsTab::Performance && entry.tab != DevtoolsTab::Elements) {
+            if (entry.tab != DevtoolsTab::Performance && entry.tab != DevtoolsTab::Elements && entry.tab != DevtoolsTab::Scale) {
                 assert(hasPanelElement(host, std::string(entry.id) + ".planned"));
                 assert(!hasPanelElement(host, "elements.list"));
+            } else if (entry.tab == DevtoolsTab::Scale) {
+                assert(hasPanelElement(host, "scale.scroll"));
+                assert(!hasPanelElement(host, "scale.tab.planned"));
             }
         }
+
+        // Test interaction on the Scale page
+        const core::Rect scaleTab = panelElementFrame(host, "scale.tab");
+        clickPanel(scaleTab.x + scaleTab.width * 0.5, scaleTab.y + scaleTab.height * 0.5);
+        assert(host.activeTab() == DevtoolsTab::Scale);
+        frame();
+        assert(hasPanelElement(host, "scale.scroll"));
+        assert(hasPanelElement(host, "scale.btn.150%"));
+        const core::Rect btn150 = panelElementFrame(host, "scale.btn.150%");
+        clickPanel(btn150.x + btn150.width * 0.5, btn150.y + btn150.height * 0.5);
+        frame();
+        assert(std::fabs(host.scaleOverride() - 1.50f) < 0.001f);
+        const core::Rect btnReset = panelElementFrame(host, "scale.btn.reset");
+        clickPanel(btnReset.x + btnReset.width * 0.5, btnReset.y + btnReset.height * 0.5);
+        frame();
+        assert(host.scaleOverride() == 0.0f);
 
         // Back to the performance page for the tests that follow.
         const core::Rect performanceTab = panelElementFrame(host, "performance.tab");

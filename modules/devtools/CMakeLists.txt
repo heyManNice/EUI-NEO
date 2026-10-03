@@ -23,6 +23,8 @@ add_library(eui_neo_module_devtools
     $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_properties.h>
     $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_performance.cpp>
     $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_performance.h>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_scale.cpp>
+    $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_scale.h>
     $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_preview.cpp>
     $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_preview.h>
     $<${EUI_DEVTOOLS_PANEL}:${CMAKE_CURRENT_LIST_DIR}/devtools_tree.cpp>

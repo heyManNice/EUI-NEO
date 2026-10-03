@@ -259,7 +259,26 @@ bool windowMaximized() {
     return dslAppConfig().maximizedValue;
 }
 
+namespace detail {
+inline float& uiScaleOverrideStorage() {
+    static float overrideScale = 0.0f;
+    return overrideScale;
+}
+} // namespace detail
+
+float uiScaleOverride() {
+    return detail::uiScaleOverrideStorage();
+}
+
+void setUiScaleOverride(float scale) {
+    detail::uiScaleOverrideStorage() = scale > 0.0f ? scale : 0.0f;
+    core::platform::requestUiUpdate();
+}
+
 float uiScale() {
+    if (detail::uiScaleOverrideStorage() > 0.0f) {
+        return detail::uiScaleOverrideStorage();
+    }
     const float configuredScale = dslAppConfig().uiScaleValue;
     return configuredScale > 0.0f ? configuredScale : 1.0f;
 }
@@ -317,6 +336,12 @@ inline detail::OverlayWindows makeOverlayWindows() {
             request.compose);
     };
     windows.close = [handle] { handle->requestClose(); };
+    windows.setScaleOverride = [](float scale) {
+        setUiScaleOverride(scale);
+    };
+    windows.getScaleOverride = []() -> float {
+        return uiScaleOverride();
+    };
     return windows;
 }
 

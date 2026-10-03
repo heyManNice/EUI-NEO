@@ -73,6 +73,8 @@ bool windowDecorated();
 bool windowAlwaysOnTop();
 bool windowMaximized();
 float uiScale();
+float uiScaleOverride();
+void setUiScaleOverride(float scale);
 bool trayEnabled();
 const char* trayTitle();
 const char* trayIconPath();

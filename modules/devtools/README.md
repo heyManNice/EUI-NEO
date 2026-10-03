@@ -72,7 +72,7 @@ void compose(eui::Ui& ui, const eui::Screen& screen) {
 
 ## 标签页与计划
 
-标签栏列出面板的全部标签：`Performance` 与 `Elements` 有内容，其余只是先占住名字，打开时会说明自己准备读什么。加一个计划中的面板，先在 `devtools_ui.cpp` 的标签表里加一行，再在这里补一条计划。
+标签栏列出面板的全部标签：`Performance`、`Elements` 与 `Scale` 有内容，其余只是先占住名字，打开时会说明自己准备读什么。加一个计划中的面板，先在 `devtools_ui.cpp` 的标签表里加一行，再在这里补一条计划。
 
 计划中的标签页（按优先级）。「读什么」写的是数据来源，最后两列说明代价：多数页只加一个只读的 Debug 钩子，不改变运行时行为。
 
@@ -84,7 +84,6 @@ void compose(eui::Ui& ui, const eui::Screen& screen) {
 | `Animations` | transition / easing / timer 实例与 `isAnimating()` | 是谁让这一帧动起来的，计时器为什么没触发 | 小 |
 | `Resources` | 字体（默认 / 图标 / 回退，缺字）、图片（stb / libpng / nanosvg、远程就绪）、shadertoy | assets 丢失、字体回退没生效、纹理与字体内存增长 | 中等，要接资源缓存 |
 | `Windows` | `DslWindowManager` 与 `AppRunner` | 多窗口与 modal 状态、tray 可用与被隐藏、每窗口 fps 与 dpi | 中等，面板目前只认识主窗口 |
-| `Scale` | `dpiScale` / `pointerScale` / `uiScale()` | 逻辑单位与像素的换算，为什么在高分屏上偏了 | 展示很便宜；“强制缩放”需要应用提供钩子 |
 
 另外三条计划：
 

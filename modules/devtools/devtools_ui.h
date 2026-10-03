@@ -17,13 +17,13 @@ enum class DockPosition { Floating, Left, Bottom, Right };
 enum class DevtoolsTab {
     Performance,
     Elements,
+    Scale,
     State,
     Input,
     Frames,
     Animations,
     Resources,
-    Windows,
-    Scale
+    Windows
 };
 
 enum class PropertiesTab {
@@ -49,6 +49,9 @@ struct DevtoolsPanelState {
     float tabTrackWidth = 0.0f;
     float performanceScrollOffset = 0.0f;
     float elementsScrollOffset = 0.0f;
+    float scaleScrollOffset = 0.0f;
+    float scaleOverride = 0.0f;
+    float systemDpi = 1.0f;
     std::string selectedElement;
     // The row the pointer is over, previewed in the page until it leaves.
     std::string hoveredElement;
@@ -93,6 +96,11 @@ struct DevtoolsPanelState {
 struct DevtoolsUiState {
     float width = 0.0f;
     float height = 0.0f;
+    float dpiScale = 1.0f;
+    float scaleOverride = 0.0f;
+    float systemDpi = 1.0f;
+    int framebufferWidth = 0;
+    int framebufferHeight = 0;
     core::Rect panel;
     bool detached = false;
     DockPosition dockPosition = DockPosition::Bottom;
@@ -120,6 +128,11 @@ struct DevtoolsUiActions {
 
     struct Performance {
         std::function<void(float)> setScrollOffset;
+    };
+
+    struct Scale {
+        std::function<void(float)> setScrollOffset;
+        std::function<void(float)> setScaleOverride;
     };
 
     struct Tree {
@@ -160,6 +173,7 @@ struct DevtoolsUiActions {
 
     Shell shell;
     Performance performance;
+    Scale scale;
     Tree tree;
     Properties properties;
 };

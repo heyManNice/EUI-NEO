@@ -634,6 +634,18 @@ float DevtoolsHost::performanceScrollOffset() const {
     return panelState_ != nullptr ? panelState_->performanceScrollOffset : 0.0f;
 }
 
+float DevtoolsHost::scaleScrollOffset() const {
+    return panelState_ != nullptr ? panelState_->scaleScrollOffset : 0.0f;
+}
+
+float DevtoolsHost::scaleOverride() const {
+    return panelState_ != nullptr ? panelState_->scaleOverride : 0.0f;
+}
+
+float DevtoolsHost::systemDpi() const {
+    return panelState_ != nullptr ? panelState_->systemDpi : (dpiScale_ > 0.0f ? dpiScale_ : 1.0f);
+}
+
 const std::string& DevtoolsHost::selectedElement() const {
     static const std::string empty;
     return panelState_ != nullptr ? panelState_->selectedElement : empty;
@@ -759,6 +771,14 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
     DevtoolsUiState state;
     state.width = width;
     state.height = height;
+    state.dpiScale = dpiScale_ > 0.0f ? dpiScale_ : 1.0f;
+    state.framebufferWidth = framebufferWidth_;
+    state.framebufferHeight = framebufferHeight_;
+    if (panelState.scaleOverride <= 0.0f && dpiScale_ > 0.0f) {
+        panelState.systemDpi = dpiScale_;
+    }
+    state.scaleOverride = panelState.scaleOverride;
+    state.systemDpi = panelState.systemDpi > 0.0f ? panelState.systemDpi : (dpiScale_ > 0.0f ? dpiScale_ : 1.0f);
     state.panel = panel;
     state.detached = detached;
     state.dockPosition = dockPosition_;
@@ -804,6 +824,27 @@ DevtoolsUiActions DevtoolsHost::buildActions(DevtoolsPanelState& state) {
 
     actions.performance.setScrollOffset = [this, &state](float offset) {
         state.performanceScrollOffset = offset;
+        requestCompose();
+    };
+
+    actions.scale.setScrollOffset = [this, &state](float offset) {
+        state.scaleScrollOffset = offset;
+        requestCompose();
+    };
+    actions.scale.setScaleOverride = [this, &state](float targetScale) {
+        if (targetScale <= 0.0f) {
+            state.scaleOverride = 0.0f;
+            if (session_.windows.setScaleOverride) {
+                session_.windows.setScaleOverride(0.0f);
+            }
+        } else {
+            const float base = state.systemDpi > 0.0f ? state.systemDpi : 1.0f;
+            const float multiplier = targetScale / base;
+            state.scaleOverride = targetScale;
+            if (session_.windows.setScaleOverride) {
+                session_.windows.setScaleOverride(multiplier);
+            }
+        }
         requestCompose();
     };
 

@@ -102,6 +102,9 @@ public:
     DevtoolsTab activeTab() const;
     int contentHeight() const;
     float performanceScrollOffset() const;
+    float scaleScrollOffset() const;
+    float scaleOverride() const;
+    float systemDpi() const;
     const std::string& selectedElement() const;
     const std::vector<std::string>& expandedElements() const;
     const ElementTreeSnapshot& elementTree() const;

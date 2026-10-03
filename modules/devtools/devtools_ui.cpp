@@ -2,6 +2,7 @@
 
 #include "modules/devtools/devtools_elements.h"
 #include "modules/devtools/devtools_performance.h"
+#include "modules/devtools/devtools_scale.h"
 #include "modules/devtools/devtools_theme.h"
 
 #include <algorithm>
@@ -53,13 +54,13 @@ struct TabEntry {
 constexpr TabEntry kTabs[] = {
     {"performance.tab", "Performance", DevtoolsTab::Performance, nullptr},
     {"elements.tab", "Elements", DevtoolsTab::Elements, nullptr},
+    {"scale.tab", "Scale", DevtoolsTab::Scale, nullptr},
     {"state.tab", "State", DevtoolsTab::State, "runtime state and the per-id instances behind each element"},
     {"input.tab", "Input", DevtoolsTab::Input, "the event stream and which element each event reached"},
     {"frames.tab", "Frames", DevtoolsTab::Frames, "why each frame repainted and what it repainted"},
     {"animations.tab", "Animations", DevtoolsTab::Animations, "transitions, timers and what keeps animating"},
     {"resources.tab", "Resources", DevtoolsTab::Resources, "fonts, images and the caches they live in"},
     {"windows.tab", "Windows", DevtoolsTab::Windows, "the windows an app opened and the tray it may hide in"},
-    {"scale.tab", "Scale", DevtoolsTab::Scale, "the scales a frame is drawn with and the logical-to-pixel math"},
 };
 
 // The note a tab shows while it has no panel of its own. The id ends in ".planned", so
@@ -317,6 +318,10 @@ void composePanelContent(core::dsl::Ui& ui, const DevtoolsUiState& state, const 
     }
     if (activeTab == DevtoolsTab::Elements) {
         composeElementsTab(ui, state, actions);
+        return;
+    }
+    if (activeTab == DevtoolsTab::Scale) {
+        composeScaleTab(ui, state, actions);
         return;
     }
     const float contentHeight = std::max(

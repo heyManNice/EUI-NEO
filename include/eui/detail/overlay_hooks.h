@@ -40,6 +40,8 @@ struct OverlayWindowRequest {
 struct OverlayWindows {
     std::function<void(const OverlayWindowRequest&)> open;
     std::function<void()> close;
+    std::function<void(float)> setScaleOverride;
+    std::function<float()> getScaleOverride;
 };
 
 // What the app layer asks of a tool: this side is filled in by the tool and called by the
