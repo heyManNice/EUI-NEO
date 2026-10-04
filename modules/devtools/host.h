@@ -7,6 +7,7 @@
 #include "core/render/text.h"
 #include "eui/detail/overlay_hooks.h"
 #include "modules/devtools/input.h"
+#include "modules/devtools/preview.h"
 #include "modules/devtools/state.h"
 #include "modules/devtools/tree.h"
 #include "modules/devtools/ui.h"
@@ -135,11 +136,27 @@ public:
     core::dsl::Runtime* pageRuntime() const { return session_.page; }
     bool modifyElementProperty(const std::string& id, ElementField field, const FieldValue& value);
     void cacheRenderFramebuffer(int width, int height, std::vector<unsigned char> rgba);
-    bool getCachedFramebuffer(int& outWidth, int& outHeight, std::vector<unsigned char>& outRgba);
+    // What dates the cached frame. Every frame cached bumps it, so a caller that is about to
+    // ask for a capture reads it first and hands it back to getCachedFramebufferSince: that is
+    // what tells the frame the capture produced from the one still sitting there from the
+    // previous ask, which is otherwise what a first read would be answered with.
+    std::uint64_t framebufferGeneration() const;
+    bool getCachedFramebufferSince(std::uint64_t generation, std::uint64_t& outFrameGeneration, int& outWidth, int& outHeight, std::vector<unsigned char>& outRgba);
     void requestFramebufferCapture();
     bool captureRequested() const;
+    // Marks the screenshot tool wants drawn on the frames it is about to capture, and the call
+    // that takes them down again once the frame carrying them has been read. The overlay is drawn
+    // by the page's render pass, so it is requested before the capture that waits for a frame and
+    // cleared after, which is what keeps every frame in between carrying it.
+    void requestMarkOverlay(std::vector<MarkBounds> marks);
+    void clearMarkOverlay();
     void requestCompose();
     float dpiScale() const { return dpiScale_ > 0.0f ? dpiScale_ : 1.0f; }
+    // The size the last frame was rendered at, which is what a screenshot is measured in. Marks
+    // report logical coordinates, so this and dpiScale() are the pair that converts between the
+    // two spaces; both are zero before the first frame, when there is nothing to convert.
+    int framebufferWidth() const { return framebufferWidth_; }
+    int framebufferHeight() const { return framebufferHeight_; }
     std::uint64_t frameSequence() const;
     bool waitForFrame(std::uint64_t targetSequence, std::chrono::milliseconds timeout = std::chrono::milliseconds(1200));
 
@@ -253,11 +270,24 @@ private:
     bool boxPreviewPrimitiveInitialized_ = false;
     core::TextPrimitive boxPreviewTextPrimitive_;
     bool boxPreviewTextPrimitiveInitialized_ = false;
+    // The mark overlay a screenshot asked for, and the primitives it draws with. They are the
+    // panel's, like the box preview's, so a capture that never asks for marks leaves the page
+    // with nothing drawn on it and no graphics object held for a feature nobody used.
+    std::vector<MarkBounds> markOverlay_;
+    core::RoundedRectPrimitive markOverlayPrimitive_;
+    bool markOverlayPrimitiveInitialized_ = false;
+    core::TextPrimitive markOverlayTextPrimitive_;
+    bool markOverlayTextPrimitiveInitialized_ = false;
 
-    // Framebuffer capture caching for MCP vision
+    // Framebuffer capture caching for MCP vision. The render thread fills it and the MCP
+    // worker thread reads it, so the pixels and the generation that dates them are kept under
+    // one lock: a reader that compared generations must not then copy the pixels of the other
+    // frame, which is what two separate reads would let it do.
+    mutable std::mutex framebufferMutex_;
     bool captureRequested_ = false;
     int cachedFbWidth_ = 0;
     int cachedFbHeight_ = 0;
+    std::uint64_t cachedFbGeneration_ = 0;
     std::vector<unsigned char> cachedFbPixels_;
 
     // Frame synchronization for deterministic automation/MCP actions

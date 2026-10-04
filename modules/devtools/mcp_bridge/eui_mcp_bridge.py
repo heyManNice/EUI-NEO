@@ -90,6 +90,27 @@ def is_port_responding(port: int, timeout: float = 0.5) -> bool:
         return False
 
 
+def read_request_id(line: str):
+    """The id of a JSON-RPC request as it arrived, so an error can be answered with it.
+
+    A client matches a reply to its request by this field. A reply that leaves it null reads
+    as an unsolicited message, so the request it was meant for keeps waiting and the call
+    never returns: answering with the id of the line being answered is what makes a failed
+    forward an error the caller can see instead of a hang.
+    """
+    try:
+        return json.loads(line).get("id")
+    except Exception:
+        return None
+
+
+def build_error_response(request_id, message: str) -> str:
+    return json.dumps(
+        {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32603, "message": message}},
+        ensure_ascii=False,
+    )
+
+
 def stop_running_app() -> tuple[bool, int | None, int | None]:
     """Terminate any background running EUI-NEO application and clean discovery file."""
     disc_port, disc_pid = read_discovery_file()
@@ -239,10 +260,42 @@ class McpBridge:
                     pass
             self.spawned_proc = None
 
+    def _endpoint_url(self) -> str:
+        return f"http://127.0.0.1:{self.port}/mcp"
+
+    def _forward(self, body: str) -> str:
+        req = urllib.request.Request(
+            self._endpoint_url(),
+            data=body.encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10.0) as resp:
+            return resp.read().decode("utf-8")
+
+    def _reconnect(self) -> bool:
+        """Point the proxy at an instance again after the one it was talking to went away.
+
+        Stopping the application to rebuild it is an ordinary step of the workflow, and it
+        leaves a long-lived proxy holding a port nothing listens on. The discovery file names
+        the instance that replaced it; spawning is the same fallback the initial start uses.
+        """
+        disc_port, disc_pid = read_discovery_file()
+        if disc_port and disc_port != self.port and is_port_responding(disc_port):
+            log(f"Target instance changed. Reconnecting to port {disc_port} (PID: {disc_pid})")
+            self.port = disc_port
+            return True
+        if self.auto_spawn:
+            random_port = find_free_port()
+            log(f"Target instance is gone. Relaunching on port {random_port}")
+            self._spawn_app(random_port)
+            self.port = random_port
+            return True
+        return False
+
     def run_proxy_loop(self):
         """Read standard MCP JSON-RPC messages from stdin and forward to HTTP."""
         log("Stdio <-> HTTP proxy loop running. Listening for MCP client requests...")
-        url = f"http://127.0.0.1:{self.port}/mcp"
 
         while True:
             try:
@@ -255,33 +308,30 @@ class McpBridge:
                 if not line:
                     continue
 
-                # Forward JSON-RPC request to HTTP
-                req_data = line.encode("utf-8")
-                req = urllib.request.Request(
-                    url,
-                    data=req_data,
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
-                )
+                request_id = read_request_id(line)
 
                 try:
-                    with urllib.request.urlopen(req, timeout=10.0) as resp:
-                        resp_data = resp.read().decode("utf-8")
-                        sys.stdout.write(resp_data + "\n")
-                        sys.stdout.flush()
+                    response = self._forward(line)
                 except urllib.error.HTTPError as e:
-                    err_body = e.read().decode("utf-8")
-                    sys.stdout.write(err_body + "\n")
-                    sys.stdout.flush()
+                    # The server answered with an error status, so its own body already names the
+                    # request and is passed on rather than replaced.
+                    response = e.read().decode("utf-8")
                 except Exception as ex:
-                    # Return standard JSON-RPC internal error if forward fails
-                    err_resp = {
-                        "jsonrpc": "2.0",
-                        "id": None,
-                        "error": {"code": -32603, "message": f"Bridge forward error: {str(ex)}"},
-                    }
-                    sys.stdout.write(json.dumps(err_resp, ensure_ascii=False) + "\n")
-                    sys.stdout.flush()
+                    # The instance is gone. Reconnect once and replay the request, so that
+                    # stopping the application to rebuild it does not cost the client its
+                    # connection, then report the failure against the id that asked for it.
+                    if self._reconnect():
+                        try:
+                            response = self._forward(line)
+                        except Exception as retry_ex:
+                            response = build_error_response(request_id, f"Bridge forward error: {retry_ex}")
+                    else:
+                        response = build_error_response(
+                            request_id, f"No EUI-NEO instance available to forward to: {ex}"
+                        )
+
+                sys.stdout.write(response + "\n")
+                sys.stdout.flush()
 
             except KeyboardInterrupt:
                 break
@@ -443,6 +493,8 @@ def main():
 
     subparsers.add_parser("stop", help="Stop background running EUI-NEO application")
 
+    subparsers.add_parser("restart", help="Stop the running application and launch it again, for picking up a fresh build")
+
     # General 'call' subcommand for invoking any MCP tool
     call_parser = subparsers.add_parser("call", help="Directly invoke an MCP tool in a single line")
     call_parser.add_argument("tool", type=str, help="Tool name to call (e.g. describe_screen, click_element, input_text, capture_viewport)")
@@ -501,8 +553,11 @@ def main():
 
     if args.subcommand == "shot":
         args.tool = "capture_viewport"
-        args.output = args.out
-        extra_args = ["--filePath", args.out]
+        # Resolved here, where the caller's working directory is the one meant: the server writes
+        # the file and its own directory is the application's, not this one.
+        out_path = str(pathlib.Path(args.out).resolve())
+        args.output = out_path
+        extra_args = ["--filePath", out_path]
         handle_cli_call(args, extra_args)
         return
 
@@ -512,6 +567,22 @@ def main():
             print(f"Stopped EUI-NEO application (PID: {pid}, Port: {port})")
         else:
             print("No active EUI-NEO application found to stop.")
+        sys.exit(0)
+
+    if args.subcommand == "restart":
+        # The pair a rebuild needs: the running binary holds its own file, so the old instance has
+        # to go before the build writes, and something has to bring the new one up afterwards.
+        stopped, pid, port = stop_running_app()
+        if stopped:
+            print(f"Stopped EUI-NEO application (PID: {pid}, Port: {port})")
+        else:
+            print("No active EUI-NEO application found to stop.")
+        # daemon=True, like every other CLI entry point: without it the bridge registers its own
+        # cleanup on exit and kills the application it was just asked to leave running.
+        bridge = McpBridge(port=args.port, app_path=args.app, auto_spawn=True, daemon=True)
+        bridge.start()
+        launched = bridge.spawned_proc.pid if bridge.spawned_proc is not None else "attached"
+        print(f"Started EUI-NEO application on port {bridge.port} (PID: {launched})")
         sys.exit(0)
 
     if args.subcommand == "call":

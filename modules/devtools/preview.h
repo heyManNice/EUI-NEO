@@ -65,6 +65,13 @@ inline constexpr core::Color kElementBoundsColors[] = {
 
 core::Color elementBoundsColor(int depth);
 
+// The mark overlay's own colour, deliberately none of the bounds hues: it points at the elements
+// an agent can address, which is a different question from what the tree is made of, and the two
+// overlays can be on the same screenshot.
+inline constexpr core::Color kMarkBoxColor{1.00f, 0.78f, 0.22f, 0.95f};
+inline constexpr core::Color kMarkBadgeColor{0.10f, 0.10f, 0.13f, 0.92f};
+inline constexpr core::Color kMarkLabelColor{0.99f, 0.94f, 0.78f, 1.00f};
+
 // One layout box and the depth the tree gave it.
 struct ElementBounds {
     core::Rect frame;
@@ -81,6 +88,22 @@ PreviewBand outlineBand(const core::Rect& frame);
 void drawElementBounds(const std::vector<ElementBounds>& bounds,
                        const core::dsl::runtime::RenderPassContext& pass,
                        core::RoundedRectPrimitive& primitive);
+
+// One interactive element as a screenshot draws it: the mark an agent addresses it by, and the
+// frame it covers. The frame is the layout box, the same one the marks themselves report.
+struct MarkBounds {
+    core::Rect frame;
+    int markIndex = 0;
+};
+
+// Draws the Set-of-Mark overlay over the page: a box around every interactive element with its
+// mark index on a label beside it, which is what lets a screenshot be read without a second
+// call to find out which element a mark names. The boxes are page geometry, so they are drawn
+// in the pass's own space and the caller asks for them before the frame it means to capture.
+void drawMarkOverlay(const std::vector<MarkBounds>& marks,
+                     const core::dsl::runtime::RenderPassContext& pass,
+                     core::RoundedRectPrimitive& rectPrimitive,
+                     core::TextPrimitive* textPrimitive);
 
 
 // Draws the wash of one resolved box, inside the pass's clip, and floats a coordinate badge

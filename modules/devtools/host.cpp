@@ -86,16 +86,30 @@ bool DevtoolsHost::modifyElementProperty(const std::string& id, ElementField fie
 }
 
 void DevtoolsHost::cacheRenderFramebuffer(int width, int height, std::vector<unsigned char> rgba) {
+    std::lock_guard<std::mutex> lock(framebufferMutex_);
     cachedFbWidth_ = width;
     cachedFbHeight_ = height;
     cachedFbPixels_ = std::move(rgba);
+    ++cachedFbGeneration_;
     captureRequested_ = false;
 }
 
-bool DevtoolsHost::getCachedFramebuffer(int& outWidth, int& outHeight, std::vector<unsigned char>& outRgba) {
+std::uint64_t DevtoolsHost::framebufferGeneration() const {
+    std::lock_guard<std::mutex> lock(framebufferMutex_);
+    return cachedFbGeneration_;
+}
+
+bool DevtoolsHost::getCachedFramebufferSince(std::uint64_t generation, std::uint64_t& outFrameGeneration, int& outWidth, int& outHeight, std::vector<unsigned char>& outRgba) {
+    std::lock_guard<std::mutex> lock(framebufferMutex_);
+    // The generation is compared and the pixels copied under the same lock, so a frame cached
+    // between the two would be handed over rather than the ones the comparison passed on.
+    if (cachedFbGeneration_ <= generation) {
+        return false;
+    }
     if (cachedFbWidth_ <= 0 || cachedFbHeight_ <= 0 || cachedFbPixels_.empty()) {
         return false;
     }
+    outFrameGeneration = cachedFbGeneration_;
     outWidth = cachedFbWidth_;
     outHeight = cachedFbHeight_;
     outRgba = cachedFbPixels_;
@@ -103,7 +117,10 @@ bool DevtoolsHost::getCachedFramebuffer(int& outWidth, int& outHeight, std::vect
 }
 
 void DevtoolsHost::requestFramebufferCapture() {
-    captureRequested_ = true;
+    {
+        std::lock_guard<std::mutex> lock(framebufferMutex_);
+        captureRequested_ = true;
+    }
     if (hasPage()) {
         session_.page->requestFullPaint();
     }
@@ -111,7 +128,16 @@ void DevtoolsHost::requestFramebufferCapture() {
 }
 
 bool DevtoolsHost::captureRequested() const {
+    std::lock_guard<std::mutex> lock(framebufferMutex_);
     return captureRequested_;
+}
+
+void DevtoolsHost::requestMarkOverlay(std::vector<MarkBounds> marks) {
+    markOverlay_ = std::move(marks);
+}
+
+void DevtoolsHost::clearMarkOverlay() {
+    markOverlay_.clear();
 }
 
 bool attachDevtoolsHost() {
@@ -1348,10 +1374,25 @@ void DevtoolsHost::render(int windowWidth, int windowHeight, float dpiScale, con
 }
 
 void DevtoolsHost::renderPageOverlay(const core::dsl::runtime::RenderPassContext& pass) {
-    // Two things draw over the page: the box model of the element the panel points at, and,
-    // while the view options ask for it, a ring around every element the tree lists. Both
-    // belong to the panel, so a panel nobody can see leaves the page alone.
+    // Three things draw over the page: the box model of the element the panel points at, while
+    // the view options ask for it a ring around every element the tree lists, and the marks a
+    // screenshot asked for. The first two belong to the panel, so a panel nobody can see leaves
+    // the page alone; the marks are asked for by a capture, which has no panel to be seen with.
     const bool showBounds = visible_ && panelState_ != nullptr && panelState_->showElementBounds;
+    const bool showMarks = !markOverlay_.empty();
+    if (!pass.hover.active && !showBounds && !showMarks) {
+        return;
+    }
+    if (showMarks && !markOverlayPrimitiveInitialized_) {
+        markOverlayPrimitiveInitialized_ = markOverlayPrimitive_.initialize();
+    }
+    if (showMarks && markOverlayPrimitiveInitialized_) {
+        if (!markOverlayTextPrimitiveInitialized_) {
+            markOverlayTextPrimitiveInitialized_ = markOverlayTextPrimitive_.initialize();
+        }
+        drawMarkOverlay(markOverlay_, pass, markOverlayPrimitive_,
+                        markOverlayTextPrimitiveInitialized_ ? &markOverlayTextPrimitive_ : nullptr);
+    }
     if (!pass.hover.active && !showBounds) {
         return;
     }
@@ -1413,6 +1454,14 @@ void DevtoolsHost::releaseGraphicsResources() {
         boxPreviewTextPrimitive_.destroy();
         boxPreviewTextPrimitiveInitialized_ = false;
     }
+    if (markOverlayPrimitiveInitialized_) {
+        markOverlayPrimitive_.destroy();
+        markOverlayPrimitiveInitialized_ = false;
+    }
+    if (markOverlayTextPrimitiveInitialized_) {
+        markOverlayTextPrimitive_.destroy();
+        markOverlayTextPrimitiveInitialized_ = false;
+    }
     panelState_ = nullptr;
     composeRequested_ = true;
 }
@@ -1441,6 +1490,23 @@ void DevtoolsHost::shutdown() {
         }
         boxPreviewTextPrimitiveInitialized_ = false;
     }
+    if (markOverlayPrimitiveInitialized_) {
+        if (core::render::activeRenderBackend() != nullptr) {
+            markOverlayPrimitive_.destroy();
+        } else {
+            markOverlayPrimitive_ = core::RoundedRectPrimitive{};
+        }
+        markOverlayPrimitiveInitialized_ = false;
+    }
+    if (markOverlayTextPrimitiveInitialized_) {
+        if (core::render::activeRenderBackend() != nullptr) {
+            markOverlayTextPrimitive_.destroy();
+        } else {
+            markOverlayTextPrimitive_ = core::TextPrimitive{};
+        }
+        markOverlayTextPrimitiveInitialized_ = false;
+    }
+    markOverlay_.clear();
     panelState_ = nullptr;
     visible_ = false;
     dockPosition_ = DockPosition::Bottom;

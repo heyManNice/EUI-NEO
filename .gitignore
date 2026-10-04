@@ -18,3 +18,4 @@
 /Android/local.properties
 /.cache/
 /.vscode/
+__pycache__

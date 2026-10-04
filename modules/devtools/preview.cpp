@@ -110,6 +110,102 @@ void drawElementBounds(const std::vector<ElementBounds>& bounds,
     pass.clipToNothing();
 }
 
+void drawMarkOverlay(const std::vector<MarkBounds>& marks,
+                     const core::dsl::runtime::RenderPassContext& pass,
+                     core::RoundedRectPrimitive& rectPrimitive,
+                     core::TextPrimitive* textPrimitive) {
+    if (pass.backend == nullptr || marks.empty()) {
+        return;
+    }
+
+    // These boxes are page geometry, not one element's box, so the clip they need is the pass's
+    // own and not the clip some element left behind.
+    pass.clipToNothing();
+
+    const DevtoolsTheme& theme = devtoolsTheme();
+    const float dpiScale = pass.dpiScale;
+    const float fontSize = theme.captionFontSize * dpiScale;
+    const float lineHeight = fontSize * 1.25f;
+    const float padX = 5.0f * dpiScale;
+    const float padY = 2.5f * dpiScale;
+    const float gap = 3.0f * dpiScale;
+
+    const auto paint = [&](const core::Rect& rect, const core::Color& color, float radius) {
+        rectPrimitive.setBounds(rect.x, rect.y, rect.width, rect.height);
+        rectPrimitive.setColor(color);
+        rectPrimitive.setGradient({});
+        rectPrimitive.setBorder({});
+        rectPrimitive.setShadow({});
+        rectPrimitive.setCornerRadius(radius);
+        rectPrimitive.setBlur(0.0f);
+        rectPrimitive.setOpacity(1.0f);
+        rectPrimitive.setTransformMatrix(core::dsl::combinedPrimitiveMatrix(core::dsl::RenderTransform{}, rect,
+                                                                           core::Transform{}));
+        ++core::render::currentRenderFrameStats().rectDraws;
+        rectPrimitive.render(pass.windowWidth, pass.windowHeight);
+    };
+
+    for (const MarkBounds& mark : marks) {
+        const core::Rect pixel = core::dsl::toPixelRect(mark.frame, dpiScale);
+        if (pixel.width <= 0.0f || pixel.height <= 0.0f) {
+            continue;
+        }
+
+        // Thicker than the bounds ring: this one is read off a screenshot at whatever scale the
+        // reader is looking at it, and a hairline does not survive that.
+        constexpr float kBoxThickness = 2.0f;
+        const core::Rect inner{pixel.x + kBoxThickness,
+                               pixel.y + kBoxThickness,
+                               std::max(0.0f, pixel.width - kBoxThickness * 2.0f),
+                               std::max(0.0f, pixel.height - kBoxThickness * 2.0f)};
+        const PreviewBand ring = previewBand(pixel, inner);
+        for (int index = 0; index < ring.count; ++index) {
+            paint(ring.rects[index], kMarkBoxColor, 0.0f);
+        }
+
+        if (textPrimitive == nullptr) {
+            continue;
+        }
+
+        const std::string label = "e" + std::to_string(mark.markIndex);
+        const float textWidth = core::TextPrimitive::measureTextWidth(label, theme.fontFamily, fontSize, 600);
+        const float badgeWidth = textWidth + padX * 2.0f;
+        const float badgeHeight = lineHeight + padY * 2.0f;
+
+        // Above the box by default, and inside it when there is no room above: a label that
+        // fell off the top edge would leave the mark it belongs to unnamed.
+        float badgeY = pixel.y - badgeHeight - gap;
+        if (badgeY < gap) {
+            badgeY = pixel.y + gap;
+        }
+        const float badgeX = std::clamp(pixel.x, gap,
+                                        std::max(gap, static_cast<float>(pass.windowWidth) - badgeWidth - gap));
+        badgeY = std::clamp(badgeY, gap,
+                            std::max(gap, static_cast<float>(pass.windowHeight) - badgeHeight - gap));
+
+        paint(core::Rect{badgeX, badgeY, badgeWidth, badgeHeight}, kMarkBadgeColor, 3.0f * dpiScale);
+
+        textPrimitive->setPosition(badgeX + padX, badgeY + padY);
+        textPrimitive->setText(label);
+        textPrimitive->setFontFamily(theme.fontFamily);
+        textPrimitive->setFontSize(fontSize);
+        textPrimitive->setFontWeight(600);
+        textPrimitive->setColor(kMarkLabelColor);
+        textPrimitive->setMaxWidth(0.0f);
+        textPrimitive->setWrap(false);
+        textPrimitive->setHorizontalAlign(core::HorizontalAlign::Left);
+        textPrimitive->setVerticalAlign(core::VerticalAlign::Top);
+        textPrimitive->setLineHeight(lineHeight);
+        textPrimitive->setTransformMatrix(core::TransformMatrix{});
+        textPrimitive->prepare();
+        ++core::render::currentRenderFrameStats().textDraws;
+        textPrimitive->render(pass.windowWidth, pass.windowHeight);
+    }
+
+    // Leave the backend scissor to the pass's next draw, like page content does.
+    pass.clipToNothing();
+}
+
 void drawBoxPreview(const core::dsl::runtime::ElementBox& box,
                     const core::dsl::runtime::RenderPassContext& pass,
                     const BoxPreviewPalette& palette,

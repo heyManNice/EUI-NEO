@@ -3,6 +3,7 @@
 #include "core/dsl_runtime.h"
 #include "core/render/render_backend.h"
 #include "modules/devtools/host.h"
+#include "modules/devtools/mcp_semantic.h"
 
 #include <png.h>
 
@@ -30,9 +31,26 @@ void pngMemoryFlushCallback(png_structp png_ptr) {
     (void)png_ptr;
 }
 
+// The marks as the overlay draws them: the frames the runtime reports for the same elements the
+// Set-of-Mark numbering is handed out over, so an index on a screenshot names what an index in a
+// snapshot names.
+std::vector<MarkBounds> collectMarkBounds() {
+    std::vector<MarkBounds> bounds;
+    core::dsl::Runtime* runtime = devtoolsHostInstance().pageRuntime();
+    if (runtime == nullptr) {
+        return bounds;
+    }
+    const std::vector<McpInteractiveElement> marks = extractInteractiveElements(*runtime, true);
+    bounds.reserve(marks.size());
+    for (const McpInteractiveElement& mark : marks) {
+        bounds.push_back({mark.frame, mark.markIndex});
+    }
+    return bounds;
+}
+
 } // namespace
 
-FramebufferImage captureViewportScreenshot(const core::Rect* region) {
+FramebufferImage captureViewportScreenshot(const core::Rect* region, bool drawMarks) {
     core::render::RenderBackend* backend = core::render::activeRenderBackend();
     
     // If we have an active backend on this thread, read directly
@@ -71,22 +89,38 @@ FramebufferImage captureViewportScreenshot(const core::Rect* region) {
     }
 
     // Otherwise, we are likely on the MCP worker thread:
-    // Request render pass to capture framebuffer and wait with active retry
+    // Request render pass to capture framebuffer and wait with active retry. The generation is
+    // taken before the request and every read is made against it: a cached frame is answered
+    // for any capture that has already happened, so without it the first read would be
+    // satisfied by the frame left over from the previous capture and the caller would be shown
+    // the screen as it was before the action it just took.
     DevtoolsHost& host = devtoolsHostInstance();
+    if (drawMarks) {
+        // Asked for before the capture and taken down after the frame is in hand: the overlay is
+        // drawn by a render pass, so every frame rendered while waiting for the capture carries
+        // it, and whichever of them is read out has the marks on it.
+        host.requestMarkOverlay(collectMarkBounds());
+    }
+    const std::uint64_t generation = host.framebufferGeneration();
     host.requestFramebufferCapture();
 
     int fullW = 0;
     int fullH = 0;
+    std::uint64_t fullGeneration = 0;
     std::vector<unsigned char> fullPixels;
 
     for (int attempt = 0; attempt < 50; ++attempt) {
-        if (host.getCachedFramebuffer(fullW, fullH, fullPixels)) {
+        if (host.getCachedFramebufferSince(generation, fullGeneration, fullW, fullH, fullPixels)) {
             break;
         }
         if (attempt % 10 == 9) {
             host.requestFramebufferCapture();
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+
+    if (drawMarks) {
+        host.clearMarkOverlay();
     }
 
     if (fullW <= 0 || fullH <= 0 || fullPixels.empty()) {
@@ -98,6 +132,7 @@ FramebufferImage captureViewportScreenshot(const core::Rect* region) {
         img.width = fullW;
         img.height = fullH;
         img.rgba = std::move(fullPixels);
+        img.generation = fullGeneration;
         return img;
     }
 
@@ -113,6 +148,7 @@ FramebufferImage captureViewportScreenshot(const core::Rect* region) {
     FramebufferImage img;
     img.width = rw;
     img.height = rh;
+    img.generation = fullGeneration;
     img.rgba.resize(static_cast<std::size_t>(rw) * rh * 4u);
 
     for (int row = 0; row < rh; ++row) {

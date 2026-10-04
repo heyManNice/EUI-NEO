@@ -21,6 +21,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #if defined(_WIN32)
@@ -50,36 +51,109 @@ std::vector<McpRequestLogEntry> s_requestLogs;
 constexpr std::size_t kMaxLogs = 100;
 std::atomic<uint64_t> s_uiRevision{1};
 
+// Where this process is running from. It is what answers "am I talking to the build I just made",
+// which is the first thing worth knowing when the screen does not match the source, and the one
+// question no other tool can answer.
+std::string currentExecutablePath() {
+#if defined(_WIN32)
+    wchar_t buffer[MAX_PATH]{};
+    const DWORD length = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+    if (length == 0) {
+        return {};
+    }
+    const int size = WideCharToMultiByte(CP_UTF8, 0, buffer, static_cast<int>(length), nullptr, 0, nullptr, nullptr);
+    if (size <= 0) {
+        return {};
+    }
+    std::string path(static_cast<std::size_t>(size), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, buffer, static_cast<int>(length), path.data(), size, nullptr, nullptr);
+    return path;
+#else
+    char buffer[4096]{};
+    const ssize_t length = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
+    if (length <= 0) {
+        return {};
+    }
+    return std::string(buffer, static_cast<std::size_t>(length));
+#endif
+}
+
+int currentProcessId() {
+#if defined(_WIN32)
+    return static_cast<int>(GetCurrentProcessId());
+#else
+    return static_cast<int>(getpid());
+#endif
+}
+
+// The handle-to-element mapping of the last snapshot handed out, and the lock that keeps one being
+// recorded from being read half-written. A handle is a position in the set of interactive elements,
+// so the set changing under a caller that is still holding one is what makes the same eN name a
+// different element; this is the map the next action is checked against.
+std::mutex s_refMapMutex;
+std::vector<std::string> s_snapshotRefIds;
+bool s_hasSnapshotRefs = false;
+
+// The index an eN handle names, or 0 when the target is not a handle at all.
+int refHandleIndex(const std::string& target) {
+    std::string digits = target;
+    if (!digits.empty() && digits[0] == '#') {
+        digits = digits.substr(1);
+    }
+    if (!digits.empty() && (digits[0] == 'e' || digits[0] == 'E')) {
+        digits = digits.substr(1);
+    }
+    if (digits.empty()) {
+        return 0;
+    }
+    for (char c : digits) {
+        if (!std::isdigit(static_cast<unsigned char>(c))) {
+            return 0;
+        }
+    }
+    return std::atoi(digits.c_str());
+}
+
 // Resolves element target: supports raw element ID, Set-of-Mark handle (e.g. "e5", "#e5", "5"), or standard mark index
 std::string resolveTarget(core::dsl::Runtime* rt, const std::string& target) {
     if (target.empty() || rt == nullptr) return target;
 
     // Check if target matches e<N> or #e<N> or pure digits <N>
-    std::string handle = target;
-    if (!handle.empty() && handle[0] == '#') handle = handle.substr(1);
-    if (!handle.empty() && (handle[0] == 'e' || handle[0] == 'E')) handle = handle.substr(1);
-
-    bool allDigits = !handle.empty();
-    for (char c : handle) {
-        if (!std::isdigit(static_cast<unsigned char>(c))) {
-            allDigits = false;
-            break;
-        }
-    }
-
-    if (allDigits) {
-        int idx = std::atoi(handle.c_str());
-        if (idx > 0) {
-            auto marks = extractInteractiveElements(*rt, true);
-            for (const auto& m : marks) {
-                if (m.markIndex == idx) {
-                    return m.id;
-                }
+    const int idx = refHandleIndex(target);
+    if (idx > 0) {
+        auto marks = extractInteractiveElements(*rt, true);
+        for (const auto& m : marks) {
+            if (m.markIndex == idx) {
+                return m.id;
             }
         }
     }
 
     return target;
+}
+
+// Records the mapping a snapshot is about to hand out, in handle order.
+void rememberSnapshotRefs(core::dsl::Runtime& runtime) {
+    std::vector<std::string> ids;
+    for (const McpInteractiveElement& mark : extractInteractiveElements(runtime, true)) {
+        if (mark.markIndex <= 0) {
+            continue;
+        }
+        if (static_cast<std::size_t>(mark.markIndex) > ids.size()) {
+            ids.resize(static_cast<std::size_t>(mark.markIndex));
+        }
+        ids[static_cast<std::size_t>(mark.markIndex) - 1] = mark.id;
+    }
+    std::lock_guard<std::mutex> lock(s_refMapMutex);
+    s_snapshotRefIds = std::move(ids);
+    s_hasSnapshotRefs = true;
+}
+
+// The snapshot a caller is about to read, with the handles in it recorded as the ones that caller
+// now holds.
+std::string takeSnapshotTrackingRefs(core::dsl::Runtime& runtime, bool interactiveOnly, int maxDepth = 16) {
+    rememberSnapshotRefs(runtime);
+    return takeSnapshot(runtime, interactiveOnly, maxDepth);
 }
 
 void syncUiFrameAfterAction(core::dsl::Runtime* rt) {
@@ -161,6 +235,145 @@ std::string escapeJson(const std::string& str) {
             ss << c;
         }
     }
+    return ss.str();
+}
+
+// What this process is serving from: the executable, the port, and the two counters that date
+// what it is showing. A caller that has just rebuilt wants to know it is talking to the new
+// binary and not to the one that was already running, and one that is mapping a mark onto a
+// screenshot wants the scale between the two: marks report logical coordinates and the
+// framebuffer is dpiScale times that, which nothing else in the protocol states.
+std::string appStatusJson() {
+    std::ostringstream ss;
+    ss << "{\"exePath\":\"" << escapeJson(currentExecutablePath()) << "\""
+       << ",\"pid\":" << currentProcessId()
+       << ",\"port\":" << currentMcpServerPort()
+       << ",\"uiRevision\":" << s_uiRevision.load()
+       << ",\"frameSequence\":" << devtoolsHostInstance().frameSequence();
+
+    // Read from the host rather than from the render backend: this runs on the MCP worker thread,
+    // where no backend is current, and the host is what the frames were rendered through anyway.
+    const int framebufferWidth = devtoolsHostInstance().framebufferWidth();
+    const int framebufferHeight = devtoolsHostInstance().framebufferHeight();
+    if (framebufferWidth > 0 && framebufferHeight > 0) {
+        const float scale = devtoolsHostInstance().dpiScale();
+        ss << ",\"framebuffer\":{\"width\":" << framebufferWidth << ",\"height\":" << framebufferHeight << "}"
+           << ",\"logical\":{\"width\":" << static_cast<int>(static_cast<float>(framebufferWidth) / scale)
+           << ",\"height\":" << static_cast<int>(static_cast<float>(framebufferHeight) / scale) << "}"
+           << ",\"dpiScale\":" << scale;
+    }
+
+    ss << "}";
+    return ss.str();
+}
+
+// One interactive element's observable state. An action's reply is built by comparing the list of
+// these from before it with the list from after, which is what lets a caller see the effect
+// without spending a second call on a snapshot to find it.
+struct ActionStateEntry {
+    std::string id;
+    std::string text;
+    int markIndex = 0;
+    bool disabled = false;
+    bool selected = false;
+    bool focusable = false;
+    bool textInput = false;
+};
+
+std::vector<ActionStateEntry> captureActionState(core::dsl::Runtime& runtime) {
+    std::vector<ActionStateEntry> entries;
+    for (const McpInteractiveElement& mark : extractInteractiveElements(runtime, true)) {
+        entries.push_back({mark.id, mark.text, mark.markIndex, mark.disabled, mark.selected, mark.focusable,
+                           mark.textInput});
+    }
+    return entries;
+}
+
+// What the action changed, or an empty string when it changed nothing. Only the differences are
+// reported and the fields that did not move are left out, so a reply to an action that did nothing
+// costs the caller nothing; an action reply carrying no diff is one that changed nothing.
+std::string actionDiffJson(const std::vector<ActionStateEntry>& before, const std::vector<ActionStateEntry>& after) {
+    std::unordered_map<std::string, const ActionStateEntry*> beforeById;
+    for (const ActionStateEntry& entry : before) {
+        beforeById[entry.id] = &entry;
+    }
+    std::unordered_map<std::string, const ActionStateEntry*> afterById;
+    for (const ActionStateEntry& entry : after) {
+        afterById[entry.id] = &entry;
+    }
+
+    std::string added;
+    int addedCount = 0;
+    for (const ActionStateEntry& entry : after) {
+        if (beforeById.find(entry.id) != beforeById.end()) {
+            continue;
+        }
+        added += (addedCount++ > 0 ? ",\"" : "\"") + escapeJson(entry.id) + "\"";
+    }
+
+    std::string removed;
+    int removedCount = 0;
+    for (const ActionStateEntry& entry : before) {
+        if (afterById.find(entry.id) != afterById.end()) {
+            continue;
+        }
+        removed += (removedCount++ > 0 ? ",\"" : "\"") + escapeJson(entry.id) + "\"";
+    }
+
+    std::string changed;
+    int changedCount = 0;
+    for (const ActionStateEntry& entry : after) {
+        const auto found = beforeById.find(entry.id);
+        if (found == beforeById.end()) {
+            continue;
+        }
+        const ActionStateEntry& previous = *found->second;
+
+        std::string fields;
+        int fieldCount = 0;
+        const auto flag = [&](const char* name, bool from, bool to) {
+            if (from == to) {
+                return;
+            }
+            fields += std::string(fieldCount++ > 0 ? "," : "") + "\"" + name + "\":{\"from\":" + (from ? "true" : "false") +
+                      ",\"to\":" + (to ? "true" : "false") + "}";
+        };
+        // A handle is a position, so an element that kept its identity can still have moved to a
+        // different eN: reported because the caller's handle for it is what just went stale.
+        if (previous.markIndex != entry.markIndex) {
+            fields += std::string(fieldCount++ > 0 ? "," : "") + "\"ref\":{\"from\":" +
+                      std::to_string(previous.markIndex) + ",\"to\":" + std::to_string(entry.markIndex) + "}";
+        }
+        flag("disabled", previous.disabled, entry.disabled);
+        flag("selected", previous.selected, entry.selected);
+        flag("focusable", previous.focusable, entry.focusable);
+        flag("textInput", previous.textInput, entry.textInput);
+        if (previous.text != entry.text) {
+            fields += std::string(fieldCount++ > 0 ? "," : "") + "\"text\":{\"from\":\"" + escapeJson(previous.text) +
+                      "\",\"to\":\"" + escapeJson(entry.text) + "\"}";
+        }
+        if (fieldCount == 0) {
+            continue;
+        }
+        changed += std::string(changedCount++ > 0 ? "," : "") + "{\"id\":\"" + escapeJson(entry.id) + "\"," + fields + "}";
+    }
+
+    if (addedCount == 0 && removedCount == 0 && changedCount == 0) {
+        return {};
+    }
+
+    std::ostringstream ss;
+    ss << "{";
+    if (addedCount > 0) {
+        ss << "\"added\":[" << added << "]";
+    }
+    if (removedCount > 0) {
+        ss << (addedCount > 0 ? "," : "") << "\"removed\":[" << removed << "]";
+    }
+    if (changedCount > 0) {
+        ss << (addedCount > 0 || removedCount > 0 ? "," : "") << "\"changed\":[" << changed << "]";
+    }
+    ss << "}";
     return ss.str();
 }
 
@@ -384,6 +597,65 @@ std::string extractJsonObject(const std::string& json, const std::string& key) {
     return {};
 }
 
+// The message for a handle that no longer names what it named when the caller's snapshot was
+// taken, and empty while every handle in the arguments still does. Handles are checked rather than
+// trusted because the alternative is an action that lands on a different element and reports
+// success, which no caller can notice and no reply explains.
+std::string refDriftError(core::dsl::Runtime* rt, const std::string& arguments) {
+    if (rt == nullptr) {
+        return {};
+    }
+
+    std::vector<std::string> expected;
+    {
+        std::lock_guard<std::mutex> lock(s_refMapMutex);
+        if (!s_hasSnapshotRefs) {
+            return {};
+        }
+        expected = s_snapshotRefIds;
+    }
+
+    // click_mark addresses by the same positional index as a handle does, so it is checked the
+    // same way and from the same map.
+    std::vector<int> indices;
+    for (const char* key : {"target", "elementId", "id"}) {
+        indices.push_back(refHandleIndex(extractJsonStringOrToken(arguments, key)));
+    }
+    indices.push_back(static_cast<int>(extractJsonNumber(arguments, "markIndex", 0.0)));
+
+    for (const int index : indices) {
+        if (index <= 0 || static_cast<std::size_t>(index) > expected.size()) {
+            continue;
+        }
+
+        const std::string& previous = expected[static_cast<std::size_t>(index) - 1];
+        if (previous.empty()) {
+            continue;
+        }
+
+        std::string current;
+        for (const McpInteractiveElement& mark : extractInteractiveElements(*rt, true)) {
+            if (mark.markIndex == index) {
+                current = mark.id;
+                break;
+            }
+        }
+        if (current == previous) {
+            continue;
+        }
+
+        const std::string name = "e" + std::to_string(index);
+        if (current.empty()) {
+            return "Ref " + name + " no longer names anything; it named '" + previous +
+                   "' when the snapshot was taken. Take a new snapshot before acting.";
+        }
+        return "Ref " + name + " now names '" + current + "', not '" + previous +
+               "' as it did when the snapshot was taken. Take a new snapshot before acting.";
+    }
+
+    return {};
+}
+
 // ElementField by string name
 bool parseElementField(const std::string& name, ElementField& outField) {
     if (name == "Color" || name == "color") { outField = ElementField::Color; return true; }
@@ -458,6 +730,11 @@ const char* kMcpToolsListJson =
 "{"
   "\"tools\":["
     "{"
+      "\"name\":\"app_status\","
+      "\"description\":\"Report the executable, process id, MCP port, uiRevision and frameSequence this instance is serving from. Use it to confirm which build answered, after a rebuild or when the screen and the source disagree.\","
+      "\"inputSchema\":{\"type\":\"object\"}"
+    "},"
+    "{"
       "\"name\":\"describe_screen\","
       "\"description\":\"Returns a concise markdown summary of the screen for LLM reasoning (compact table of marks, element IDs, kinds, semantic labels, contexts, and capability flags). Much smaller token cost than full element tree. Response is plain text, not JSON.\","
       "\"inputSchema\":{\"type\":\"object\"}"
@@ -508,7 +785,7 @@ const char* kMcpToolsListJson =
     "},"
     "{"
       "\"name\":\"click_element\","
-      "\"description\":\"Simulate user click action on target element by ID or short handle (e.g. 'e2' or 'clock.city.add.hit').\","
+      "\"description\":\"Simulate user click action on target element by ID or short handle (e.g. 'e2' or 'clock.city.add.hit'). The reply reports what changed in a \"diff\" field; a reply without one changed nothing.\","
       "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
@@ -520,7 +797,7 @@ const char* kMcpToolsListJson =
     "},"
     "{"
       "\"name\":\"click_mark\","
-      "\"description\":\"Simulate user click action on target element by its Set-of-Mark index (from get_interactive_marks or describe_screen).\","
+      "\"description\":\"Simulate user click action on target element by its Set-of-Mark index (from get_interactive_marks or describe_screen). The reply reports what changed in a \"diff\" field; a reply without one changed nothing.\","
       "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
@@ -532,7 +809,7 @@ const char* kMcpToolsListJson =
     "},"
     "{"
       "\"name\":\"input_text\","
-      "\"description\":\"Inject text into target element by ID, ref handle ('e2'), or active focus. Supports replace mode (default) to replace existing content cleanly, or append mode.\","
+      "\"description\":\"Inject text into target element by ID, ref handle ('e2'), or active focus. Supports replace mode (default) to replace existing content cleanly, or append mode. The reply reports what changed in a \"diff\" field; a reply without one changed nothing.\","
       "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
@@ -548,7 +825,7 @@ const char* kMcpToolsListJson =
     "},"
     "{"
       "\"name\":\"press_key\","
-      "\"description\":\"Dispatch a keyboard key event (e.g. Enter, Backspace, Escape, Tab, Up, Down, Left, Right).\","
+      "\"description\":\"Dispatch a keyboard key event (e.g. Enter, Backspace, Escape, Tab, Up, Down, Left, Right). The reply reports what changed in a \"diff\" field; a reply without one changed nothing.\","
       "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
@@ -565,7 +842,7 @@ const char* kMcpToolsListJson =
     "},"
     "{"
       "\"name\":\"focus_element\","
-      "\"description\":\"Set keyboard focus on target element by ID or ref handle.\","
+      "\"description\":\"Set keyboard focus on target element by ID or ref handle. The reply reports what changed in a \"diff\" field; a reply without one changed nothing.\","
       "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
@@ -576,7 +853,7 @@ const char* kMcpToolsListJson =
     "},"
     "{"
       "\"name\":\"scroll_element\","
-      "\"description\":\"Dispatch a scroll delta to the nearest scrollable element at or above the target. The pointer is moved over the target first, so the scroll reaches that element. Fails when the target is missing, disabled, or has no scrollable element at or above it. Without a target the delta goes to the current pointer position.\","
+      "\"description\":\"Dispatch a scroll delta to the nearest scrollable element at or above the target. The pointer is moved over the target first, so the scroll reaches that element. Fails when the target is missing, disabled, or has no scrollable element at or above it. Without a target the delta goes to the current pointer position. The reply reports what changed in a \"diff\" field; a reply without one changed nothing.\","
       "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
@@ -783,10 +1060,40 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             rt = devtoolsHostInstance().pageRuntime();
         }
 
+        // A handle is a position in the set of interactive elements, so one held across a change
+        // to that set names something else now. Checked before any tool runs, so no action lands
+        // on an element the caller never saw.
+        if (const std::string drift = refDriftError(rt, arguments); !drift.empty()) {
+            return makeJsonRpcError(idStr, -32000, drift);
+        }
+
+        // The tools that change the page are the ones whose replies report what they changed, and
+        // they are also the ones worth the walk this costs. Read from the runtime after the action
+        // and after syncUiFrameAfterAction, which is what has the tree reflecting it by then.
+        const bool changesThePage = toolName == "click_element" || toolName == "click_mark" ||
+                                    toolName == "input_text" || toolName == "press_key" ||
+                                    toolName == "scroll_element" || toolName == "focus_element";
+        std::vector<ActionStateEntry> stateBeforeAction;
+        if (changesThePage && rt != nullptr) {
+            stateBeforeAction = captureActionState(*rt);
+        }
+        const auto actionDiffField = [&]() -> std::string {
+            if (!changesThePage || rt == nullptr) {
+                return {};
+            }
+            const std::string diff = actionDiffJson(stateBeforeAction, captureActionState(*rt));
+            return diff.empty() ? std::string{} : (",\"diff\":" + diff);
+        };
+
+        if (toolName == "app_status") {
+            return makeJsonRpcResponse(idStr, makeMcpTextContent(appStatusJson()));
+        }
+
         if (toolName == "describe_screen") {
             if (rt == nullptr) {
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
+            rememberSnapshotRefs(*rt);
             std::string desc = describeScreen(*rt);
             return makeJsonRpcResponse(idStr, makeMcpTextContent(desc));
         }
@@ -797,7 +1104,7 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             }
             bool interactiveOnly = extractJsonBool(arguments, "interactiveOnly", false);
             int maxDepth = static_cast<int>(extractJsonNumber(arguments, "maxDepth", 16.0));
-            std::string snap = takeSnapshot(*rt, interactiveOnly, maxDepth);
+            std::string snap = takeSnapshotTrackingRefs(*rt, interactiveOnly, maxDepth);
             return makeJsonRpcResponse(idStr, makeMcpTextContent(snap));
         }
 
@@ -832,6 +1139,9 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
             bool onlyVisible = extractJsonBool(arguments, "onlyVisible", true);
+            if (onlyVisible) {
+                rememberSnapshotRefs(*rt);
+            }
             auto marks = extractInteractiveElements(*rt, onlyVisible);
             std::string marksJson = formatInteractiveElementsJson(marks);
             return makeJsonRpcResponse(idStr, makeMcpTextContent(marksJson));
@@ -852,8 +1162,9 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             ss << "{\"success\":" << (res.success ? "true" : "false")
                << ",\"revision\":" << s_uiRevision.load()
                << ",\"message\":\"" << escapeJson(res.message) << "\"";
+            ss << actionDiffField();
             if (incSnap) {
-                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshot(*rt, false)) << "\"";
+                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshotTrackingRefs(*rt, false)) << "\"";
             }
             ss << "}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
@@ -872,8 +1183,9 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             ss << "{\"success\":" << (res.success ? "true" : "false")
                << ",\"revision\":" << s_uiRevision.load()
                << ",\"message\":\"" << escapeJson(res.message) << "\"";
+            ss << actionDiffField();
             if (incSnap) {
-                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshot(*rt, false)) << "\"";
+                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshotTrackingRefs(*rt, false)) << "\"";
             }
             ss << "}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
@@ -900,8 +1212,9 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             ss << "{\"success\":" << (res.success ? "true" : "false")
                << ",\"revision\":" << s_uiRevision.load()
                << ",\"message\":\"" << escapeJson(res.message) << "\"";
+            ss << actionDiffField();
             if (incSnap) {
-                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshot(*rt, false)) << "\"";
+                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshotTrackingRefs(*rt, false)) << "\"";
             }
             ss << "}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
@@ -926,8 +1239,9 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             ss << "{\"success\":" << (res.success ? "true" : "false")
                << ",\"revision\":" << s_uiRevision.load()
                << ",\"message\":\"" << escapeJson(res.message) << "\"";
+            ss << actionDiffField();
             if (incSnap) {
-                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshot(*rt, false)) << "\"";
+                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshotTrackingRefs(*rt, false)) << "\"";
             }
             ss << "}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
@@ -946,7 +1260,9 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             std::ostringstream ss;
             ss << "{\"success\":" << (res.success ? "true" : "false")
                << ",\"revision\":" << s_uiRevision.load()
-               << ",\"message\":\"" << escapeJson(res.message) << "\"}";
+               << ",\"message\":\"" << escapeJson(res.message) << "\"";
+            ss << actionDiffField();
+            ss << "}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
         }
 
@@ -965,12 +1281,14 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             std::ostringstream ss;
             ss << "{\"success\":" << (res.success ? "true" : "false")
                << ",\"revision\":" << s_uiRevision.load()
-               << ",\"message\":\"" << escapeJson(res.message) << "\"}";
+               << ",\"message\":\"" << escapeJson(res.message) << "\"";
+            ss << actionDiffField();
+            ss << "}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
         }
 
         if (toolName == "capture_viewport") {
-            FramebufferImage img = captureViewportScreenshot(nullptr);
+            FramebufferImage img = captureViewportScreenshot(nullptr, extractJsonBool(arguments, "drawMarks", false));
             if (!img.valid()) {
                 return makeJsonRpcError(idStr, -32000, "Viewport screenshot capture failed or no framebuffer");
             }
@@ -981,8 +1299,18 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
                 if (ofs.is_open()) {
                     ofs.write(reinterpret_cast<const char*>(pngBytes.data()), pngBytes.size());
                     std::ostringstream ss;
-                    ss << "{\"success\":true,\"savedToFile\":\"" << escapeJson(filePath) << "\",\"bytes\":" << pngBytes.size() << "}";
+                    ss << "{\"success\":true,\"savedToFile\":\"" << escapeJson(filePath) << "\",\"bytes\":" << pngBytes.size()
+                       << ",\"frameGeneration\":" << img.generation << "}";
                     return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
+                } else {
+                    // A path is resolved against this process's working directory, which is not the
+                    // caller's. A relative path that works for the caller can land nowhere here, and
+                    // falling through to a base64 reply would hide that behind an image the caller
+                    // never asked to have inline.
+                    return makeJsonRpcError(idStr, -32000,
+                                            "Cannot write screenshot to '" + filePath +
+                                                "'; paths are resolved against the application's "
+                                                "working directory, so pass an absolute path");
                 }
             }
             std::string base64Png = encodeBase64(pngBytes);
@@ -1009,8 +1337,18 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
                 if (ofs.is_open()) {
                     ofs.write(reinterpret_cast<const char*>(pngBytes.data()), pngBytes.size());
                     std::ostringstream ss;
-                    ss << "{\"success\":true,\"savedToFile\":\"" << escapeJson(filePath) << "\",\"bytes\":" << pngBytes.size() << "}";
+                    ss << "{\"success\":true,\"savedToFile\":\"" << escapeJson(filePath) << "\",\"bytes\":" << pngBytes.size()
+                       << ",\"frameGeneration\":" << img.generation << "}";
                     return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
+                } else {
+                    // A path is resolved against this process's working directory, which is not the
+                    // caller's. A relative path that works for the caller can land nowhere here, and
+                    // falling through to a base64 reply would hide that behind an image the caller
+                    // never asked to have inline.
+                    return makeJsonRpcError(idStr, -32000,
+                                            "Cannot write screenshot to '" + filePath +
+                                                "'; paths are resolved against the application's "
+                                                "working directory, so pass an absolute path");
                 }
             }
             std::string base64Png = encodeBase64(pngBytes);
