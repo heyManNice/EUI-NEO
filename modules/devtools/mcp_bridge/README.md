@@ -1,68 +1,60 @@
-# EUI-NEO MCP Bridge
+# MCP Bridge
 
-Zero-dependency Python 3 bridge connecting Model Context Protocol (MCP) clients (Cursor, Claude Desktop, VS Code Cline / Roo Code, Windsurf, Zed) to EUI-NEO applications.
+`modules/devtools/mcp_bridge` 是连接 Model Context Protocol (MCP) 客户端与 EUI-NEO 应用的零外部依赖 Python 桥接层。
 
----
+它支持两种接入形态：
 
-## 🌟 Key Features
+- 作为持久化的标准 stdio MCP server：供 Cursor、Claude Desktop、VS Code (Cline / Roo Code)、Windsurf 等原生工具调用。
+- 作为终端单行命令 CLI：供 LLM 智能体在隔离的 shell 环境中通过单行命令直接执行界面动作，避免手工拼接 JSON-RPC。
 
-1. **Zero External Dependencies**: Built entirely using Python 3 standard library (`sys`, `json`, `urllib.request`, `socket`, `subprocess`). No `pip install` required.
-2. **Dual-Mode Operation**:
-   - **Stdio Mode**: Full standard JSON-RPC MCP server for Cursor, Claude Desktop, Cline, Roo Code.
-   - **Single-Line CLI Mode**: Perfect for LLMs running in isolated terminal/shell commands (`python eui_mcp_bridge.py call <tool> [args]`), completely avoiding hand-crafted JSON-RPC.
-3. **Random Port & Conflict-Free**: Automatically acquires an ephemeral random free port from the OS when launching applications, eliminating port collisions.
-4. **Automatic Lifecycle Management**:
-   - If the target application is not running, the bridge automatically launches it in clean, headless MCP mode (`--mcp-server --mcp-port=<port>`) without devtools panel obstruction.
-   - When the AI session terminates, the spawned application is cleanly exited.
-5. **Auto-Discovery & Direct HTTP**:
-   - Discovers running instances via system temp discovery file (`eui_mcp_active.json`).
-   - Query active port anytime with `--print-port`.
-   - Direct HTTP POST is also available at `http://127.0.0.1:<port>/mcp`.
-6. **Robust LLM Primitives (Chrome DevTools & Playwright aligned)**:
-   - `take_snapshot`: Compact indentation-based accessibility text snapshot with short handles (`[ref=eN]`), role, label, and bounds. Token cost is ~1/4 of full JSON.
-   - **Short Ref Handles**: Actions accept `e1`, `e2`, `#e5` directly instead of verbose IDs.
-   - **`includeSnapshot` in actions**: Instant state feedback right in the action response.
-   - **File-based Screenshots**: `capture_viewport` saves directly to disk (`--filePath`), never polluting context with 150KB base64 JSON unless explicitly asked.
+## 特性
 
----
+- 零第三方依赖：纯 Python 3 标准库（`sys`、`json`、`urllib.request`、`socket`、`subprocess`）实现，无需 `pip install`。
+- 随机端口与零冲突：启动应用时由操作系统分配临时空闲端口，避免固定端口冲突。
+- 自动生命周期管理：若目标应用未启动，桥接层自动以无头 MCP 模式（`--mcp-server --mcp-port=<port>`）拉起应用；会话结束时自动回收。
+- 实例自动发现：通过临时文件记录运行中实例，亦可通过 `--print-port` 查询当前活跃端口。
+- 紧凑文本快照与短句柄：基于无障碍树生成缩进文本快照，带短句柄（`[ref=eN]`），降低 token 消耗。
+- 动作即时状态回传：支持 `--includeSnapshot` 参数，在执行点击或输入后立即返回最新界面快照，消除额外往返。
+- 文件级截图落盘：支持直接将视口截图保存为本地文件，避免 base64 污染上下文。
 
-## ⚡ Direct CLI Mode (For Agent Shell Commands)
+## 命令行交互
 
-Agents running one-off shell commands can invoke actions via clean single-word commands:
+终端环境或自动化脚本可直接通过子命令操作界面：
 
-```bash
-# 1. Take a text snapshot of the screen with short ref handles [ref=eN]:
+```sh
+# 抓取界面文本快照（带 [ref=eN] 短句柄）
 python modules/devtools/mcp_bridge/eui_mcp_bridge.py snapshot
 
-# 2. Click an element using short handle:
+# 紧凑模式快照（仅保留可交互元素）
+python modules/devtools/mcp_bridge/eui_mcp_bridge.py snapshot --interactiveOnly
+
+# 点击元素（支持短句柄 eN 或原始 id）
 python modules/devtools/mcp_bridge/eui_mcp_bridge.py click e2
-# Or with instant post-action snapshot:
+
+# 点击并在响应中附带最新快照
 python modules/devtools/mcp_bridge/eui_mcp_bridge.py click e2 --includeSnapshot
 
-# 3. Fill / replace text into an input field:
+# 向输入框填入文本（默认清空原有内容）
 python modules/devtools/mcp_bridge/eui_mcp_bridge.py fill e14 "Beijing"
 
-# 4. Dispatch keyboard key:
+# 派发键盘按键（Enter、Backspace、Escape 等）
 python modules/devtools/mcp_bridge/eui_mcp_bridge.py press Enter
 
-# 5. Take screenshot directly to disk (saves tokens):
+# 截取视口图像并保存到文件
 python modules/devtools/mcp_bridge/eui_mcp_bridge.py shot --out screen.png
 
-# 6. Stop background application:
+# 停止后台运行的应用实例
 python modules/devtools/mcp_bridge/eui_mcp_bridge.py stop
 
-# 7. Check active port:
+# 查看当前活跃端口
 python modules/devtools/mcp_bridge/eui_mcp_bridge.py --print-port
 ```
 
----
+## 客户端配置
 
-## 🚀 Standard MCP Client Setup (Persistent Mode)
+### Cursor / VS Code (Cline / Roo Code)
 
-> **Note on Windows**: If `python` refers to the Windows Store placeholder (exit 9009), use the absolute path to your Python interpreter (e.g. `C:/Python312/python.exe`).
-
-### 1. Cursor / VS Code (Cline / Roo Code)
-Add to your project's `.cursor/mcp.json` or Cline MCP settings:
+在项目的 `.cursor/mcp.json` 或 Cline 设置中配置：
 
 ```json
 {
@@ -77,8 +69,9 @@ Add to your project's `.cursor/mcp.json` or Cline MCP settings:
 }
 ```
 
-### 2. Claude Desktop
-Add to your `claude_desktop_config.json` (located at `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
+### Claude Desktop
+
+在 `claude_desktop_config.json` 中配置：
 
 ```json
 {
@@ -93,35 +86,21 @@ Add to your `claude_desktop_config.json` (located at `%APPDATA%\Claude\claude_de
 }
 ```
 
----
+## 选项说明
 
-## 🛠️ Command-Line Options
+- 默认无参运行：启动 stdio MCP 代理服务。
+- `--app <path>`：指定自动拉起的目标应用可执行文件路径。
+- `--port <port>`：连接指定端口（0 为自动分配或发现）。
+- `--no-spawn`：仅连接已有实例，不自动启动新进程。
+- `--print-port`：输出当前运行实例的端口后退出。
+- `call <tool> [--arg value]`：调用任意 MCP 原生工具。
 
-```bash
-# Stdio proxy mode (auto-spawn or connect):
-python modules/devtools/mcp_bridge/eui_mcp_bridge.py
+## 编译排查提示
 
-# Query active port:
-python modules/devtools/mcp_bridge/eui_mcp_bridge.py --print-port
+当 EUI-NEO 应用在后台运行时，Ninja 构建重新复制静态字体或资源可能因 Windows 文件占用而失败。重新编译前可执行：
 
-# Connect to a specific port:
-python modules/devtools/mcp_bridge/eui_mcp_bridge.py --port 8990
-
-# Only connect to existing instance, never auto-spawn:
-python modules/devtools/mcp_bridge/eui_mcp_bridge.py --no-spawn
-
-# Take compact interactive-only snapshot (no static text nodes):
-python modules/devtools/mcp_bridge/eui_mcp_bridge.py snapshot --interactiveOnly
+```sh
+python modules/devtools/mcp_bridge/eui_mcp_bridge.py stop
 ```
 
----
-
-## 💡 Troubleshooting & Build Tips
-
-- **Rebuilding while an app is running**:
-  If an EUI-NEO application (such as `clock.exe`) is running in the background, rebuilds with `ninja` may fail when copying assets because Windows file locks prevent overwriting font/asset files. Run:
-  ```bash
-  python modules/devtools/mcp_bridge/eui_mcp_bridge.py stop
-  ```
-  before compiling to release file locks.
-
+释放应用占用的资源锁。
