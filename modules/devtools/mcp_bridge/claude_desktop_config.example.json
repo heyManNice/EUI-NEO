@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "eui-neo": {
+      "command": "python",
+      "args": [
+        "d:/MYDATA/Project/VsCode/EUI-NEO/modules/devtools/mcp_bridge/eui_mcp_bridge.py"
+      ]
+    }
+  }
+}

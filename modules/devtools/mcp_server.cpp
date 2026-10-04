@@ -13,6 +13,8 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
@@ -82,7 +84,7 @@ void parseArgument(const std::string& arg, McpLaunchOptions& options) {
     } else if (arg.rfind("--mcp-port=", 0) == 0) {
         std::string val = arg.substr(11);
         int p = std::atoi(val.c_str());
-        if (p > 0 && p <= 65535) {
+        if (p >= 0 && p <= 65535) {
             options.mcpPort = static_cast<uint16_t>(p);
         }
     } else if (arg.rfind("--devtools-tab=", 0) == 0) {
@@ -419,7 +421,7 @@ McpLaunchOptions parseMcpCommandLine(int argc, const char* const* argv) {
         std::string arg = argv[i];
         if (arg == "--mcp-port" && i + 1 < argc && argv[i + 1] != nullptr) {
             int p = std::atoi(argv[++i]);
-            if (p > 0 && p <= 65535) {
+            if (p >= 0 && p <= 65535) {
                 options.mcpPort = static_cast<uint16_t>(p);
             }
         } else {
@@ -448,7 +450,7 @@ McpLaunchOptions parseCurrentProcessCommandLine() {
                 WideCharToMultiByte(CP_UTF8, 0, argvW[i + 1], -1, &nextStr[0], next_size, NULL, NULL);
                 if (!nextStr.empty() && nextStr.back() == '\0') nextStr.pop_back();
                 int p = std::atoi(nextStr.c_str());
-                if (p > 0 && p <= 65535) {
+                if (p >= 0 && p <= 65535) {
                     options.mcpPort = static_cast<uint16_t>(p);
                     ++i;
                     continue;
@@ -927,8 +929,36 @@ void serverWorker(uint16_t port) {
         return;
     }
 
+    sockaddr_in boundAddr{};
+    int boundLen = sizeof(boundAddr);
+    if (getsockname(s_listenSocket, (sockaddr*)&boundAddr,
+#if defined(_WIN32)
+                    &boundLen
+#else
+                    (socklen_t*)&boundLen
+#endif
+        ) == 0) {
+        port = ntohs(boundAddr.sin_port);
+    }
+
     s_serverRunning = true;
     s_serverPort = port;
+
+    std::string discoveryPath;
+    try {
+        discoveryPath = (std::filesystem::temp_directory_path() / "eui_mcp_active.json").string();
+        std::ofstream ofs(discoveryPath);
+        if (ofs.is_open()) {
+            ofs << "{\"port\":" << port
+                << ",\"pid\":" <<
+#if defined(_WIN32)
+                GetCurrentProcessId()
+#else
+                getpid()
+#endif
+                << "}\n";
+        }
+    } catch (...) {}
 
     while (s_serverRunning) {
         fd_set readFds;
@@ -958,6 +988,10 @@ void serverWorker(uint16_t port) {
                 std::thread(handleClientConnection, clientSock).detach();
             }
         }
+    }
+
+    if (!discoveryPath.empty()) {
+        try { std::filesystem::remove(discoveryPath); } catch (...) {}
     }
 
     if (s_listenSocket != kInvalidSocket) {
