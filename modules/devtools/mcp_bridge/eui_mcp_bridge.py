@@ -29,6 +29,15 @@ import time
 import urllib.error
 import urllib.request
 
+# Ensure stdout and stdin use UTF-8 regardless of OS code page (cp936/GBK on Windows)
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 DISCOVERY_FILENAME = "eui_mcp_active.json"
 
 
@@ -233,16 +242,122 @@ class McpBridge:
                 log(f"Error in proxy loop: {e}")
                 break
 
-        self.cleanup()
+    def execute_tool(self, tool_name: str, arguments: dict) -> dict:
+        """Directly invoke a tool via HTTP and return the result dictionary."""
+        url = f"http://127.0.0.1:{self.port}/mcp"
+        payload = {
+            "jsonrpc": "2.0",
+            "id": "cli_call",
+            "method": "tools/call",
+            "params": {
+                "name": tool_name,
+                "arguments": arguments,
+            },
+        }
+        req_data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=req_data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15.0) as resp:
+                resp_data = resp.read().decode("utf-8")
+                return json.loads(resp_data)
+        except Exception as e:
+            return {"jsonrpc": "2.0", "id": "cli_call", "error": {"code": -32603, "message": str(e)}}
+
+
+def handle_cli_call(args, extra_args):
+    """Direct single-line CLI tool execution."""
+    bridge = McpBridge(
+        port=args.port,
+        app_path=args.app,
+        auto_spawn=not args.no_spawn,
+    )
+    bridge.start()
+
+    # Parse extra key-value arguments: --key value or --flag
+    tool_args = {}
+    i = 0
+    while i < len(extra_args):
+        arg = extra_args[i]
+        if arg.startswith("--"):
+            key = arg[2:]
+            if "=" in key:
+                k, v = key.split("=", 1)
+                tool_args[k] = v
+                i += 1
+                continue
+            if i + 1 < len(extra_args) and not extra_args[i + 1].startswith("--"):
+                val = extra_args[i + 1]
+                # Try parsing as JSON number/bool
+                if val.lower() == "true":
+                    tool_args[key] = True
+                elif val.lower() == "false":
+                    tool_args[key] = False
+                else:
+                    try:
+                        if "." in val:
+                            tool_args[key] = float(val)
+                        else:
+                            tool_args[key] = int(val)
+                    except ValueError:
+                        tool_args[key] = val
+                i += 2
+            else:
+                # Boolean flag
+                tool_args[key] = True
+                i += 1
+        else:
+            i += 1
+
+    tool_name = args.tool
+    res = bridge.execute_tool(tool_name, tool_args)
+
+    if "error" in res:
+        sys.stderr.write(f"Error ({res['error'].get('code')}): {res['error'].get('message')}\n")
+        sys.exit(1)
+
+    result_obj = res.get("result", {})
+    contents = result_obj.get("content", [])
+
+    for c in contents:
+        ctype = c.get("type")
+        if ctype == "text":
+            text = c.get("text", "")
+            # If the text is JSON, try pretty-printing it if compact is not requested
+            try:
+                parsed = json.loads(text)
+                print(json.dumps(parsed, indent=2, ensure_ascii=False))
+            except Exception:
+                print(text)
+        elif ctype == "image":
+            data_b64 = c.get("data", "")
+            out_file = getattr(args, "output", None)
+            if out_file:
+                import base64
+                img_data = base64.b64decode(data_b64)
+                with open(out_file, "wb") as f:
+                    f.write(img_data)
+                print(f"Screenshot saved to: {out_file} ({len(img_data)} bytes)")
+            else:
+                print(f"[Image captured: base64 len {len(data_b64)} chars. Use --output <file.png> to save directly]")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="EUI-NEO MCP Stdio-to-HTTP Bridge")
+    parser = argparse.ArgumentParser(description="EUI-NEO MCP Stdio-to-HTTP Bridge & CLI")
     parser.add_argument(
         "--port",
         type=int,
         default=None,
         help="Target port (0 for random, or specify fixed port like 8990). Defaults to auto-detect/random.",
+    )
+    parser.add_argument(
+        "--print-port",
+        action="store_true",
+        help="Print the active MCP server port and exit.",
     )
     parser.add_argument(
         "--app",
@@ -256,7 +371,32 @@ def main():
         help="Do not auto-spawn application if not running; only connect to existing instance.",
     )
 
-    args = parser.parse_args()
+    subparsers = parser.add_subparsers(dest="subcommand", help="Subcommand to run")
+
+    # Top-level direct shortcuts:
+    subparsers.add_parser("snapshot", help="Take accessibility text snapshot")
+    
+    click_p = subparsers.add_parser("click", help="Click an element (e.g. click e2 or click <id>)")
+    click_p.add_argument("target", type=str, help="Target ref handle (e.g. e2) or element ID")
+    
+    fill_p = subparsers.add_parser("fill", help="Fill/replace text in an element (e.g. fill e5 'Beijing')")
+    fill_p.add_argument("target", type=str, help="Target ref handle (e.g. e5) or element ID")
+    fill_p.add_argument("text", type=str, help="Text to input")
+    fill_p.add_argument("--append", action="store_true", help="Append text instead of replace")
+
+    press_p = subparsers.add_parser("press", help="Press keyboard key (e.g. press Enter)")
+    press_p.add_argument("key", type=str, help="Key name (Enter, Backspace, Escape, Tab, etc.)")
+    press_p.add_argument("--target", type=str, default="", help="Target ref handle or element ID")
+
+    shot_p = subparsers.add_parser("shot", help="Take viewport screenshot and save to disk")
+    shot_p.add_argument("--out", type=str, default="eui_screenshot.png", help="Output PNG file path (default: eui_screenshot.png)")
+
+    # General 'call' subcommand for invoking any MCP tool
+    call_parser = subparsers.add_parser("call", help="Directly invoke an MCP tool in a single line")
+    call_parser.add_argument("tool", type=str, help="Tool name to call (e.g. describe_screen, click_element, input_text, capture_viewport)")
+    call_parser.add_argument("--output", type=str, default=None, help="Output file path for screenshot images (e.g. out.png)")
+
+    args, extra_args = parser.parse_known_args()
 
     # Handle signal interrupts cleanly
     def sig_handler(sig, frame):
@@ -264,6 +404,59 @@ def main():
 
     signal.signal(signal.SIGINT, sig_handler)
     signal.signal(signal.SIGTERM, sig_handler)
+
+    if args.print_port:
+        disc_port, disc_pid = read_discovery_file()
+        if disc_port and is_port_responding(disc_port):
+            print(f"Port: {disc_port} (PID: {disc_pid})")
+            sys.exit(0)
+        elif is_port_responding(8990):
+            print("Port: 8990")
+            sys.exit(0)
+        else:
+            print("No active EUI MCP server found.")
+            sys.exit(1)
+
+    if args.subcommand == "snapshot":
+        args.tool = "take_snapshot"
+        args.output = None
+        handle_cli_call(args, extra_args)
+        return
+
+    if args.subcommand == "click":
+        args.tool = "click_element"
+        args.output = None
+        extra_args = ["--target", args.target] + extra_args
+        handle_cli_call(args, extra_args)
+        return
+
+    if args.subcommand == "fill":
+        args.tool = "input_text"
+        args.output = None
+        mode = "append" if args.append else "replace"
+        extra_args = ["--target", args.target, "--text", args.text, "--mode", mode] + extra_args
+        handle_cli_call(args, extra_args)
+        return
+
+    if args.subcommand == "press":
+        args.tool = "press_key"
+        args.output = None
+        extra_args = ["--key", args.key]
+        if args.target:
+            extra_args += ["--target", args.target]
+        handle_cli_call(args, extra_args)
+        return
+
+    if args.subcommand == "shot":
+        args.tool = "capture_viewport"
+        args.output = args.out
+        extra_args = ["--filePath", args.out]
+        handle_cli_call(args, extra_args)
+        return
+
+    if args.subcommand == "call":
+        handle_cli_call(args, extra_args)
+        return
 
     bridge = McpBridge(
         port=args.port,

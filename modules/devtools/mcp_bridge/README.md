@@ -7,15 +7,56 @@ Zero-dependency Python 3 bridge connecting Model Context Protocol (MCP) clients 
 ## 🌟 Key Features
 
 1. **Zero External Dependencies**: Built entirely using Python 3 standard library (`sys`, `json`, `urllib.request`, `socket`, `subprocess`). No `pip install` required.
-2. **Random Port & Conflict-Free**: Automatically acquires an ephemeral random free port from the OS when launching applications, eliminating port collisions.
-3. **Automatic Lifecycle Management**:
+2. **Dual-Mode Operation**:
+   - **Stdio Mode**: Full standard JSON-RPC MCP server for Cursor, Claude Desktop, Cline, Roo Code.
+   - **Single-Line CLI Mode**: Perfect for LLMs running in isolated terminal/shell commands (`python eui_mcp_bridge.py call <tool> [args]`), completely avoiding hand-crafted JSON-RPC.
+3. **Random Port & Conflict-Free**: Automatically acquires an ephemeral random free port from the OS when launching applications, eliminating port collisions.
+4. **Automatic Lifecycle Management**:
    - If the target application is not running, the bridge automatically launches it in clean, headless MCP mode (`--mcp-server --mcp-port=<port>`) without devtools panel obstruction.
    - When the AI session terminates, the spawned application is cleanly exited.
-4. **Auto-Discovery**: If an EUI-NEO application is already running, the bridge discovers it via the system temporary discovery file (`eui_mcp_active.json`) or probes the standard port.
+5. **Auto-Discovery & Direct HTTP**:
+   - Discovers running instances via system temp discovery file (`eui_mcp_active.json`).
+   - Query active port anytime with `--print-port`.
+   - Direct HTTP POST is also available at `http://127.0.0.1:<port>/mcp`.
+6. **Robust LLM Primitives (Chrome DevTools & Playwright aligned)**:
+   - `take_snapshot`: Compact indentation-based accessibility text snapshot with short handles (`[ref=eN]`), role, label, and bounds. Token cost is ~1/4 of full JSON.
+   - **Short Ref Handles**: Actions accept `e1`, `e2`, `#e5` directly instead of verbose IDs.
+   - **`includeSnapshot` in actions**: Instant state feedback right in the action response.
+   - **File-based Screenshots**: `capture_viewport` saves directly to disk (`--filePath`), never polluting context with 150KB base64 JSON unless explicitly asked.
 
 ---
 
-## 🚀 Quick Setup
+## ⚡ Direct CLI Mode (For Agent Shell Commands)
+
+Agents running one-off shell commands can invoke actions via clean single-word commands:
+
+```bash
+# 1. Take a text snapshot of the screen with short ref handles [ref=eN]:
+python modules/devtools/mcp_bridge/eui_mcp_bridge.py snapshot
+
+# 2. Click an element using short handle:
+python modules/devtools/mcp_bridge/eui_mcp_bridge.py click e2
+# Or with instant post-action snapshot:
+python modules/devtools/mcp_bridge/eui_mcp_bridge.py click e2 --includeSnapshot
+
+# 3. Fill / replace text into an input field:
+python modules/devtools/mcp_bridge/eui_mcp_bridge.py fill e14 "Beijing"
+
+# 4. Dispatch keyboard key:
+python modules/devtools/mcp_bridge/eui_mcp_bridge.py press Enter
+
+# 5. Take screenshot directly to disk (saves tokens):
+python modules/devtools/mcp_bridge/eui_mcp_bridge.py shot --out screen.png
+
+# 6. Check active port:
+python modules/devtools/mcp_bridge/eui_mcp_bridge.py --print-port
+```
+
+---
+
+## 🚀 Standard MCP Client Setup (Persistent Mode)
+
+> **Note on Windows**: If `python` refers to the Windows Store placeholder (exit 9009), use the absolute path to your Python interpreter (e.g. `C:/Users/<Username>/miniconda3/python.exe`).
 
 ### 1. Cursor / VS Code (Cline / Roo Code)
 Add to your project's `.cursor/mcp.json` or Cline MCP settings:
@@ -53,17 +94,15 @@ Add to your `claude_desktop_config.json` (located at `%APPDATA%\Claude\claude_de
 
 ## 🛠️ Command-Line Options
 
-You can test the bridge manually from the terminal:
-
 ```bash
-# Auto-detect running app or allocate a random port and launch ./build/clock.exe:
+# Stdio proxy mode (auto-spawn or connect):
 python modules/devtools/mcp_bridge/eui_mcp_bridge.py
 
-# Connect to a specific already running port:
-python modules/devtools/mcp_bridge/eui_mcp_bridge.py --port 8990
+# Query active port:
+python modules/devtools/mcp_bridge/eui_mcp_bridge.py --print-port
 
-# Specify custom executable to launch:
-python modules/devtools/mcp_bridge/eui_mcp_bridge.py --app ./build/my_app.exe
+# Connect to a specific port:
+python modules/devtools/mcp_bridge/eui_mcp_bridge.py --port 8990
 
 # Only connect to existing instance, never auto-spawn:
 python modules/devtools/mcp_bridge/eui_mcp_bridge.py --no-spawn

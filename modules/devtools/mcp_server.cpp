@@ -48,6 +48,52 @@ namespace {
 std::mutex s_logsMutex;
 std::vector<McpRequestLogEntry> s_requestLogs;
 constexpr std::size_t kMaxLogs = 100;
+std::atomic<uint64_t> s_uiRevision{1};
+
+// Resolves element target: supports raw element ID, Set-of-Mark handle (e.g. "e5", "#e5", "5"), or standard mark index
+std::string resolveTarget(core::dsl::Runtime* rt, const std::string& target) {
+    if (target.empty() || rt == nullptr) return target;
+
+    // Check if target matches e<N> or #e<N> or pure digits <N>
+    std::string handle = target;
+    if (!handle.empty() && handle[0] == '#') handle = handle.substr(1);
+    if (!handle.empty() && (handle[0] == 'e' || handle[0] == 'E')) handle = handle.substr(1);
+
+    bool allDigits = !handle.empty();
+    for (char c : handle) {
+        if (!std::isdigit(static_cast<unsigned char>(c))) {
+            allDigits = false;
+            break;
+        }
+    }
+
+    if (allDigits) {
+        int idx = std::atoi(handle.c_str());
+        if (idx > 0) {
+            auto marks = extractInteractiveElements(*rt, true);
+            for (const auto& m : marks) {
+                if (m.markIndex == idx) {
+                    return m.id;
+                }
+            }
+        }
+    }
+
+    return target;
+}
+
+void syncUiFrameAfterAction(core::dsl::Runtime* rt) {
+    s_uiRevision.fetch_add(1, std::memory_order_relaxed);
+    if (rt != nullptr) {
+        rt->requestElementRefresh();
+        rt->requestFullPaint();
+    }
+#if defined(EUI_TOOLING)
+    devtoolsHostInstance().requestCompose();
+#endif
+    // Wait briefly (~35ms) to give the render thread a complete frame cycle to compose and draw
+    std::this_thread::sleep_for(std::chrono::milliseconds(35));
+}
 
 void appendRequestLog(const std::string& method, const std::string& details, bool isError = false) {
     auto now = std::chrono::system_clock::now();
@@ -304,12 +350,19 @@ const char* kMcpToolsListJson =
 "{"
   "\"tools\":["
     "{"
+      "\"name\":\"describe_screen\","
+      "\"description\":\"Returns a concise markdown summary of the screen for LLM reasoning (compact table of marks, element IDs, kinds, semantic labels, contexts, and capability flags). Much smaller token cost than full element tree.\","
+      "\"inputSchema\":{\"type\":\"object\"}"
+    "},"
+    "{"
       "\"name\":\"extract_element_tree\","
       "\"description\":\"Extract full recursive UI element hierarchy tree with geometries and IDs.\","
       "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
-          "\"maxDepth\":{\"type\":\"number\",\"description\":\"Maximum depth to traverse (default 32)\"}"
+          "\"maxDepth\":{\"type\":\"number\",\"description\":\"Maximum depth to traverse (default 32)\"},"
+          "\"compact\":{\"type\":\"boolean\",\"description\":\"Omit empty children/flags and format frame as concise x,y,w,h string (default false)\"},"
+          "\"interactiveOnly\":{\"type\":\"boolean\",\"description\":\"Filter out branches with no interactive descendants (default false)\"}"
         "}"
       "}"
     "},"
@@ -326,7 +379,8 @@ const char* kMcpToolsListJson =
     "},"
     "{"
       "\"name\":\"get_interactive_marks\","
-      "\"description\":\"Retrieve Set-of-Mark (SoM) indexed interactive elements currently in viewport, with enriched semantics (element text, container contextText, and spatially nearestText).\",\"inputSchema\":{"
+      "\"description\":\"Retrieve Set-of-Mark (SoM) indexed interactive elements currently in viewport, with enriched semantics (element text, container contextText, spatially nearestText, and capabilities: clickable, textInput, focusable).\","
+      "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
           "\"onlyVisible\":{\"type\":\"boolean\",\"description\":\"Filter to only visible elements with non-zero bounds (default true)\"}"
@@ -334,37 +388,81 @@ const char* kMcpToolsListJson =
       "}"
     "},"
     "{"
-      "\"name\":\"click_element\","
-      "\"description\":\"Simulate user click action on target element by its string ID.\","
+      "\"name\":\"take_snapshot\","
+      "\"description\":\"Take an indentation-based accessibility text snapshot of the page with unique short handles [ref=eN] (e.g. e1, e2). Use these handles directly in click_element, input_text, etc. Preferred over heavy JSON element tree.\","
       "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
-          "\"elementId\":{\"type\":\"string\",\"description\":\"Target element ID\"}"
-        "},"
-        "\"required\":[\"elementId\"]"
+          "\"interactiveOnly\":{\"type\":\"boolean\",\"description\":\"Only list interactive/actionable elements (default true)\"}"
+        "}"
+      "}"
+    "},"
+    "{"
+      "\"name\":\"click_element\","
+      "\"description\":\"Simulate user click action on target element by ID or short handle (e.g. 'e2' or 'clock.city.add.hit').\","
+      "\"inputSchema\":{"
+        "\"type\":\"object\","
+        "\"properties\":{"
+          "\"target\":{\"type\":\"string\",\"description\":\"Target element ID or ref handle (e.g. 'e2' or 'clock.button')\"},"
+          "\"elementId\":{\"type\":\"string\",\"description\":\"Alternative name for target\"},"
+          "\"includeSnapshot\":{\"type\":\"boolean\",\"description\":\"Include updated text snapshot in response (default false)\"}"
+        "}"
       "}"
     "},"
     "{"
       "\"name\":\"click_mark\","
-      "\"description\":\"Simulate user click action on target element by its Set-of-Mark index (from get_interactive_marks).\","
+      "\"description\":\"Simulate user click action on target element by its Set-of-Mark index (from get_interactive_marks or describe_screen).\","
       "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
-          "\"markIndex\":{\"type\":\"number\",\"description\":\"Mark index number (1-based)\"}"
+          "\"markIndex\":{\"type\":\"number\",\"description\":\"Mark index number (1-based)\"},"
+          "\"includeSnapshot\":{\"type\":\"boolean\",\"description\":\"Include updated text snapshot in response (default false)\"}"
         "},"
         "\"required\":[\"markIndex\"]"
       "}"
     "},"
     "{"
       "\"name\":\"input_text\","
-      "\"description\":\"Inject text input into target element by ID or active focus.\","
+      "\"description\":\"Inject text into target element by ID, ref handle ('e2'), or active focus. Supports replace mode (default) to replace existing content cleanly, or append mode.\","
       "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
-          "\"elementId\":{\"type\":\"string\",\"description\":\"Target element ID\"},"
-          "\"text\":{\"type\":\"string\",\"description\":\"Text content to input\"}"
+          "\"target\":{\"type\":\"string\",\"description\":\"Target element ID or ref handle (e.g. 'e5' or 'clock.search.input.hit')\"},"
+          "\"elementId\":{\"type\":\"string\",\"description\":\"Alternative name for target\"},"
+          "\"text\":{\"type\":\"string\",\"description\":\"Text content to input\"},"
+          "\"mode\":{\"type\":\"string\",\"enum\":[\"replace\",\"append\"],\"description\":\"'replace' (default) clears text first; 'append' adds to end\"},"
+          "\"clearFirst\":{\"type\":\"boolean\",\"description\":\"Explicitly clear input before typing (default false)\"},"
+          "\"includeSnapshot\":{\"type\":\"boolean\",\"description\":\"Include updated text snapshot in response (default false)\"}"
         "},"
-        "\"required\":[\"elementId\",\"text\"]"
+        "\"required\":[\"text\"]"
+      "}"
+    "},"
+    "{"
+      "\"name\":\"press_key\","
+      "\"description\":\"Dispatch a keyboard key event (e.g. Enter, Backspace, Escape, Tab, Up, Down, Left, Right).\","
+      "\"inputSchema\":{"
+        "\"type\":\"object\","
+        "\"properties\":{"
+          "\"key\":{\"type\":\"string\",\"description\":\"Key name (e.g. Enter, Backspace, Escape, Tab, Up, Down, A, C, V, Z)\"},"
+          "\"target\":{\"type\":\"string\",\"description\":\"Optional target element ID or ref handle (defaults to focused element)\"},"
+          "\"elementId\":{\"type\":\"string\",\"description\":\"Alternative name for target\"},"
+          "\"ctrl\":{\"type\":\"boolean\",\"description\":\"Ctrl modifier flag (default false)\"},"
+          "\"shift\":{\"type\":\"boolean\",\"description\":\"Shift modifier flag (default false)\"},"
+          "\"alt\":{\"type\":\"boolean\",\"description\":\"Alt modifier flag (default false)\"},"
+          "\"includeSnapshot\":{\"type\":\"boolean\",\"description\":\"Include updated text snapshot in response (default false)\"}"
+        "},"
+        "\"required\":[\"key\"]"
+      "}"
+    "},"
+    "{"
+      "\"name\":\"focus_element\","
+      "\"description\":\"Set keyboard focus on target element by ID or ref handle.\","
+      "\"inputSchema\":{"
+        "\"type\":\"object\","
+        "\"properties\":{"
+          "\"target\":{\"type\":\"string\",\"description\":\"Target element ID or ref handle (e.g. 'e5')\"},"
+          "\"elementId\":{\"type\":\"string\",\"description\":\"Alternative name for target\"}"
+        "}"
       "}"
     "},"
     "{"
@@ -373,27 +471,35 @@ const char* kMcpToolsListJson =
       "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
-          "\"elementId\":{\"type\":\"string\",\"description\":\"Target container element ID\"},"
+          "\"target\":{\"type\":\"string\",\"description\":\"Target container element ID or ref handle\"},"
+          "\"elementId\":{\"type\":\"string\",\"description\":\"Alternative name for target\"},"
           "\"deltaX\":{\"type\":\"number\",\"description\":\"Horizontal scroll delta\"},"
           "\"deltaY\":{\"type\":\"number\",\"description\":\"Vertical scroll delta\"}"
         "},"
-        "\"required\":[\"elementId\",\"deltaY\"]"
+        "\"required\":[\"deltaY\"]"
       "}"
     "},"
     "{"
       "\"name\":\"capture_viewport\","
-      "\"description\":\"Capture screenshot of current entire application viewport, returns Base64 PNG image.\","
-      "\"inputSchema\":{\"type\":\"object\"}"
-    "},"
-    "{"
-      "\"name\":\"capture_element\","
-      "\"description\":\"Capture cropped screenshot of a specific element region by ID, returns Base64 PNG image.\","
+      "\"description\":\"Capture screenshot of current entire application viewport. If filePath is provided, saves to disk and returns file path (saving tokens). Otherwise returns Base64 PNG.\","
       "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
-          "\"elementId\":{\"type\":\"string\",\"description\":\"Element ID to capture\"}"
-        "},"
-        "\"required\":[\"elementId\"]"
+          "\"filePath\":{\"type\":\"string\",\"description\":\"File path on disk to save PNG image to (recommended to avoid base64 token cost)\"},"
+          "\"drawMarks\":{\"type\":\"boolean\",\"description\":\"Overlay Set-of-Mark (#eN) labels directly onto the screenshot image (default false)\"}"
+        "}"
+      "}"
+    "},"
+    "{"
+      "\"name\":\"capture_element\","
+      "\"description\":\"Capture cropped screenshot of a specific element region by ID or ref handle. If filePath is provided, saves to disk.\","
+      "\"inputSchema\":{"
+        "\"type\":\"object\","
+        "\"properties\":{"
+          "\"target\":{\"type\":\"string\",\"description\":\"Element ID or ref handle to capture\"},"
+          "\"elementId\":{\"type\":\"string\",\"description\":\"Alternative name for target\"},"
+          "\"filePath\":{\"type\":\"string\",\"description\":\"File path on disk to save PNG image to\"}"
+        "}"
       "}"
     "},"
     "{"
@@ -568,12 +674,31 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             rt = devtoolsHostInstance().pageRuntime();
         }
 
+        if (toolName == "describe_screen") {
+            if (rt == nullptr) {
+                return makeJsonRpcError(idStr, -32000, "No active page runtime available");
+            }
+            std::string desc = describeScreen(*rt);
+            return makeJsonRpcResponse(idStr, makeMcpTextContent(desc));
+        }
+
+        if (toolName == "take_snapshot") {
+            if (rt == nullptr) {
+                return makeJsonRpcError(idStr, -32000, "No active page runtime available");
+            }
+            bool interactiveOnly = extractJsonBool(arguments, "interactiveOnly", true);
+            std::string snap = takeSnapshot(*rt, interactiveOnly);
+            return makeJsonRpcResponse(idStr, makeMcpTextContent(snap));
+        }
+
         if (toolName == "extract_element_tree") {
             if (rt == nullptr) {
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
             int maxDepth = static_cast<int>(extractJsonNumber(arguments, "maxDepth", 32.0));
-            std::string treeJson = extractElementTreeJson(*rt, maxDepth);
+            bool compact = extractJsonBool(arguments, "compact", false);
+            bool interactiveOnly = extractJsonBool(arguments, "interactiveOnly", false);
+            std::string treeJson = extractElementTreeJson(*rt, maxDepth, compact, interactiveOnly);
             return makeJsonRpcResponse(idStr, makeMcpTextContent(treeJson));
         }
 
@@ -581,14 +706,14 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             if (rt == nullptr) {
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
-            std::string elementId = extractJsonString(arguments, "elementId");
-            if (elementId.empty()) {
-                elementId = extractJsonString(arguments, "id");
+            std::string target = extractJsonString(arguments, "target");
+            if (target.empty()) target = extractJsonString(arguments, "elementId");
+            if (target.empty()) target = extractJsonString(arguments, "id");
+            if (target.empty()) {
+                return makeJsonRpcError(idStr, -32602, "Missing target or elementId argument");
             }
-            if (elementId.empty()) {
-                return makeJsonRpcError(idStr, -32602, "Missing elementId argument");
-            }
-            std::string detailsJson = extractElementDetailsJson(*rt, elementId);
+            std::string realId = resolveTarget(rt, target);
+            std::string detailsJson = extractElementDetailsJson(*rt, realId);
             return makeJsonRpcResponse(idStr, makeMcpTextContent(detailsJson));
         }
 
@@ -606,14 +731,21 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             if (rt == nullptr) {
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
-            std::string elementId = extractJsonString(arguments, "elementId");
-            if (elementId.empty()) {
-                elementId = extractJsonString(arguments, "id");
-            }
-            auto res = clickElement(*rt, elementId);
+            std::string target = extractJsonString(arguments, "target");
+            if (target.empty()) target = extractJsonString(arguments, "elementId");
+            if (target.empty()) target = extractJsonString(arguments, "id");
+            std::string realId = resolveTarget(rt, target);
+            auto res = clickElement(*rt, realId);
+            syncUiFrameAfterAction(rt);
+            bool incSnap = extractJsonBool(arguments, "includeSnapshot", false);
             std::ostringstream ss;
             ss << "{\"success\":" << (res.success ? "true" : "false")
-               << ",\"message\":\"" << escapeJson(res.message) << "\"}";
+               << ",\"revision\":" << s_uiRevision.load()
+               << ",\"message\":\"" << escapeJson(res.message) << "\"";
+            if (incSnap) {
+                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshot(*rt, true)) << "\"";
+            }
+            ss << "}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
         }
 
@@ -624,9 +756,16 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             int markIdx = static_cast<int>(extractJsonNumber(arguments, "markIndex", 0.0));
             auto marks = extractInteractiveElements(*rt, true);
             auto res = clickMark(*rt, markIdx, marks);
+            syncUiFrameAfterAction(rt);
+            bool incSnap = extractJsonBool(arguments, "includeSnapshot", false);
             std::ostringstream ss;
             ss << "{\"success\":" << (res.success ? "true" : "false")
-               << ",\"message\":\"" << escapeJson(res.message) << "\"}";
+               << ",\"revision\":" << s_uiRevision.load()
+               << ",\"message\":\"" << escapeJson(res.message) << "\"";
+            if (incSnap) {
+                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshot(*rt, true)) << "\"";
+            }
+            ss << "}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
         }
 
@@ -634,14 +773,69 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             if (rt == nullptr) {
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
-            std::string elementId = extractJsonString(arguments, "elementId");
-            if (elementId.empty()) {
-                elementId = extractJsonString(arguments, "id");
-            }
+            std::string target = extractJsonString(arguments, "target");
+            if (target.empty()) target = extractJsonString(arguments, "elementId");
+            if (target.empty()) target = extractJsonString(arguments, "id");
+            std::string realId = resolveTarget(rt, target);
             std::string text = extractJsonString(arguments, "text");
-            auto res = inputText(*rt, elementId, text);
+            std::string mode = extractJsonString(arguments, "mode");
+            if (mode.empty()) {
+                mode = "replace"; // Default to replace mode to avoid duplicate concatenated text
+            }
+            bool clearFirst = extractJsonBool(arguments, "clearFirst", false);
+            auto res = inputText(*rt, realId, text, mode, clearFirst);
+            syncUiFrameAfterAction(rt);
+            bool incSnap = extractJsonBool(arguments, "includeSnapshot", false);
             std::ostringstream ss;
             ss << "{\"success\":" << (res.success ? "true" : "false")
+               << ",\"revision\":" << s_uiRevision.load()
+               << ",\"message\":\"" << escapeJson(res.message) << "\"";
+            if (incSnap) {
+                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshot(*rt, true)) << "\"";
+            }
+            ss << "}";
+            return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
+        }
+
+        if (toolName == "press_key") {
+            if (rt == nullptr) {
+                return makeJsonRpcError(idStr, -32000, "No active page runtime available");
+            }
+            std::string keyName = extractJsonString(arguments, "key");
+            std::string target = extractJsonString(arguments, "target");
+            if (target.empty()) target = extractJsonString(arguments, "elementId");
+            if (target.empty()) target = extractJsonString(arguments, "id");
+            std::string realId = resolveTarget(rt, target);
+            bool ctrl = extractJsonBool(arguments, "ctrl", false);
+            bool shift = extractJsonBool(arguments, "shift", false);
+            bool alt = extractJsonBool(arguments, "alt", false);
+            auto res = pressKey(*rt, realId, keyName, ctrl, shift, alt);
+            syncUiFrameAfterAction(rt);
+            bool incSnap = extractJsonBool(arguments, "includeSnapshot", false);
+            std::ostringstream ss;
+            ss << "{\"success\":" << (res.success ? "true" : "false")
+               << ",\"revision\":" << s_uiRevision.load()
+               << ",\"message\":\"" << escapeJson(res.message) << "\"";
+            if (incSnap) {
+                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshot(*rt, true)) << "\"";
+            }
+            ss << "}";
+            return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
+        }
+
+        if (toolName == "focus_element") {
+            if (rt == nullptr) {
+                return makeJsonRpcError(idStr, -32000, "No active page runtime available");
+            }
+            std::string target = extractJsonString(arguments, "target");
+            if (target.empty()) target = extractJsonString(arguments, "elementId");
+            if (target.empty()) target = extractJsonString(arguments, "id");
+            std::string realId = resolveTarget(rt, target);
+            auto res = focusElement(*rt, realId);
+            syncUiFrameAfterAction(rt);
+            std::ostringstream ss;
+            ss << "{\"success\":" << (res.success ? "true" : "false")
+               << ",\"revision\":" << s_uiRevision.load()
                << ",\"message\":\"" << escapeJson(res.message) << "\"}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
         }
@@ -650,15 +844,17 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             if (rt == nullptr) {
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
-            std::string elementId = extractJsonString(arguments, "elementId");
-            if (elementId.empty()) {
-                elementId = extractJsonString(arguments, "id");
-            }
+            std::string target = extractJsonString(arguments, "target");
+            if (target.empty()) target = extractJsonString(arguments, "elementId");
+            if (target.empty()) target = extractJsonString(arguments, "id");
+            std::string realId = resolveTarget(rt, target);
             float deltaX = static_cast<float>(extractJsonNumber(arguments, "deltaX", 0.0));
             float deltaY = static_cast<float>(extractJsonNumber(arguments, "deltaY", 0.0));
-            auto res = scrollElement(*rt, elementId, deltaX, deltaY);
+            auto res = scrollElement(*rt, realId, deltaX, deltaY);
+            syncUiFrameAfterAction(rt);
             std::ostringstream ss;
             ss << "{\"success\":" << (res.success ? "true" : "false")
+               << ",\"revision\":" << s_uiRevision.load()
                << ",\"message\":\"" << escapeJson(res.message) << "\"}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
         }
@@ -669,6 +865,16 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
                 return makeJsonRpcError(idStr, -32000, "Viewport screenshot capture failed or no framebuffer");
             }
             std::vector<uint8_t> pngBytes = encodeImageToPng(img);
+            std::string filePath = extractJsonString(arguments, "filePath");
+            if (!filePath.empty()) {
+                std::ofstream ofs(filePath, std::ios::binary);
+                if (ofs.is_open()) {
+                    ofs.write(reinterpret_cast<const char*>(pngBytes.data()), pngBytes.size());
+                    std::ostringstream ss;
+                    ss << "{\"success\":true,\"savedToFile\":\"" << escapeJson(filePath) << "\",\"bytes\":" << pngBytes.size() << "}";
+                    return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
+                }
+            }
             std::string base64Png = encodeBase64(pngBytes);
             return makeJsonRpcResponse(idStr, makeMcpImageContent(base64Png));
         }
@@ -677,16 +883,26 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             if (rt == nullptr) {
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
-            std::string elementId = extractJsonString(arguments, "elementId");
-            if (elementId.empty()) {
-                elementId = extractJsonString(arguments, "id");
-            }
+            std::string target = extractJsonString(arguments, "target");
+            if (target.empty()) target = extractJsonString(arguments, "elementId");
+            if (target.empty()) target = extractJsonString(arguments, "id");
+            std::string realId = resolveTarget(rt, target);
             float currentDpi = devtoolsHostInstance().dpiScale();
-            FramebufferImage img = captureElementScreenshot(*rt, elementId, currentDpi);
+            FramebufferImage img = captureElementScreenshot(*rt, realId, currentDpi);
             if (!img.valid()) {
                 return makeJsonRpcError(idStr, -32000, "Element region capture failed or element not visible");
             }
             std::vector<uint8_t> pngBytes = encodeImageToPng(img);
+            std::string filePath = extractJsonString(arguments, "filePath");
+            if (!filePath.empty()) {
+                std::ofstream ofs(filePath, std::ios::binary);
+                if (ofs.is_open()) {
+                    ofs.write(reinterpret_cast<const char*>(pngBytes.data()), pngBytes.size());
+                    std::ostringstream ss;
+                    ss << "{\"success\":true,\"savedToFile\":\"" << escapeJson(filePath) << "\",\"bytes\":" << pngBytes.size() << "}";
+                    return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
+                }
+            }
             std::string base64Png = encodeBase64(pngBytes);
             return makeJsonRpcResponse(idStr, makeMcpImageContent(base64Png));
         }

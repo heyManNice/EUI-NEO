@@ -71,7 +71,7 @@ FramebufferImage captureViewportScreenshot(const core::Rect* region) {
     }
 
     // Otherwise, we are likely on the MCP worker thread:
-    // Request render pass to capture framebuffer and wait briefly
+    // Request render pass to capture framebuffer and wait with active retry
     DevtoolsHost& host = devtoolsHostInstance();
     host.requestFramebufferCapture();
 
@@ -79,11 +79,14 @@ FramebufferImage captureViewportScreenshot(const core::Rect* region) {
     int fullH = 0;
     std::vector<unsigned char> fullPixels;
 
-    for (int i = 0; i < 30; ++i) {
+    for (int attempt = 0; attempt < 50; ++attempt) {
         if (host.getCachedFramebuffer(fullW, fullH, fullPixels)) {
             break;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(15));
+        if (attempt % 10 == 9) {
+            host.requestFramebufferCapture();
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
 
     if (fullW <= 0 || fullH <= 0 || fullPixels.empty()) {

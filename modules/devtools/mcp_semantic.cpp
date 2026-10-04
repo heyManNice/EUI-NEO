@@ -169,6 +169,9 @@ void collectInteractiveElementsRecursive(const core::dsl::Element& element,
                                !element.sliderInputSourceId.empty();
 
     if (isInteractive) {
+        const bool canClick = (element.onClick != nullptr || element.interactive);
+        const bool canTextInput = (element.onTextInput != nullptr);
+
         McpInteractiveElement item;
         item.markIndex = nextIndex++;
         item.id = element.id;
@@ -176,6 +179,8 @@ void collectInteractiveElementsRecursive(const core::dsl::Element& element,
         item.frame = core::Rect{element.frame.x, element.frame.y, element.frame.width, element.frame.height};
         item.disabled = element.disabled;
         item.focusable = element.focusable;
+        item.clickable = canClick;
+        item.textInput = canTextInput;
 
         // 1. Direct or subtree text
         item.text = findSubtreeText(element);
@@ -288,31 +293,80 @@ void collectInteractiveElementsRecursive(const core::dsl::Element& element,
     }
 }
 
+bool hasInteractiveDescendant(const core::dsl::Element& element) {
+    if (element.interactive || element.onClick != nullptr || element.onTextInput != nullptr || element.focusable) {
+        return true;
+    }
+    for (const auto* child : element.orderedChildren) {
+        if (child != nullptr && hasInteractiveDescendant(*child)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void formatElementTreeJsonRecursive(const core::dsl::Element& element,
                                     std::ostringstream& ss,
                                     int depth,
-                                    int maxDepth) {
+                                    int maxDepth,
+                                    bool compact,
+                                    bool interactiveOnly) {
+    if (interactiveOnly && !hasInteractiveDescendant(element)) {
+        return;
+    }
+
     ss << "{\"id\":\"" << escapeJson(element.id) << "\","
-       << "\"kind\":\"" << elementKindName(element.kind) << "\","
-       << "\"frame\":[" << element.frame.x << "," << element.frame.y << ","
-       << element.frame.width << "," << element.frame.height << "],"
-       << "\"interactive\":" << (element.interactive ? "true" : "false");
+       << "\"kind\":\"" << elementKindName(element.kind) << "\"";
+
+    if (compact) {
+        // Compact format: frame as "x,y,w,h" string rounded to 1 decimal place
+        std::ostringstream fss;
+        fss << std::fixed << std::setprecision(1)
+            << element.frame.x << "," << element.frame.y << ","
+            << element.frame.width << "," << element.frame.height;
+        ss << ",\"frame\":\"" << fss.str() << "\"";
+    } else {
+        ss << ",\"frame\":[" << element.frame.x << "," << element.frame.y << ","
+           << element.frame.width << "," << element.frame.height << "]";
+    }
+
+    if (!compact || element.interactive) {
+        ss << ",\"interactive\":" << (element.interactive ? "true" : "false");
+    }
+    if (element.disabled) {
+        ss << ",\"disabled\":true";
+    }
+    if (element.focusable) {
+        ss << ",\"focusable\":true";
+    }
+    if (element.onClick != nullptr) {
+        ss << ",\"clickable\":true";
+    }
+    if (element.onTextInput != nullptr) {
+        ss << ",\"textInput\":true";
+    }
 
     if (element.kind == core::dsl::ElementKind::Text && !element.text.empty()) {
         ss << ",\"text\":\"" << escapeJson(element.text) << "\"";
     }
 
     if (depth < maxDepth && !element.orderedChildren.empty()) {
-        ss << ",\"children\":[";
         bool first = true;
+        std::ostringstream childSs;
         for (const auto* child : element.orderedChildren) {
             if (child == nullptr) continue;
-            if (!first) ss << ",";
+            if (interactiveOnly && !hasInteractiveDescendant(*child)) continue;
+            if (!first) childSs << ",";
             first = false;
-            formatElementTreeJsonRecursive(*child, ss, depth + 1, maxDepth);
+            formatElementTreeJsonRecursive(*child, childSs, depth + 1, maxDepth, compact, interactiveOnly);
         }
-        ss << "]";
-    } else {
+        std::string childStr = childSs.str();
+        if (!childStr.empty()) {
+            ss << ",\"children\":[" << childStr << "]";
+        } else if (!compact) {
+            ss << ",\"children\":[]";
+        }
+    } else if (!compact) {
         ss << ",\"children\":[]";
     }
     ss << "}";
@@ -358,22 +412,104 @@ std::string formatInteractiveElementsJson(const std::vector<McpInteractiveElemen
            << ",\"bounds\":[" << item.frame.x << "," << item.frame.y << "," << item.frame.width << "," << item.frame.height << "]"
            << ",\"disabled\":" << (item.disabled ? "true" : "false")
            << ",\"focusable\":" << (item.focusable ? "true" : "false")
+           << ",\"clickable\":" << (item.clickable ? "true" : "false")
+           << ",\"textInput\":" << (item.textInput ? "true" : "false")
            << "}";
     }
     ss << "]";
     return ss.str();
 }
 
-std::string extractElementTreeJson(const core::dsl::Runtime& runtime, int maxDepth) {
+std::string describeScreen(const core::dsl::Runtime& runtime) {
+    auto marks = extractInteractiveElements(runtime, true);
+
+    std::ostringstream ss;
+    ss << "### Screen Overview ###\n";
+    ss << "Interactive elements count: " << marks.size() << "\n\n";
+    ss << "| Mark | ID | Kind | Label / Text | Context | Capabilities |\n";
+    ss << "|:---:|:---|:---|:---|:---|:---|\n";
+
+    for (const auto& m : marks) {
+        std::string cap;
+        if (m.clickable) cap += "click ";
+        if (m.textInput) cap += "input ";
+        if (m.focusable) cap += "focus ";
+        if (m.disabled) cap += "(disabled) ";
+        if (cap.empty()) cap = "interactive";
+
+        std::string label = m.text.empty() ? (m.nearestText.empty() ? "-" : ("~" + m.nearestText)) : m.text;
+        std::string ctx = m.contextText.empty() ? "-" : m.contextText;
+
+        // Escape pipe characters in markdown table
+        std::replace(label.begin(), label.end(), '|', '/');
+        std::replace(ctx.begin(), ctx.end(), '|', '/');
+
+        ss << "| #" << m.markIndex
+           << " | `" << m.id << "`"
+           << " | " << m.kind
+           << " | " << label
+           << " | " << ctx
+           << " | " << cap << " |\n";
+    }
+
+    return ss.str();
+}
+
+std::string takeSnapshot(const core::dsl::Runtime& runtime, bool interactiveOnly, int maxDepth) {
+    (void)maxDepth;
+    auto marks = extractInteractiveElements(runtime, true);
+
+    std::ostringstream ss;
+    ss << "=== Accessibility Snapshot ===\n";
+    ss << "Elements count: " << marks.size() << " (use ref handle e<N> in actions)\n\n";
+
+    for (const auto& m : marks) {
+        std::string role = m.kind;
+        if (m.textInput) {
+            role = "textbox";
+        } else if (m.clickable) {
+            if (m.kind == "rect") role = "button";
+            else if (m.kind == "text") role = "link";
+        }
+
+        std::string label = m.text.empty() ? (m.nearestText.empty() ? "" : ("~" + m.nearestText)) : m.text;
+        std::string flags;
+        if (m.disabled) flags += " [disabled]";
+        if (m.focusable) flags += " [focusable]";
+
+        int rx = static_cast<int>(std::round(m.frame.x));
+        int ry = static_cast<int>(std::round(m.frame.y));
+        int rw = static_cast<int>(std::round(m.frame.width));
+        int rh = static_cast<int>(std::round(m.frame.height));
+
+        ss << "[ref=e" << m.markIndex << "] "
+           << role;
+        if (!label.empty()) {
+            ss << " \"" << escapeJson(label) << "\"";
+        }
+        if (!flags.empty()) {
+            ss << flags;
+        }
+        if (!m.contextText.empty() && m.contextText != label) {
+            ss << " (context: \"" << escapeJson(m.contextText) << "\")";
+        }
+        ss << " " << rx << "," << ry << " " << rw << "x" << rh << "\n";
+    }
+
+    return ss.str();
+}
+
+std::string extractElementTreeJson(const core::dsl::Runtime& runtime, int maxDepth, bool compact, bool interactiveOnly) {
     std::ostringstream ss;
     ss << "{\"roots\":[";
     bool first = true;
     const std::vector<const core::dsl::Element*>& roots = runtime.elementRoots();
     for (const auto* root : roots) {
         if (root == nullptr) continue;
+        if (interactiveOnly && !hasInteractiveDescendant(*root)) continue;
         if (!first) ss << ",";
         first = false;
-        formatElementTreeJsonRecursive(*root, ss, 0, maxDepth);
+        formatElementTreeJsonRecursive(*root, ss, 0, maxDepth, compact, interactiveOnly);
     }
     ss << "]}";
     return ss.str();
