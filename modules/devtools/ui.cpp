@@ -2,7 +2,7 @@
 
 #include "modules/devtools/elements.h"
 #include "modules/devtools/input.h"
-#include "modules/devtools/mcp.h"
+#include "modules/devtools/automation.h"
 #include "modules/devtools/performance.h"
 #include "modules/devtools/scale.h"
 #include "modules/devtools/state.h"
@@ -59,7 +59,7 @@ constexpr TabEntry kTabs[] = {
     {"scale.tab", "Scale", DevtoolsTab::Scale},
     {"state.tab", "State", DevtoolsTab::State},
     {"input.tab", "Input", DevtoolsTab::Input},
-    {"mcp.tab", "MCP", DevtoolsTab::Mcp},
+    {"automation.tab", "Automation", DevtoolsTab::Automation},
 };
 
 void composeToolbarTab(core::dsl::Ui& ui, const std::string& id, const std::string& label,
@@ -315,8 +315,8 @@ void composePanelContent(core::dsl::Ui& ui, const DevtoolsUiState& state, const 
         composeInputTab(ui, state, actions);
         return;
     }
-    if (activeTab == DevtoolsTab::Mcp) {
-        composeMcpTab(ui, state, actions);
+    if (activeTab == DevtoolsTab::Automation) {
+        composeAutomationTab(ui, state, actions);
         return;
     }
 }

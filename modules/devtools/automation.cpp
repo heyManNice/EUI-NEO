@@ -1,8 +1,8 @@
-#include "modules/devtools/mcp.h"
+#include "modules/devtools/automation.h"
 
 #include "modules/devtools/host.h"
-#include "modules/devtools/mcp_semantic.h"
-#include "modules/devtools/mcp_server.h"
+#include "modules/devtools/automation_snapshot.h"
+#include "modules/devtools/automation_server.h"
 #include "modules/devtools/theme.h"
 #include "components/scrollview.h"
 
@@ -105,7 +105,7 @@ void composeMcpInfoRow(core::dsl::Ui& ui, const std::string& id, const std::stri
 
 } // namespace
 
-void composeMcpTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const DevtoolsUiActions& actions) {
+void composeAutomationTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const DevtoolsUiActions& actions) {
     const DevtoolsTheme& theme = devtoolsTheme();
     const float contentHeight = std::max(0.0f, state.panel.height - theme.toolbarHeight - (state.detached ? 0.0f : 1.0f));
 

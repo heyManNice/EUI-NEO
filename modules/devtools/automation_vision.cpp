@@ -1,9 +1,9 @@
-#include "modules/devtools/mcp_vision.h"
+#include "modules/devtools/automation_vision.h"
 
 #include "core/dsl_runtime.h"
 #include "core/render/render_backend.h"
 #include "modules/devtools/host.h"
-#include "modules/devtools/mcp_semantic.h"
+#include "modules/devtools/automation_snapshot.h"
 
 #include <png.h>
 

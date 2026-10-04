@@ -20,7 +20,8 @@ enum class DevtoolsTab {
     Scale,
     State,
     Input,
-    Mcp
+    Automation,
+    Mcp = Automation
 };
 
 enum class PropertiesTab {

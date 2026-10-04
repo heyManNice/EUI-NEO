@@ -3,7 +3,7 @@
 #if defined(EUI_TOOLING)
 
 #include "core/render/render_backend.h"
-#include "modules/devtools/mcp_server.h"
+#include "modules/devtools/automation_server.h"
 #include "modules/devtools/preview.h"
 #include "modules/devtools/theme.h"
 #include "modules/devtools/tree.h"
@@ -41,8 +41,8 @@ namespace {
 // The panel host lives for the whole process and is deliberately never destroyed: the hooks
 // point at it, while the session that owns them is a file scope object in the application and
 // is therefore destroyed *after* it. One leaked object at exit is what keeps that ordering
-// from writing into freed storage. What belongs to one run â€” the panel runtime, its state, the
-// preview primitive â€” is released by `shutdown()`, not by this object going away.
+// from writing into freed storage. What belongs to one run â€?the panel runtime, its state, the
+// preview primitive â€?is released by `shutdown()`, not by this object going away.
 DevtoolsHost& devtoolsHost() {
     static DevtoolsHost* host = new DevtoolsHost();
     return *host;
@@ -204,7 +204,7 @@ void detachDevtoolsHost() {
 
 void DevtoolsHost::attach(core::dsl::Runtime* page, const app::detail::OverlayWindows& windows) {
     // A new page is attached, and the previous one is let go first, hooks and all: a page the
-    // panel no longer inspects must not keep calling it. That page has to be alive â€” a page is
+    // panel no longer inspects must not keep calling it. That page has to be alive â€?a page is
     // detached before it is destroyed, which is the order the app layer keeps.
     unhookPage();
     session_ = PageSession{};
@@ -275,7 +275,7 @@ void DevtoolsHost::unhookPage() {
 //
 // The state is reached through the last compose, so a panel that never composed has none to
 // forget, and a panel whose state is unreachable keeps a selection the next page does not
-// have â€” which the area that shows it reads as "nothing selected". The clearing is not
+// have â€?which the area that shows it reads as "nothing selected". The clearing is not
 // deferred to the next compose: it would then throw away what the user did in between.
 void DevtoolsHost::forgetPageSelection() {
     composeRequested_ = true;

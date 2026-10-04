@@ -2,7 +2,7 @@
 
 #include "core/dsl.h"
 #include "core/dsl_runtime.h"
-#include "modules/devtools/mcp_semantic.h"
+#include "modules/devtools/automation_snapshot.h"
 
 #include <string>
 #include <vector>

@@ -3,7 +3,7 @@
     "eui-neo": {
       "command": "python",
       "args": [
-        "<PATH_TO_EUI_NEO>/modules/devtools/mcp_bridge/eui_mcp_bridge.py"
+        "<PATH_TO_EUI_NEO>/modules/devtools/cli/eui_cli.py"
       ]
     }
   }

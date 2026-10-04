@@ -10,11 +10,11 @@
 
 #if defined(EUI_TOOLING)
 
-#include "modules/devtools/mcp.h"
-#include "modules/devtools/mcp_action.h"
-#include "modules/devtools/mcp_semantic.h"
-#include "modules/devtools/mcp_server.h"
-#include "modules/devtools/mcp_vision.h"
+#include "modules/devtools/automation.h"
+#include "modules/devtools/automation_action.h"
+#include "modules/devtools/automation_snapshot.h"
+#include "modules/devtools/automation_server.h"
+#include "modules/devtools/automation_vision.h"
 
 int main() {
     std::cout << "[TEST] Running devtools_mcp unit tests..." << std::endl;

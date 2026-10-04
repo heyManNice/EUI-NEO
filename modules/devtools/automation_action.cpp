@@ -1,4 +1,4 @@
-#include "modules/devtools/mcp_action.h"
+#include "modules/devtools/automation_action.h"
 
 #include <algorithm>
 

@@ -1,4 +1,4 @@
-#include "modules/devtools/mcp_semantic.h"
+#include "modules/devtools/automation_snapshot.h"
 
 #include "modules/devtools/fields.h"
 #include "modules/devtools/properties.h"

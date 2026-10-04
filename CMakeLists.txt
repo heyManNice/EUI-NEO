@@ -734,7 +734,7 @@ if(EUI_BUILD_TEST_FIXTURES)
         if((unit_name STREQUAL "devtools_host" OR unit_name STREQUAL "devtools_preview"
             OR unit_name STREQUAL "devtools_tree" OR unit_name STREQUAL "devtools_fields"
             OR unit_name STREQUAL "devtools_state" OR unit_name STREQUAL "devtools_input"
-            OR unit_name STREQUAL "devtools_mcp")
+            OR unit_name STREQUAL "devtools_automation")
            AND NOT TARGET eui::module_devtools)
             continue()
         endif()
@@ -743,7 +743,7 @@ if(EUI_BUILD_TEST_FIXTURES)
         if(unit_name STREQUAL "devtools_host" OR unit_name STREQUAL "devtools_preview"
            OR unit_name STREQUAL "devtools_tree" OR unit_name STREQUAL "devtools_fields"
            OR unit_name STREQUAL "devtools_state" OR unit_name STREQUAL "devtools_input"
-           OR unit_name STREQUAL "devtools_mcp")
+           OR unit_name STREQUAL "devtools_automation")
             target_link_libraries(${unit_name} PRIVATE eui::module_devtools)
         endif()
         eui_apply_compile_options(${unit_name})
