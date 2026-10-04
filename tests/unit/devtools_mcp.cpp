@@ -10,6 +10,7 @@
 
 #if defined(EUI_TOOLING)
 
+#include "modules/devtools/mcp.h"
 #include "modules/devtools/mcp_action.h"
 #include "modules/devtools/mcp_semantic.h"
 #include "modules/devtools/mcp_server.h"
@@ -199,6 +200,43 @@ int main() {
         modules::devtools::stopMcpServer();
         assert(!modules::devtools::isMcpServerRunning());
         std::cout << "[PASS] MCP Server socket lifecycle (start, port check, stop) passed" << std::endl;
+    }
+
+    // 7. Test MCP Request Logs & Clear Logs Action
+    {
+        auto logs = modules::devtools::getMcpRequestLogs();
+        assert(!logs.empty());
+        modules::devtools::clearMcpRequestLogs();
+        assert(modules::devtools::getMcpRequestLogs().empty());
+        std::cout << "[PASS] MCP Request logs recording and clear passed" << std::endl;
+    }
+
+    // 8. Test MCP Clear Logs button callback trigger
+    {
+        core::dsl::Runtime panelRuntime;
+        bool statusMsgSet = false;
+        panelRuntime.compose("panel", 800.0f, 600.0f, [&statusMsgSet](core::dsl::Ui& ui, const core::dsl::Screen&) {
+            modules::devtools::DevtoolsUiState uiState;
+            uiState.panel.width = 800.0f;
+            uiState.panel.height = 600.0f;
+            modules::devtools::DevtoolsPanelState pState;
+            uiState.panelState = &pState;
+
+            modules::devtools::DevtoolsUiActions uiActions;
+            uiActions.mcp.setStatusMessage = [&statusMsgSet](const std::string&) {
+                statusMsgSet = true;
+            };
+
+            modules::devtools::composeMcpTab(ui, uiState, uiActions);
+        });
+
+        // Trigger onClick on the Clear Logs button directly
+        core::dsl::Element* clearBtn = panelRuntime.findElement("panel.mcp.btn.clear_logs.bg");
+        assert(clearBtn != nullptr);
+        assert(static_cast<bool>(clearBtn->onClick));
+        clearBtn->onClick();
+        assert(statusMsgSet == true);
+        std::cout << "[PASS] Clear logs button callback safely executed without SIGSEGV" << std::endl;
     }
 
     std::cout << "[ALL PASSED] DevTools MCP unit tests finished successfully!" << std::endl;

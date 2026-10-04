@@ -1,5 +1,6 @@
 #include "modules/devtools/mcp.h"
 
+#include "modules/devtools/host.h"
 #include "modules/devtools/mcp_semantic.h"
 #include "modules/devtools/mcp_server.h"
 #include "modules/devtools/theme.h"
@@ -51,7 +52,6 @@ void composeMcpActionButton(core::dsl::Ui& ui, const std::string& id, const std:
                 .verticalAlign(core::VerticalAlign::Center)
                 .build();
         })
-        .onClick(onClick)
         .build();
 }
 
@@ -248,12 +248,16 @@ void composeMcpTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devtoo
                                                 .height(1.0f)
                                                 .build();
 
+                                            const auto setStatusMsg = actions.mcp.setStatusMessage;
                                             composeMcpActionButton(contentUi, "mcp.btn.clear_logs", "Clear Logs", false,
-                                                [&actions] {
+                                                [setStatusMsg] {
                                                     clearMcpRequestLogs();
-                                                    if (actions.mcp.setStatusMessage) {
-                                                        actions.mcp.setStatusMessage("Request logs cleared");
+                                                    if (setStatusMsg) {
+                                                        setStatusMsg("Request logs cleared");
                                                     }
+#if defined(EUI_TOOLING)
+                                                    devtoolsHostInstance().requestCompose();
+#endif
                                                 });
                                         })
                                         .build();
