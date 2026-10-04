@@ -30,6 +30,77 @@ std::string escapeJson(const std::string& str) {
     return ss.str();
 }
 
+struct TextNodeRecord {
+    const core::dsl::Element* element = nullptr;
+    std::string text;
+    core::Rect frame{};
+    float centerX = 0.0f;
+    float centerY = 0.0f;
+};
+
+template <typename T1, typename T2>
+float computeRectDistance(const T1& a, const T2& b) {
+    float dx = 0.0f;
+    if (a.x + a.width < b.x) dx = b.x - (a.x + a.width);
+    else if (b.x + b.width < a.x) dx = a.x - (b.x + b.width);
+
+    float dy = 0.0f;
+    if (a.y + a.height < b.y) dy = b.y - (a.y + a.height);
+    else if (b.y + b.height < a.y) dy = a.y - (b.y + b.height);
+
+    return std::sqrt(dx * dx + dy * dy);
+}
+
+template <typename T1, typename T2>
+float computeCenterDistance(const T1& a, const T2& b) {
+    float cx1 = a.x + a.width * 0.5f;
+    float cy1 = a.y + a.height * 0.5f;
+    float cx2 = b.x + b.width * 0.5f;
+    float cy2 = b.y + b.height * 0.5f;
+    return std::sqrt((cx1 - cx2) * (cx1 - cx2) + (cy1 - cy2) * (cy1 - cy2));
+}
+
+template <typename T1, typename T2>
+bool rectsIntersect(const T1& a, const T2& b) {
+    return !(a.x + a.width <= b.x || b.x + b.width <= a.x ||
+             a.y + a.height <= b.y || b.y + b.height <= a.y);
+}
+
+bool isPrintableSemanticText(const std::string& text) {
+    if (text.empty()) return false;
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(text[i]);
+        if (std::isalnum(c)) return true;
+        // Check for 3-byte UTF-8 sequence
+        if (c >= 0xE0 && c <= 0xEF && i + 2 < text.size()) {
+            if (c == 0xEE || c == 0xEF) {
+                i += 2;
+                continue; // Skip Private Use Area (Font Awesome / glyph icons)
+            }
+            return true; // Valid CJK or other non-icon multibyte
+        } else if (c >= 0x80) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void collectSubtreeTextsRecursive(const core::dsl::Element& element,
+                                  std::vector<std::string>& texts,
+                                  int depth = 0) {
+    if (depth > 12) return;
+    if (element.kind == core::dsl::ElementKind::Text && !element.text.empty()) {
+        if (isPrintableSemanticText(element.text)) {
+            texts.push_back(element.text);
+        }
+    }
+    for (const auto* child : element.orderedChildren) {
+        if (child != nullptr) {
+            collectSubtreeTextsRecursive(*child, texts, depth + 1);
+        }
+    }
+}
+
 std::string findSubtreeText(const core::dsl::Element& element, int depth = 0) {
     if (depth > 8) return {};
     if (element.kind == core::dsl::ElementKind::Text && !element.text.empty()) {
@@ -44,10 +115,48 @@ std::string findSubtreeText(const core::dsl::Element& element, int depth = 0) {
     return {};
 }
 
+void buildParentMapAndCollectTexts(const core::dsl::Element& element,
+                                   std::unordered_map<const core::dsl::Element*, const core::dsl::Element*>& parentMap,
+                                   std::vector<TextNodeRecord>& allTexts,
+                                   bool onlyVisible) {
+    if (element.kind == core::dsl::ElementKind::Text && !element.text.empty()) {
+        if (!onlyVisible || (element.frame.width > 0.0f && element.frame.height > 0.0f)) {
+            TextNodeRecord rec;
+            rec.element = &element;
+            rec.text = element.text;
+            rec.frame = core::Rect{element.frame.x, element.frame.y, element.frame.width, element.frame.height};
+            rec.centerX = element.frame.x + element.frame.width * 0.5f;
+            rec.centerY = element.frame.y + element.frame.height * 0.5f;
+            allTexts.push_back(std::move(rec));
+        }
+    }
+
+    for (const auto* child : element.orderedChildren) {
+        if (child != nullptr) {
+            parentMap[child] = &element;
+            buildParentMapAndCollectTexts(*child, parentMap, allTexts, onlyVisible);
+        }
+    }
+}
+
+bool isDescendantOf(const core::dsl::Element* candidate,
+                    const core::dsl::Element* ancestor,
+                    const std::unordered_map<const core::dsl::Element*, const core::dsl::Element*>& parentMap) {
+    const core::dsl::Element* cur = candidate;
+    while (cur != nullptr) {
+        if (cur == ancestor) return true;
+        auto it = parentMap.find(cur);
+        cur = (it != parentMap.end()) ? it->second : nullptr;
+    }
+    return false;
+}
+
 void collectInteractiveElementsRecursive(const core::dsl::Element& element,
                                          std::vector<McpInteractiveElement>& result,
                                          int& nextIndex,
-                                         bool onlyVisible) {
+                                         bool onlyVisible,
+                                         const std::unordered_map<const core::dsl::Element*, const core::dsl::Element*>& parentMap,
+                                         const std::vector<TextNodeRecord>& allTexts) {
     if (onlyVisible) {
         if (element.frame.width <= 0.0f || element.frame.height <= 0.0f) {
             return;
@@ -64,16 +173,117 @@ void collectInteractiveElementsRecursive(const core::dsl::Element& element,
         item.markIndex = nextIndex++;
         item.id = element.id;
         item.kind = elementKindName(element.kind);
-        item.text = findSubtreeText(element);
         item.frame = core::Rect{element.frame.x, element.frame.y, element.frame.width, element.frame.height};
         item.disabled = element.disabled;
         item.focusable = element.focusable;
+
+        // 1. Direct or subtree text
+        item.text = findSubtreeText(element);
+        if (!isPrintableSemanticText(item.text)) {
+            // Icon glyph (e.g. close 'X') or empty
+            if (!item.text.empty()) {
+                if (element.id.find("remove") != std::string::npos || element.id.find("close") != std::string::npos || element.id.find("delete") != std::string::npos) {
+                    item.text = "Remove";
+                }
+            }
+        }
+
+        // 2. If direct text is empty, search for overlapping sibling label in parent container
+        const core::dsl::Element* parent = nullptr;
+        {
+            auto pit = parentMap.find(&element);
+            if (pit != parentMap.end()) {
+                parent = pit->second;
+            }
+        }
+
+        if (item.text.empty() && parent != nullptr) {
+            for (const auto* sibling : parent->orderedChildren) {
+                if (sibling != nullptr && sibling != &element) {
+                    if (rectsIntersect(element.frame, sibling->frame)) {
+                        std::string sibText = findSubtreeText(*sibling);
+                        if (!sibText.empty() && isPrintableSemanticText(sibText)) {
+                            item.text = sibText;
+                            break; // Pick the first semantic title in layout order
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Extract enclosing container context text (card, list item, or form group)
+        {
+            const core::dsl::Element* contextContainer = parent;
+            // Ascend up to 2 levels to find a meaningful grouping container
+            for (int depth = 0; depth < 2 && contextContainer != nullptr; ++depth) {
+                // If container is not top-level root, collect all subtree texts
+                auto grandPit = parentMap.find(contextContainer);
+                if (grandPit != parentMap.end() && grandPit->second != nullptr) {
+                    std::vector<std::string> containerTexts;
+                    collectSubtreeTextsRecursive(*contextContainer, containerTexts);
+                    if (!containerTexts.empty()) {
+                        std::ostringstream ssContext;
+                        bool firstTxt = true;
+                        for (const auto& txt : containerTexts) {
+                            if (!firstTxt) ssContext << ", ";
+                            firstTxt = false;
+                            ssContext << txt;
+                        }
+                        item.contextText = ssContext.str();
+                        break;
+                    }
+                }
+                contextContainer = (grandPit != parentMap.end()) ? grandPit->second : nullptr;
+            }
+            if (item.contextText.empty() && !item.text.empty()) {
+                item.contextText = item.text;
+            }
+        }
+
+        // 4. Find spatially or tree-nearest visible text in the scene
+        {
+            float bestEdgeDist = 1e9f;
+            float bestCenterDist = 1e9f;
+            std::string bestNearestText;
+
+            for (const auto& tRec : allTexts) {
+                // Skip text that is inside this element's own subtree
+                if (isDescendantOf(tRec.element, &element, parentMap)) {
+                    continue;
+                }
+                if (!isPrintableSemanticText(tRec.text)) {
+                    continue;
+                }
+
+                float edgeDist = computeRectDistance(item.frame, tRec.frame);
+                float centerDist = computeCenterDistance(item.frame, tRec.frame);
+
+                bool isBetter = false;
+                if (edgeDist < bestEdgeDist - 0.5f) {
+                    isBetter = true;
+                } else if (std::abs(edgeDist - bestEdgeDist) <= 0.5f && centerDist < bestCenterDist) {
+                    isBetter = true;
+                }
+
+                if (isBetter) {
+                    bestEdgeDist = edgeDist;
+                    bestCenterDist = centerDist;
+                    bestNearestText = tRec.text;
+                }
+            }
+
+            if (!bestNearestText.empty()) {
+                item.nearestText = bestNearestText;
+                item.nearestDistance = std::round(bestEdgeDist * 10.0f) / 10.0f;
+            }
+        }
+
         result.push_back(std::move(item));
     }
 
     for (const auto* child : element.orderedChildren) {
         if (child != nullptr) {
-            collectInteractiveElementsRecursive(*child, result, nextIndex, onlyVisible);
+            collectInteractiveElementsRecursive(*child, result, nextIndex, onlyVisible, parentMap, allTexts);
         }
     }
 }
@@ -114,9 +324,18 @@ std::vector<McpInteractiveElement> extractInteractiveElements(const core::dsl::R
     std::vector<McpInteractiveElement> result;
     int nextIndex = 1;
     const std::vector<const core::dsl::Element*>& roots = runtime.elementRoots();
+
+    std::unordered_map<const core::dsl::Element*, const core::dsl::Element*> parentMap;
+    std::vector<TextNodeRecord> allTexts;
     for (const auto* root : roots) {
         if (root != nullptr) {
-            collectInteractiveElementsRecursive(*root, result, nextIndex, onlyVisible);
+            buildParentMapAndCollectTexts(*root, parentMap, allTexts, onlyVisible);
+        }
+    }
+
+    for (const auto* root : roots) {
+        if (root != nullptr) {
+            collectInteractiveElementsRecursive(*root, result, nextIndex, onlyVisible, parentMap, allTexts);
         }
     }
     return result;
@@ -133,6 +352,9 @@ std::string formatInteractiveElementsJson(const std::vector<McpInteractiveElemen
            << ",\"id\":\"" << escapeJson(item.id) << "\""
            << ",\"kind\":\"" << escapeJson(item.kind) << "\""
            << ",\"text\":\"" << escapeJson(item.text) << "\""
+           << ",\"contextText\":\"" << escapeJson(item.contextText) << "\""
+           << ",\"nearestText\":\"" << escapeJson(item.nearestText) << "\""
+           << ",\"nearestDistance\":" << item.nearestDistance
            << ",\"bounds\":[" << item.frame.x << "," << item.frame.y << "," << item.frame.width << "," << item.frame.height << "]"
            << ",\"disabled\":" << (item.disabled ? "true" : "false")
            << ",\"focusable\":" << (item.focusable ? "true" : "false")

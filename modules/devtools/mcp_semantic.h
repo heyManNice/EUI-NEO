@@ -12,7 +12,10 @@ struct McpInteractiveElement {
     int markIndex = 0;
     std::string id;
     std::string kind;
-    std::string text;
+    std::string text;             // Direct element text or overlapping label text
+    std::string contextText;      // Enclosing card/container context text (e.g. card title/tags)
+    std::string nearestText;      // Spatially or hierarchically nearest visible text
+    float nearestDistance = 0.0f; // Pixel distance to the nearest text
     core::Rect frame{};
     bool disabled = false;
     bool focusable = false;

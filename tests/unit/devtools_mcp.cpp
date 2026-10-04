@@ -64,6 +64,7 @@ int main() {
                 foundBtn = true;
                 assert(!item.disabled);
                 assert(item.markIndex >= 1);
+                assert(item.nearestText == "Hello MCP");
             }
         }
         assert(foundBtn);
@@ -71,7 +72,10 @@ int main() {
         std::string jsonMarks = modules::devtools::formatInteractiveElementsJson(marks);
         assert(jsonMarks.find("test_page.btn_click") != std::string::npos);
         assert(jsonMarks.find("markIndex") != std::string::npos);
-        std::cout << "[PASS] Interactive elements and SoM marks extraction passed" << std::endl;
+        assert(jsonMarks.find("contextText") != std::string::npos);
+        assert(jsonMarks.find("nearestText") != std::string::npos);
+        assert(jsonMarks.find("Hello MCP") != std::string::npos);
+        std::cout << "[PASS] Interactive elements, semantic context, and SoM marks extraction passed" << std::endl;
     }
 
     // Extract element tree JSON
