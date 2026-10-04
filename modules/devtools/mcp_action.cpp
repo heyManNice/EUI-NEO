@@ -352,12 +352,117 @@ McpActionResult inputText(core::dsl::Runtime& runtime, const std::string& elemen
     return res;
 }
 
+// The runtime picks the scroll receiver by hit testing the last pointer event, so the
+// element a scroll reaches is the nearest scroll host under the pointer. The same rule
+// decides here which element a scroll would reach.
+static bool isScrollHost(const core::dsl::Element& element) {
+    return !element.disabled && (!element.scrollStateId.empty() || static_cast<bool>(element.onScroll));
+}
+
+// One walk finds the target and, unwinding back out, the nearest scroll host above it.
+static bool locateScrollHost(const core::dsl::Element& element,
+                             const std::string& targetId,
+                             const core::dsl::Element*& host) {
+    const bool selfIsHost = isScrollHost(element);
+    if (element.id == targetId) {
+        if (selfIsHost) {
+            host = &element;
+        }
+        return true;
+    }
+    for (const auto* child : element.orderedChildren) {
+        if (child == nullptr) continue;
+        if (locateScrollHost(*child, targetId, host)) {
+            if (host == nullptr && selfIsHost) {
+                host = &element;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+// Named in the failure message so a caller pointing at a wrapper learns what to target.
+static std::string firstScrollHostBelow(const core::dsl::Element& element) {
+    if (!element.disabled && (!element.scrollStateId.empty() || element.onScroll)) {
+        return element.id;
+    }
+    for (const auto* child : element.orderedChildren) {
+        if (child == nullptr) continue;
+        const std::string found = firstScrollHostBelow(*child);
+        if (!found.empty()) return found;
+    }
+    return {};
+}
+
 McpActionResult scrollElement(core::dsl::Runtime& runtime, const std::string& elementId, float deltaX, float deltaY) {
     McpActionResult res;
-    core::dsl::Element* el = runtime.findElement(elementId);
-    if (el != nullptr) {
-        res.targetBounds = core::Rect{el->frame.x, el->frame.y, el->frame.width, el->frame.height};
+
+    // No target keeps the original meaning: scroll wherever the pointer already is.
+    if (elementId.empty()) {
+        core::ScrollEvent scrollEv;
+        scrollEv.x = static_cast<double>(deltaX);
+        scrollEv.y = static_cast<double>(deltaY);
+        runtime.pushScrollEvent(scrollEv);
+        runtime.requestFullPaint();
+
+        res.success = true;
+        res.message = "Scroll delta (" + std::to_string(deltaX) + ", " + std::to_string(deltaY) +
+                      ") dispatched at the current pointer position (no target given)";
+        return res;
     }
+
+    core::dsl::Element* el = runtime.findElement(elementId);
+    if (el == nullptr) {
+        std::string hitCandidate = elementId + ".hit";
+        el = runtime.findElement(hitCandidate);
+        if (el == nullptr && elementId.size() > 5 && elementId.substr(elementId.size() - 5) == ".text") {
+            hitCandidate = elementId.substr(0, elementId.size() - 5) + ".hit";
+            el = runtime.findElement(hitCandidate);
+        }
+    }
+    if (el == nullptr) {
+        res.success = false;
+        res.message = "Element '" + elementId + "' not found to scroll";
+        return res;
+    }
+
+    const core::Rect bounds{el->frame.x, el->frame.y, el->frame.width, el->frame.height};
+    res.targetBounds = bounds;
+
+    if (el->disabled) {
+        res.success = false;
+        res.message = "Element '" + el->id + "' is disabled";
+        return res;
+    }
+
+    const core::dsl::Element* host = nullptr;
+    bool inTree = false;
+    for (const auto* root : runtime.elementRoots()) {
+        if (root != nullptr && locateScrollHost(*root, el->id, host)) {
+            inTree = true;
+            break;
+        }
+    }
+    if (!inTree) {
+        res.success = false;
+        res.message = "Element '" + el->id + "' is not part of the composed tree";
+        return res;
+    }
+    if (host == nullptr) {
+        const std::string below = firstScrollHostBelow(*el);
+        res.success = false;
+        res.message = "Nothing scrollable at or above '" + el->id + "'" +
+                      (below.empty() ? "" : "; it contains a scroll host, target '" + below + "' instead");
+        return res;
+    }
+
+    // Move the pointer over the target so the runtime resolves the scroll to it.
+    core::PointerEvent moveEv;
+    moveEv.action = core::PointerAction::Move;
+    moveEv.x = static_cast<double>(bounds.x + bounds.width * 0.5f);
+    moveEv.y = static_cast<double>(bounds.y + bounds.height * 0.5f);
+    runtime.pushPointerEvent(moveEv);
 
     core::ScrollEvent scrollEv;
     scrollEv.x = static_cast<double>(deltaX);
@@ -366,7 +471,8 @@ McpActionResult scrollElement(core::dsl::Runtime& runtime, const std::string& el
     runtime.requestFullPaint();
 
     res.success = true;
-    res.message = "Scroll event dispatched with delta (" + std::to_string(deltaX) + ", " + std::to_string(deltaY) + ")";
+    res.message = "Scroll delta (" + std::to_string(deltaX) + ", " + std::to_string(deltaY) +
+                  ") dispatched to '" + host->id + "' with the pointer over '" + el->id + "'";
     return res;
 }
 

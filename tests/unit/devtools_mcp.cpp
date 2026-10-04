@@ -58,6 +58,20 @@ int main() {
                     .interactive(true)
                     .disabled(true)
                     .build();
+
+                // A scroll host for the scroll dispatch test: rows inside it are not
+                // scrollable themselves, so they must resolve to this container. The state
+                // id has to equal the element id for the element to own the scroll state.
+                ui.column("list")
+                    .size(200.0f, 120.0f)
+                    .scrollState("list", 0.0f, 400.0f, 40.0f)
+                    .content([&] {
+                        ui.text("list.row_1")
+                            .text("Row 1")
+                            .size(200.0f, 30.0f)
+                            .build();
+                    })
+                    .build();
             })
             .build();
     });
@@ -122,9 +136,41 @@ int main() {
         core::dsl::Element* el = runtime.findElement("test_page.title_txt");
         assert(el != nullptr && el->text == "Updated MCP Text");
 
-        // Scroll dispatch
-        auto scrollRes = modules::devtools::scrollElement(runtime, "test_page.root", 0.0f, -50.0f);
+        // Scroll: the target decides which element receives the delta, and a target that
+        // cannot scroll fails instead of reporting a success that changed nothing.
+        auto missingScroll = modules::devtools::scrollElement(runtime, "no_such_element", 0.0f, -50.0f);
+        assert(missingScroll.success == false);
+
+        auto blockedScroll = modules::devtools::scrollElement(runtime, "test_page.btn_click", 0.0f, -50.0f);
+        assert(blockedScroll.success == false);
+
+        runtime.update(nullptr, 0.016f, 1.0f, 1.0f);
+        auto scrollState = runtime.instances().scrollStates.find("test_page.list");
+        assert(scrollState != runtime.instances().scrollStates.end());
+        assert(scrollState->second.offset == 0.0f);
+
+        // A row inside the scroll host resolves to the host above it, and the offset has to
+        // move: the impulse is spent over the frames that follow.
+        auto nestedScroll = modules::devtools::scrollElement(runtime, "test_page.list.row_1", 0.0f, -50.0f);
+        assert(nestedScroll.success == true);
+        assert(nestedScroll.message.find("test_page.list") != std::string::npos);
+        for (int frame = 0; frame < 60; ++frame) {
+            runtime.update(nullptr, 0.016f, 1.0f, 1.0f);
+        }
+        scrollState = runtime.instances().scrollStates.find("test_page.list");
+        const float offsetDown = scrollState->second.offset;
+        assert(offsetDown > 0.0f);
+        assert(offsetDown <= scrollState->second.maxOffset + 0.01f);
+
+        // Targeting the host itself scrolls the other way.
+        auto scrollRes = modules::devtools::scrollElement(runtime, "test_page.list", 0.0f, 50.0f);
         assert(scrollRes.success == true);
+        assert(scrollRes.message.find("test_page.list") != std::string::npos);
+        for (int frame = 0; frame < 60; ++frame) {
+            runtime.update(nullptr, 0.016f, 1.0f, 1.0f);
+        }
+        scrollState = runtime.instances().scrollStates.find("test_page.list");
+        assert(scrollState->second.offset < offsetDown);
         std::cout << "[PASS] MCP actions (click, text input, scroll) passed" << std::endl;
     }
 

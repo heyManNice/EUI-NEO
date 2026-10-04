@@ -113,7 +113,11 @@ inline bool Runtime::update(core::window::Handle window, float deltaSeconds, flo
 
     syncScrollStateBindings();
     if (scrollEvent.active()) {
-        updateScroll(scrollEvent, hitTestScrollable(pointerEvents.back(), dpiScale));
+        // The scroll receiver is whatever is under the pointer, so a scroll with no pointer
+        // event in this frame has nothing to address and is dropped.
+        if (!pointerEvents.empty()) {
+            updateScroll(scrollEvent, hitTestScrollable(pointerEvents.back(), dpiScale));
+        }
         hoverTargetCacheValid_ = false;
     }
     updateScrollMotion(deltaSeconds);
