@@ -45,4 +45,17 @@ uint16_t currentMcpServerPort();
 //                   capture_element, modify_property)
 std::string handleMcpJsonRpcRequest(const std::string& requestJson, core::dsl::Runtime* explicitRuntime = nullptr);
 
+struct McpRequestLogEntry {
+    std::string timestamp; // e.g. "13:30:15"
+    std::string method;    // e.g. "tools/call: get_interactive_marks" or "ping"
+    std::string details;   // e.g. "arguments: {} -> 14 marks"
+    bool isError = false;
+};
+
+// Returns thread-safe copy of recent MCP request logs
+std::vector<McpRequestLogEntry> getMcpRequestLogs();
+
+// Clears recent MCP request logs
+void clearMcpRequestLogs();
+
 } // namespace modules::devtools

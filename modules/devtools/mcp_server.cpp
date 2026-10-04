@@ -43,6 +43,37 @@ namespace modules::devtools {
 
 namespace {
 
+std::mutex s_logsMutex;
+std::vector<McpRequestLogEntry> s_requestLogs;
+constexpr std::size_t kMaxLogs = 100;
+
+void appendRequestLog(const std::string& method, const std::string& details, bool isError = false) {
+    auto now = std::chrono::system_clock::now();
+    std::time_t tt = std::chrono::system_clock::to_time_t(now);
+    std::tm tmBuf{};
+#if defined(_WIN32)
+    localtime_s(&tmBuf, &tt);
+#else
+    localtime_r(&tt, &tmBuf);
+#endif
+    char timeStr[32];
+    std::strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &tmBuf);
+
+    std::lock_guard<std::mutex> lock(s_logsMutex);
+    McpRequestLogEntry entry;
+    entry.timestamp = timeStr;
+    entry.method = method;
+    entry.details = details;
+    entry.isError = isError;
+    s_requestLogs.push_back(std::move(entry));
+    if (s_requestLogs.size() > kMaxLogs) {
+        s_requestLogs.erase(s_requestLogs.begin(), s_requestLogs.begin() + (s_requestLogs.size() - kMaxLogs));
+    }
+#if defined(EUI_TOOLING)
+    devtoolsHostInstance().requestCompose();
+#endif
+}
+
 void parseArgument(const std::string& arg, McpLaunchOptions& options) {
     if (arg == "--devtools") {
         options.enableDevtools = true;
@@ -445,7 +476,7 @@ void applyMcpLaunchOptions(const McpLaunchOptions& options) {
 #endif
 }
 
-std::string handleMcpJsonRpcRequest(const std::string& requestJson, core::dsl::Runtime* explicitRuntime) {
+static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJson, core::dsl::Runtime* explicitRuntime) {
 #if !defined(EUI_TOOLING)
     return makeJsonRpcError("null", -32601, "EUI DevTools tooling is disabled");
 #else
@@ -678,6 +709,41 @@ std::string handleMcpJsonRpcRequest(const std::string& requestJson, core::dsl::R
 #endif
 }
 
+std::string handleMcpJsonRpcRequest(const std::string& requestJson, core::dsl::Runtime* explicitRuntime) {
+    std::string method = extractJsonString(requestJson, "method");
+    std::string toolName;
+    std::string details;
+    if (method == "tools/call") {
+        std::string params = extractJsonObject(requestJson, "params");
+        toolName = extractJsonString(params, "name");
+        std::string args = extractJsonObject(params, "arguments");
+        std::string compactArgs;
+        for (char c : args) {
+            if (c == '\r' || c == '\n' || c == '\t') {
+                if (!compactArgs.empty() && compactArgs.back() != ' ') compactArgs += ' ';
+            } else {
+                compactArgs += c;
+            }
+        }
+        if (compactArgs.length() > 64) {
+            compactArgs = compactArgs.substr(0, 61) + "...";
+        }
+        details = "args: " + (compactArgs.empty() ? "{}" : compactArgs);
+    } else {
+        details = "method: " + method;
+    }
+
+    std::string response = handleMcpJsonRpcRequestInternal(requestJson, explicitRuntime);
+
+    bool isErr = response.find("\"error\"") != std::string::npos;
+    std::string logMethod = (method == "tools/call" && !toolName.empty())
+        ? ("tools/call: " + toolName)
+        : (method.empty() ? "unknown" : method);
+
+    appendRequestLog(logMethod, details, isErr);
+    return response;
+}
+
 // -----------------------------------------------------------------------------
 // TCP HTTP Server for MCP Protocol
 // -----------------------------------------------------------------------------
@@ -905,6 +971,16 @@ bool isMcpServerRunning() {
 
 uint16_t currentMcpServerPort() {
     return s_serverPort;
+}
+
+std::vector<McpRequestLogEntry> getMcpRequestLogs() {
+    std::lock_guard<std::mutex> lock(s_logsMutex);
+    return s_requestLogs;
+}
+
+void clearMcpRequestLogs() {
+    std::lock_guard<std::mutex> lock(s_logsMutex);
+    s_requestLogs.clear();
 }
 
 } // namespace modules::devtools

@@ -135,6 +135,7 @@ public:
     bool getCachedFramebuffer(int& outWidth, int& outHeight, std::vector<unsigned char>& outRgba);
     void requestFramebufferCapture();
     bool captureRequested() const;
+    void requestCompose();
     float dpiScale() const { return dpiScale_ > 0.0f ? dpiScale_ : 1.0f; }
 
 private:
@@ -211,7 +212,6 @@ private:
     void composeUi(core::dsl::Ui& ui, float width, float height, const core::Rect& panel, bool detached);
     // Wires every command the panel can raise to the host, by name.
     DevtoolsUiActions buildActions(DevtoolsPanelState& state);
-    void requestCompose();
     void queueElementPropertyEdit(const ElementPropertyEdit& edit);
     bool overResizeBoundary(double x, double y) const;
 

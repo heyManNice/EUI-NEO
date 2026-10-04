@@ -1,6 +1,7 @@
 #include "modules/devtools/mcp.h"
 
 #include "modules/devtools/mcp_semantic.h"
+#include "modules/devtools/mcp_server.h"
 #include "modules/devtools/theme.h"
 #include "components/scrollview.h"
 
@@ -113,17 +114,6 @@ void composeMcpTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devtoo
     const float scrollOffset = state.panelState != nullptr ? state.panelState->mcpScrollOffset : 0.0f;
     const std::string statusMsg = state.panelState != nullptr ? state.panelState->mcpStatusMessage : "MCP Bridge Standby";
 
-    const core::Color badgeBg = isRunning
-        ? core::Color{0.18f, 0.55f, 0.34f, 0.18f}
-        : core::Color{theme.accent.r, theme.accent.g, theme.accent.b, 0.15f};
-    const core::Color badgeBorder = isRunning
-        ? core::Color{0.18f, 0.85f, 0.45f, 0.60f}
-        : core::Color{theme.accent.r, theme.accent.g, theme.accent.b, 0.50f};
-    const core::Color badgeText = isRunning
-        ? core::Color{0.25f, 0.90f, 0.55f, 1.0f}
-        : theme.accent;
-    const std::string badgeLabel = isRunning ? "RUNNING" : "STANDBY";
-
     ui.column("mcp.main")
         .size(state.panel.width, contentHeight)
         .content([&] {
@@ -157,26 +147,6 @@ void composeMcpTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devtoo
                                 .fontSize(theme.captionFontSize)
                                 .fontWeight(700)
                                 .color(theme.metricValue)
-                                .verticalAlign(core::VerticalAlign::Center)
-                                .build();
-
-                            ui.rect("mcp.badge.bg")
-                                .margin(10.0f, 0.0f, 0.0f, 0.0f)
-                                .size(72.0f, 18.0f)
-                                .color(badgeBg)
-                                .radius(3.0f)
-                                .border(1.0f, badgeBorder)
-                                .build();
-
-                            ui.text("mcp.badge.txt")
-                                .position(-72.0f, 0.0f)
-                                .width(72.0f)
-                                .height(18.0f)
-                                .text(badgeLabel)
-                                .fontSize(theme.captionFontSize - 1.0f)
-                                .fontWeight(600)
-                                .color(badgeText)
-                                .horizontalAlign(core::HorizontalAlign::Center)
                                 .verticalAlign(core::VerticalAlign::Center)
                                 .build();
 
@@ -221,6 +191,7 @@ void composeMcpTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devtoo
                                         .color(core::Color{theme.toolbarBackground.r, theme.toolbarBackground.g, theme.toolbarBackground.b, 0.35f})
                                         .build();
                                     contentUi.text("mcp.sec1.hdr.txt")
+                                        .fontFamily(theme.fontFamily)
                                         .margin(14.0f, 0.0f, 0.0f, 0.0f)
                                         .width(core::SizeValue::fill())
                                         .height(28.0f)
@@ -245,58 +216,134 @@ void composeMcpTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devtoo
                                               statusMsg,
                                               theme.primaryText);
 
-                            // Section 2: Agent Tools Test & Verification
+                            // Section 2: Incoming Request & Event Logs
                             contentUi.stack("mcp.sec2.hdr")
                                 .margin(0.0f, 8.0f, 0.0f, 0.0f)
                                 .width(core::SizeValue::fill())
-                                .height(28.0f)
+                                .height(30.0f)
                                 .content([&] {
                                     contentUi.rect("mcp.sec2.hdr.bg")
                                         .fill()
                                         .color(core::Color{theme.toolbarBackground.r, theme.toolbarBackground.g, theme.toolbarBackground.b, 0.35f})
                                         .build();
-                                    contentUi.text("mcp.sec2.hdr.txt")
-                                        .margin(14.0f, 0.0f, 0.0f, 0.0f)
-                                        .width(core::SizeValue::fill())
-                                        .height(28.0f)
-                                        .text("AGENT PROTOCOL TOOLS & ENGINE VERIFICATION")
-                                        .fontSize(theme.captionFontSize)
-                                        .fontWeight(700)
-                                        .color(theme.metricLabel)
-                                        .verticalAlign(core::VerticalAlign::Center)
+
+                                    contentUi.row("mcp.sec2.hdr.row")
+                                        .fill()
+                                        .padding(14.0f, 0.0f, 14.0f, 0.0f)
+                                        .alignItems(core::Align::CENTER)
+                                        .content([&] {
+                                            contentUi.text("mcp.sec2.hdr.txt")
+                                                .fontFamily(theme.fontFamily)
+                                                .width(core::SizeValue::wrapContent())
+                                                .height(28.0f)
+                                                .text("MCP REQUEST LOGS")
+                                                .fontSize(theme.captionFontSize)
+                                                .fontWeight(700)
+                                                .color(theme.metricLabel)
+                                                .verticalAlign(core::VerticalAlign::Center)
+                                                .build();
+
+                                            contentUi.stack("mcp.sec2.spacer")
+                                                .width(core::SizeValue::fill())
+                                                .height(1.0f)
+                                                .build();
+
+                                            composeMcpActionButton(contentUi, "mcp.btn.clear_logs", "Clear Logs", false,
+                                                [&actions] {
+                                                    clearMcpRequestLogs();
+                                                    if (actions.mcp.setStatusMessage) {
+                                                        actions.mcp.setStatusMessage("Request logs cleared");
+                                                    }
+                                                });
+                                        })
                                         .build();
                                 })
                                 .build();
 
-                            // Action Buttons Row
-                            contentUi.row("mcp.actions.row")
-                                .width(core::SizeValue::fill())
-                                .height(40.0f)
-                                .padding(14.0f, 8.0f, 14.0f, 8.0f)
-                                .gap(10.0f)
-                                .alignItems(core::Align::CENTER)
-                                .content([&] {
-                                    composeMcpActionButton(contentUi, "mcp.tool.capture", "Test Viewport PNG Capture", false,
-                                        actions.mcp.triggerTestCapture);
+                            // Request logs display
+                            const auto logs = getMcpRequestLogs();
+                            if (logs.empty()) {
+                                contentUi.stack("mcp.logs.empty")
+                                    .width(core::SizeValue::fill())
+                                    .height(38.0f)
+                                    .content([&] {
+                                        contentUi.text("mcp.logs.empty.txt")
+                                            .fontFamily(theme.fontFamily)
+                                            .margin(14.0f, 0.0f, 14.0f, 0.0f)
+                                            .width(core::SizeValue::fill())
+                                            .height(38.0f)
+                                            .text("No requests received yet. Waiting for MCP clients on port " + std::to_string(port) + "...")
+                                            .fontSize(theme.elementRowFontSize)
+                                            .color(theme.mutedText)
+                                            .verticalAlign(core::VerticalAlign::Center)
+                                            .build();
+                                    })
+                                    .build();
+                            } else {
+                                const core::Color dividerColor{theme.panelBorder.r, theme.panelBorder.g, theme.panelBorder.b, 0.18f};
+                                const core::Color errorRed{0.95f, 0.35f, 0.35f, 1.0f};
 
-                                    composeMcpActionButton(contentUi, "mcp.tool.semantic", "Extract SoM Semantic Marks", false,
-                                        actions.mcp.triggerTestSemantic);
-                                })
-                                .build();
+                                // Show newest logs first
+                                for (int i = static_cast<int>(logs.size()) - 1; i >= 0; --i) {
+                                    const auto& item = logs[i];
+                                    const std::string rowId = "mcp.log.row." + std::to_string(i);
 
-                            // Section 3: Supported Capabilities Summary
-                            composeMcpInfoRow(contentUi, "mcp.cap.tree", "tool: extract_element_tree",
-                                              "Recursive tree snapshot of live elements with bounding boxes", theme.metricValue);
-                            composeMcpInfoRow(contentUi, "mcp.cap.details", "tool: get_element_details",
-                                              "Detailed property values & inspection attributes for element ID", theme.metricValue);
-                            composeMcpInfoRow(contentUi, "mcp.cap.click", "tool: click_element / click_mark",
-                                              "Direct callback trigger & pointer move/press/release automation", theme.metricValue);
-                            composeMcpInfoRow(contentUi, "mcp.cap.input", "tool: input_text",
-                                              "Text simulation and active element text injection", theme.metricValue);
-                            composeMcpInfoRow(contentUi, "mcp.cap.vision", "tool: capture_viewport / capture_element",
-                                              "Hardware framebuffer readback with PNG Base64 compression", theme.metricValue);
-                            composeMcpInfoRow(contentUi, "mcp.cap.som", "tool: get_interactive_marks",
-                                              "Set-of-Mark visual/semantic interaction index numbering", theme.metricValue);
+                                    contentUi.stack(rowId)
+                                        .width(core::SizeValue::fill())
+                                        .height(theme.elementRowHeight + 2.0f)
+                                        .content([&] {
+                                            contentUi.rect(rowId + ".border")
+                                                .position(0.0f, theme.elementRowHeight + 1.0f)
+                                                .width(core::SizeValue::fill())
+                                                .height(1.0f)
+                                                .ignoreLayout()
+                                                .color(dividerColor)
+                                                .build();
+
+                                            contentUi.row(rowId + ".content")
+                                                .fill()
+                                                .padding(14.0f, 0.0f, 14.0f, 0.0f)
+                                                .alignItems(core::Align::CENTER)
+                                                .content([&] {
+                                                    // 1. Timestamp
+                                                    contentUi.text(rowId + ".time")
+                                                        .fontFamily(theme.fontFamily)
+                                                        .width(72.0f)
+                                                        .height(theme.elementRowHeight)
+                                                        .text("[" + item.timestamp + "]")
+                                                        .fontSize(theme.elementRowFontSize - 1.0f)
+                                                        .color(theme.mutedText)
+                                                        .verticalAlign(core::VerticalAlign::Center)
+                                                        .build();
+
+                                                    // 2. Method / Tool
+                                                    contentUi.text(rowId + ".method")
+                                                        .fontFamily(theme.fontFamily)
+                                                        .width(220.0f)
+                                                        .height(theme.elementRowHeight)
+                                                        .text(item.method)
+                                                        .fontSize(theme.elementRowFontSize)
+                                                        .fontWeight(600)
+                                                        .color(item.isError ? errorRed : theme.accent)
+                                                        .verticalAlign(core::VerticalAlign::Center)
+                                                        .build();
+
+                                                    // 3. Details
+                                                    contentUi.text(rowId + ".details")
+                                                        .fontFamily(theme.fontFamily)
+                                                        .width(core::SizeValue::fill())
+                                                        .height(theme.elementRowHeight)
+                                                        .text(item.details)
+                                                        .fontSize(theme.elementRowFontSize)
+                                                        .color(theme.primaryText)
+                                                        .verticalAlign(core::VerticalAlign::Center)
+                                                        .build();
+                                                })
+                                                .build();
+                                        })
+                                        .build();
+                                }
+                            }
                         })
                         .build();
                 })
