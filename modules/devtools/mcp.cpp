@@ -112,7 +112,6 @@ void composeMcpTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devtoo
     const bool isRunning = state.panelState != nullptr ? state.panelState->mcpServerRunning : false;
     const uint16_t port = state.panelState != nullptr ? state.panelState->mcpPort : 8990;
     const float scrollOffset = state.panelState != nullptr ? state.panelState->mcpScrollOffset : 0.0f;
-    const std::string statusMsg = state.panelState != nullptr ? state.panelState->mcpStatusMessage : "MCP Bridge Standby";
 
     ui.column("mcp.main")
         .size(state.panel.width, contentHeight)
@@ -143,7 +142,7 @@ void composeMcpTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devtoo
                                 .fontFamily(theme.fontFamily)
                                 .width(core::SizeValue::wrapContent())
                                 .height(32.0f)
-                                .text("MODEL CONTEXT PROTOCOL (MCP)")
+                                .text("MODEL CONTEXT PROTOCOL")
                                 .fontSize(theme.captionFontSize)
                                 .fontWeight(700)
                                 .color(theme.metricValue)
@@ -205,16 +204,12 @@ void composeMcpTab(core::dsl::Ui& ui, const DevtoolsUiState& state, const Devtoo
                                 .build();
 
                             composeMcpInfoRow(contentUi, "mcp.info.status", "Service Status",
-                                              isRunning ? "Active (Listening for AI Agent commands)" : "Standby (Local engine ready)",
+                                              isRunning ? "Active" : "Standby",
                                               isRunning ? core::Color{0.25f, 0.90f, 0.55f, 1.0f} : theme.metricValue);
 
                             composeMcpInfoRow(contentUi, "mcp.info.port", "Listening Port",
-                                              std::to_string(port) + " (HTTP / SSE / JSON-RPC)",
+                                              std::to_string(port),
                                               theme.accent);
-
-                            composeMcpInfoRow(contentUi, "mcp.info.log", "Recent Message",
-                                              statusMsg,
-                                              theme.primaryText);
 
                             // Section 2: Incoming Request & Event Logs
                             contentUi.stack("mcp.sec2.hdr")
