@@ -283,6 +283,33 @@ void collectInteractiveElementsRecursive(const core::dsl::Element& element,
             }
         }
 
+        // 4.5. Action verbs in ID when item.text is empty (e.g. remove, close, add, delete, clear)
+        if (item.text.empty()) {
+            std::string lowerId = element.id;
+            for (char& ch : lowerId) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+            bool isRemove = (lowerId.find("remove") != std::string::npos || lowerId.find("delete") != std::string::npos);
+            bool isClose = (lowerId.find("close") != std::string::npos);
+            bool isAdd = (lowerId.find(".add") != std::string::npos || lowerId.find("add.hit") != std::string::npos || lowerId.find("btn.add") != std::string::npos);
+            bool isClear = (lowerId.find("clear") != std::string::npos);
+
+            if (isRemove || isClose) {
+                std::string actionName = isClose ? "Close" : "Remove";
+                if (!item.contextText.empty()) {
+                    item.text = actionName + " " + item.contextText;
+                } else {
+                    item.text = actionName;
+                }
+            } else if (isAdd) {
+                if (!item.contextText.empty()) {
+                    item.text = "Add " + item.contextText;
+                } else {
+                    item.text = "Add";
+                }
+            } else if (isClear) {
+                item.text = "Clear";
+            }
+        }
+
         // 5. Detect selection state (Segmented item under indicator, active card, or selected flag)
         if (parent != nullptr) {
             // Check if parent or sibling has an indicator
@@ -517,7 +544,7 @@ struct SnapshotTreeBuilder {
 
     bool hasInterestingContent(const core::dsl::Element& el, int curDepth) const {
         if (marksMap.find(el.id) != marksMap.end()) return true;
-        if (el.kind == core::dsl::ElementKind::Text && !el.text.empty() && isPrintableSemanticText(el.text)) {
+        if (!interactiveOnly && el.kind == core::dsl::ElementKind::Text && !el.text.empty() && isPrintableSemanticText(el.text)) {
             return true;
         }
         if (curDepth >= maxDepth) return false;
@@ -529,14 +556,14 @@ struct SnapshotTreeBuilder {
         return false;
     }
 
-    void visit(const core::dsl::Element& el, std::ostringstream& ss, int depth, const std::string& parentLabel) {
+    void visit(const core::dsl::Element& el, std::ostringstream& ss, int depth, const std::string& parentLabel, std::string& siblingLastEmitted) {
         if (depth > maxDepth) return;
         if (!hasInterestingContent(el, depth)) return;
 
         auto it = marksMap.find(el.id);
         const McpInteractiveElement* mark = (it != marksMap.end()) ? &it->second : nullptr;
 
-        bool isText = (el.kind == core::dsl::ElementKind::Text && !el.text.empty() && isPrintableSemanticText(el.text));
+        bool isText = !interactiveOnly && (el.kind == core::dsl::ElementKind::Text && !el.text.empty() && isPrintableSemanticText(el.text));
         bool isContainer = !el.orderedChildren.empty();
 
         std::string role;
@@ -560,26 +587,23 @@ struct SnapshotTreeBuilder {
             if (!focusedId.empty() && el.id == focusedId) flags += " [focused]";
             flags += " [ref=e" + std::to_string(mark->markIndex) + "]";
         } else if (isText) {
-            // Avoid duplicate label print if this text was already used by the parent interactive mark
-            if (el.text != parentLabel) {
+            // Avoid duplicate label print if this text equals parentLabel or siblingLastEmitted
+            if (el.text != parentLabel && el.text != siblingLastEmitted) {
                 emitLine = true;
                 role = "text";
                 label = el.text;
             }
         } else if (isContainer) {
-            // Check if this container represents a meaningful UI section
             if (depth == 0) {
                 emitLine = true;
                 role = "window";
                 label = el.id.empty() ? "App" : el.id;
-            } else if (el.id.find("card.") != std::string::npos && el.id.find(".bg") == std::string::npos) {
+            } else if (el.id.find("card") != std::string::npos && el.id.find(".bg") == std::string::npos && el.id.find(".hit") == std::string::npos) {
                 emitLine = true;
                 role = "card";
                 label = findSubtreeText(el);
-            } else if (el.id.find("mode") != std::string::npos || el.id.find("hour") != std::string::npos ||
-                       el.id.find("search") != std::string::npos || el.id.find("brand") != std::string::npos ||
-                       el.id.find("hero") != std::string::npos) {
-                if (el.id.find(".wrap") == std::string::npos && el.id.find(".hit") == std::string::npos) {
+            } else if (el.kind == core::dsl::ElementKind::Stack || el.kind == core::dsl::ElementKind::Row || el.kind == core::dsl::ElementKind::Column) {
+                if (el.id.find(".wrap") == std::string::npos && el.id.find(".hit") == std::string::npos && el.id.find(".bg") == std::string::npos) {
                     emitLine = true;
                     role = "group";
                     label = el.id;
@@ -599,12 +623,16 @@ struct SnapshotTreeBuilder {
             }
             ss << "\n";
             nextDepth = depth + 1;
+            if (!label.empty()) {
+                siblingLastEmitted = label;
+            }
         }
 
         std::string currentLabelForChildren = label.empty() ? parentLabel : label;
+        std::string childSiblingLast;
         for (const auto* child : el.orderedChildren) {
             if (child != nullptr) {
-                visit(*child, ss, nextDepth, currentLabelForChildren);
+                visit(*child, ss, nextDepth, currentLabelForChildren, childSiblingLast);
             }
         }
     }
@@ -632,9 +660,10 @@ std::string takeSnapshot(const core::dsl::Runtime& runtime, bool interactiveOnly
     };
 
     const std::vector<const core::dsl::Element*>& roots = runtime.elementRoots();
+    std::string rootSiblingLast;
     for (const auto* root : roots) {
         if (root != nullptr) {
-            builder.visit(*root, ss, 0, "");
+            builder.visit(*root, ss, 0, "", rootSiblingLast);
         }
     }
 

@@ -188,14 +188,31 @@ int main() {
         std::string callClickResp = modules::devtools::handleMcpJsonRpcRequest(callClickReq, &runtime);
         assert(callClickResp.find("success") != std::string::npos && callClickResp.find("true") != std::string::npos);
 
-        // tools/call: input_text
-        std::string callInputReq = "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"input_text\",\"arguments\":{\"elementId\":\"test_page.title_txt\",\"text\":\"RPC Written Text\"}}}";
-        std::string callInputResp = modules::devtools::handleMcpJsonRpcRequest(callInputReq, &runtime);
-        assert(callInputResp.find("success") != std::string::npos && callInputResp.find("true") != std::string::npos);
+        // tools/call: input_text with Unicode \uXXXX escape (e.g. \u4e1c\u4eac for "东京")
+        std::string callUnicodeInput = "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"input_text\",\"arguments\":{\"target\":\"test_page.title_txt\",\"text\":\"\\u4e1c\\u4eac\"}}}";
+        std::string callUnicodeResp = modules::devtools::handleMcpJsonRpcRequest(callUnicodeInput, &runtime);
+        assert(callUnicodeResp.find("success") != std::string::npos && callUnicodeResp.find("true") != std::string::npos);
         core::dsl::Element* el = runtime.findElement("test_page.title_txt");
-        assert(el != nullptr && el->text == "RPC Written Text");
+        assert(el != nullptr && el->text == "东京");
 
-        std::cout << "[PASS] MCP JSON-RPC protocol methods (ping, init, tools/list, tools/call) passed" << std::endl;
+        // tools/call: click_element with unquoted numeric target (e.g. "target": 1)
+        std::string callNumericTarget = "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\",\"params\":{\"name\":\"click_element\",\"arguments\":{\"target\":1}}}";
+        std::string callNumericResp = modules::devtools::handleMcpJsonRpcRequest(callNumericTarget, &runtime);
+        assert(callNumericResp.find("success") != std::string::npos && callNumericResp.find("true") != std::string::npos);
+
+        // tools/call: press_key without target fallback to focused element
+        modules::devtools::focusElement(runtime, "test_page.btn_click");
+        std::string callPressKey = "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"tools/call\",\"params\":{\"name\":\"press_key\",\"arguments\":{\"key\":\"Enter\"}}}";
+        std::string callPressResp = modules::devtools::handleMcpJsonRpcRequest(callPressKey, &runtime);
+        assert(callPressResp.find("success") != std::string::npos && callPressResp.find("true") != std::string::npos);
+
+        // Verify takeSnapshot interactiveOnly filtering
+        std::string fullSnap = modules::devtools::takeSnapshot(runtime, false);
+        std::string interactiveSnap = modules::devtools::takeSnapshot(runtime, true);
+        assert(fullSnap.find("- text \"东京\"") != std::string::npos);
+        assert(interactiveSnap.find("- text \"东京\"") == std::string::npos);
+
+        std::cout << "[PASS] MCP JSON-RPC protocol methods (ping, init, tools/list, unicode \\uXXXX, numeric handle, press_key focus) passed" << std::endl;
     }
 
     // 6. Test MCP Server Start & Stop Lifecycle

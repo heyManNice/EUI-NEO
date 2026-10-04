@@ -109,4 +109,19 @@ python modules/devtools/mcp_bridge/eui_mcp_bridge.py --port 8990
 
 # Only connect to existing instance, never auto-spawn:
 python modules/devtools/mcp_bridge/eui_mcp_bridge.py --no-spawn
+
+# Take compact interactive-only snapshot (no static text nodes):
+python modules/devtools/mcp_bridge/eui_mcp_bridge.py snapshot --interactiveOnly
 ```
+
+---
+
+## 💡 Troubleshooting & Build Tips
+
+- **Rebuilding while an app is running**:
+  If an EUI-NEO application (such as `clock.exe`) is running in the background, rebuilds with `ninja` may fail when copying assets because Windows file locks prevent overwriting font/asset files. Run:
+  ```bash
+  python modules/devtools/mcp_bridge/eui_mcp_bridge.py stop
+  ```
+  before compiling to release file locks.
+

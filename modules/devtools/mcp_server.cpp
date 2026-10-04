@@ -164,6 +164,43 @@ std::string escapeJson(const std::string& str) {
     return ss.str();
 }
 
+static int parseHexNibble(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+static int parse4Hex(const std::string& str, std::size_t& idx) {
+    if (idx + 4 > str.length()) return -1;
+    int val = 0;
+    for (int i = 0; i < 4; ++i) {
+        int nib = parseHexNibble(str[idx + i]);
+        if (nib < 0) return -1;
+        val = (val << 4) | nib;
+    }
+    idx += 4;
+    return val;
+}
+
+static void appendUtf8CodePoint(std::string& out, uint32_t cp) {
+    if (cp <= 0x7F) {
+        out.push_back(static_cast<char>(cp));
+    } else if (cp <= 0x7FF) {
+        out.push_back(static_cast<char>(0xC0 | ((cp >> 6) & 0x1F)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else if (cp <= 0xFFFF) {
+        out.push_back(static_cast<char>(0xE0 | ((cp >> 12) & 0x0F)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else if (cp <= 0x10FFFF) {
+        out.push_back(static_cast<char>(0xF0 | ((cp >> 18) & 0x07)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    }
+}
+
 // Minimal JSON parser helpers
 std::string extractJsonString(const std::string& json, const std::string& key) {
     std::string pattern = "\"" + key + "\"";
@@ -191,10 +228,41 @@ std::string extractJsonString(const std::string& json, const std::string& key) {
                 if (escape) {
                     if (c == '"') result += '"';
                     else if (c == '\\') result += '\\';
+                    else if (c == '/') result += '/';
+                    else if (c == 'b') result += '\b';
+                    else if (c == 'f') result += '\f';
                     else if (c == 'n') result += '\n';
                     else if (c == 'r') result += '\r';
                     else if (c == 't') result += '\t';
-                    else result += c;
+                    else if (c == 'u') {
+                        std::size_t hexStart = afterKey;
+                        int cp = parse4Hex(json, hexStart);
+                        if (cp >= 0) {
+                            afterKey = hexStart;
+                            // Check for surrogate pairs: high surrogate 0xD800..0xDBFF followed by \uDC00..0xDFFF
+                            if (cp >= 0xD800 && cp <= 0xDBFF) {
+                                if (afterKey + 6 <= json.length() && json[afterKey] == '\\' && json[afterKey + 1] == 'u') {
+                                    std::size_t nextIdx = afterKey + 2;
+                                    int low = parse4Hex(json, nextIdx);
+                                    if (low >= 0xDC00 && low <= 0xDFFF) {
+                                        afterKey = nextIdx;
+                                        uint32_t fullCp = 0x10000 + (((cp - 0xD800) << 10) | (low - 0xDC00));
+                                        appendUtf8CodePoint(result, fullCp);
+                                    } else {
+                                        appendUtf8CodePoint(result, static_cast<uint32_t>(cp));
+                                    }
+                                } else {
+                                    appendUtf8CodePoint(result, static_cast<uint32_t>(cp));
+                                }
+                            } else {
+                                appendUtf8CodePoint(result, static_cast<uint32_t>(cp));
+                            }
+                        } else {
+                            result += 'u';
+                        }
+                    } else {
+                        result += c;
+                    }
                     escape = false;
                 } else if (c == '\\') {
                     escape = true;
@@ -205,6 +273,40 @@ std::string extractJsonString(const std::string& json, const std::string& key) {
                 }
             }
             return result;
+        }
+        pos += pattern.length();
+    }
+    return {};
+}
+
+// Extracts string if quoted, or number / identifier token as string if unquoted (e.g. "target": 1 -> "1")
+std::string extractJsonStringOrToken(const std::string& json, const std::string& key) {
+    std::string s = extractJsonString(json, key);
+    if (!s.empty()) return s;
+
+    std::string pattern = "\"" + key + "\"";
+    std::size_t pos = 0;
+    while ((pos = json.find(pattern, pos)) != std::string::npos) {
+        bool validPre = (pos == 0) || (json[pos - 1] == '{' || json[pos - 1] == ',' ||
+                                      json[pos - 1] == ' ' || json[pos - 1] == '\t' ||
+                                      json[pos - 1] == '\r' || json[pos - 1] == '\n');
+        std::size_t afterKey = pos + pattern.length();
+        while (afterKey < json.length() && (json[afterKey] == ' ' || json[afterKey] == '\t' || json[afterKey] == '\r' || json[afterKey] == '\n')) {
+            afterKey++;
+        }
+        if (validPre && afterKey < json.length() && json[afterKey] == ':') {
+            afterKey++; // skip ':'
+            while (afterKey < json.length() && (json[afterKey] == ' ' || json[afterKey] == '\t' || json[afterKey] == '\r' || json[afterKey] == '\n')) {
+                afterKey++;
+            }
+            if (afterKey < json.length() && json[afterKey] != '"' && json[afterKey] != '{' && json[afterKey] != '[') {
+                std::size_t start = afterKey;
+                while (afterKey < json.length() && json[afterKey] != ',' && json[afterKey] != '}' && json[afterKey] != ']' &&
+                       json[afterKey] != ' ' && json[afterKey] != '\t' && json[afterKey] != '\r' && json[afterKey] != '\n') {
+                    afterKey++;
+                }
+                return json.substr(start, afterKey - start);
+            }
         }
         pos += pattern.length();
     }
@@ -692,8 +794,9 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             if (rt == nullptr) {
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
-            bool interactiveOnly = extractJsonBool(arguments, "interactiveOnly", true);
-            std::string snap = takeSnapshot(*rt, interactiveOnly);
+            bool interactiveOnly = extractJsonBool(arguments, "interactiveOnly", false);
+            int maxDepth = static_cast<int>(extractJsonNumber(arguments, "maxDepth", 16.0));
+            std::string snap = takeSnapshot(*rt, interactiveOnly, maxDepth);
             return makeJsonRpcResponse(idStr, makeMcpTextContent(snap));
         }
 
@@ -712,9 +815,9 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             if (rt == nullptr) {
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
-            std::string target = extractJsonString(arguments, "target");
-            if (target.empty()) target = extractJsonString(arguments, "elementId");
-            if (target.empty()) target = extractJsonString(arguments, "id");
+            std::string target = extractJsonStringOrToken(arguments, "target");
+            if (target.empty()) target = extractJsonStringOrToken(arguments, "elementId");
+            if (target.empty()) target = extractJsonStringOrToken(arguments, "id");
             if (target.empty()) {
                 return makeJsonRpcError(idStr, -32602, "Missing target or elementId argument");
             }
@@ -737,9 +840,9 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             if (rt == nullptr) {
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
-            std::string target = extractJsonString(arguments, "target");
-            if (target.empty()) target = extractJsonString(arguments, "elementId");
-            if (target.empty()) target = extractJsonString(arguments, "id");
+            std::string target = extractJsonStringOrToken(arguments, "target");
+            if (target.empty()) target = extractJsonStringOrToken(arguments, "elementId");
+            if (target.empty()) target = extractJsonStringOrToken(arguments, "id");
             std::string realId = resolveTarget(rt, target);
             auto res = clickElement(*rt, realId);
             syncUiFrameAfterAction(rt);
@@ -749,7 +852,7 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
                << ",\"revision\":" << s_uiRevision.load()
                << ",\"message\":\"" << escapeJson(res.message) << "\"";
             if (incSnap) {
-                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshot(*rt, true)) << "\"";
+                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshot(*rt, false)) << "\"";
             }
             ss << "}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
@@ -769,7 +872,7 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
                << ",\"revision\":" << s_uiRevision.load()
                << ",\"message\":\"" << escapeJson(res.message) << "\"";
             if (incSnap) {
-                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshot(*rt, true)) << "\"";
+                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshot(*rt, false)) << "\"";
             }
             ss << "}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
@@ -779,9 +882,9 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             if (rt == nullptr) {
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
-            std::string target = extractJsonString(arguments, "target");
-            if (target.empty()) target = extractJsonString(arguments, "elementId");
-            if (target.empty()) target = extractJsonString(arguments, "id");
+            std::string target = extractJsonStringOrToken(arguments, "target");
+            if (target.empty()) target = extractJsonStringOrToken(arguments, "elementId");
+            if (target.empty()) target = extractJsonStringOrToken(arguments, "id");
             std::string realId = resolveTarget(rt, target);
             std::string text = extractJsonString(arguments, "text");
             std::string mode = extractJsonString(arguments, "mode");
@@ -797,7 +900,7 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
                << ",\"revision\":" << s_uiRevision.load()
                << ",\"message\":\"" << escapeJson(res.message) << "\"";
             if (incSnap) {
-                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshot(*rt, true)) << "\"";
+                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshot(*rt, false)) << "\"";
             }
             ss << "}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
@@ -807,10 +910,10 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             if (rt == nullptr) {
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
-            std::string keyName = extractJsonString(arguments, "key");
-            std::string target = extractJsonString(arguments, "target");
-            if (target.empty()) target = extractJsonString(arguments, "elementId");
-            if (target.empty()) target = extractJsonString(arguments, "id");
+            std::string keyName = extractJsonStringOrToken(arguments, "key");
+            std::string target = extractJsonStringOrToken(arguments, "target");
+            if (target.empty()) target = extractJsonStringOrToken(arguments, "elementId");
+            if (target.empty()) target = extractJsonStringOrToken(arguments, "id");
             std::string realId = resolveTarget(rt, target);
             bool ctrl = extractJsonBool(arguments, "ctrl", false);
             bool shift = extractJsonBool(arguments, "shift", false);
@@ -823,7 +926,7 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
                << ",\"revision\":" << s_uiRevision.load()
                << ",\"message\":\"" << escapeJson(res.message) << "\"";
             if (incSnap) {
-                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshot(*rt, true)) << "\"";
+                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshot(*rt, false)) << "\"";
             }
             ss << "}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
@@ -833,9 +936,9 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             if (rt == nullptr) {
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
-            std::string target = extractJsonString(arguments, "target");
-            if (target.empty()) target = extractJsonString(arguments, "elementId");
-            if (target.empty()) target = extractJsonString(arguments, "id");
+            std::string target = extractJsonStringOrToken(arguments, "target");
+            if (target.empty()) target = extractJsonStringOrToken(arguments, "elementId");
+            if (target.empty()) target = extractJsonStringOrToken(arguments, "id");
             std::string realId = resolveTarget(rt, target);
             auto res = focusElement(*rt, realId);
             syncUiFrameAfterAction(rt);
@@ -850,9 +953,9 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             if (rt == nullptr) {
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
-            std::string target = extractJsonString(arguments, "target");
-            if (target.empty()) target = extractJsonString(arguments, "elementId");
-            if (target.empty()) target = extractJsonString(arguments, "id");
+            std::string target = extractJsonStringOrToken(arguments, "target");
+            if (target.empty()) target = extractJsonStringOrToken(arguments, "elementId");
+            if (target.empty()) target = extractJsonStringOrToken(arguments, "id");
             std::string realId = resolveTarget(rt, target);
             float deltaX = static_cast<float>(extractJsonNumber(arguments, "deltaX", 0.0));
             float deltaY = static_cast<float>(extractJsonNumber(arguments, "deltaY", 0.0));
@@ -889,9 +992,9 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             if (rt == nullptr) {
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
-            std::string target = extractJsonString(arguments, "target");
-            if (target.empty()) target = extractJsonString(arguments, "elementId");
-            if (target.empty()) target = extractJsonString(arguments, "id");
+            std::string target = extractJsonStringOrToken(arguments, "target");
+            if (target.empty()) target = extractJsonStringOrToken(arguments, "elementId");
+            if (target.empty()) target = extractJsonStringOrToken(arguments, "id");
             std::string realId = resolveTarget(rt, target);
             float currentDpi = devtoolsHostInstance().dpiScale();
             FramebufferImage img = captureElementScreenshot(*rt, realId, currentDpi);
@@ -914,10 +1017,14 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
         }
 
         if (toolName == "modify_element_property") {
-            std::string elementId = extractJsonString(arguments, "elementId");
+            std::string elementId = extractJsonStringOrToken(arguments, "elementId");
             if (elementId.empty()) {
-                elementId = extractJsonString(arguments, "id");
+                elementId = extractJsonStringOrToken(arguments, "target");
             }
+            if (elementId.empty()) {
+                elementId = extractJsonStringOrToken(arguments, "id");
+            }
+            elementId = resolveTarget(rt, elementId);
             std::string fieldName = extractJsonString(arguments, "field");
             if (fieldName.empty()) {
                 fieldName = extractJsonString(arguments, "property");

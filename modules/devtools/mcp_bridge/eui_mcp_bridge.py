@@ -280,7 +280,7 @@ class McpBridge:
                         "id": None,
                         "error": {"code": -32603, "message": f"Bridge forward error: {str(ex)}"},
                     }
-                    sys.stdout.write(json.dumps(err_resp) + "\n")
+                    sys.stdout.write(json.dumps(err_resp, ensure_ascii=False) + "\n")
                     sys.stdout.flush()
 
             except KeyboardInterrupt:
@@ -301,11 +301,11 @@ class McpBridge:
                 "arguments": arguments,
             },
         }
-        req_data = json.dumps(payload).encode("utf-8")
+        req_data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = urllib.request.Request(
             url,
             data=req_data,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json; charset=utf-8"},
             method="POST",
         )
         try:
@@ -340,8 +340,10 @@ def handle_cli_call(args, extra_args):
                 continue
             if i + 1 < len(extra_args) and not extra_args[i + 1].startswith("--"):
                 val = extra_args[i + 1]
-                # Try parsing as JSON number/bool
-                if val.lower() == "true":
+                # String parameters that should NEVER be converted to numbers
+                if key in ("target", "elementId", "id", "key", "text", "mode", "filePath", "path"):
+                    tool_args[key] = str(val)
+                elif val.lower() == "true":
                     tool_args[key] = True
                 elif val.lower() == "false":
                     tool_args[key] = False

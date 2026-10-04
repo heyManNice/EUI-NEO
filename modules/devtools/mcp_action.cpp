@@ -140,6 +140,7 @@ McpActionResult focusElement(core::dsl::Runtime& runtime, const std::string& ele
     if (el->onFocusChanged) {
         el->onFocusChanged(true);
     }
+    runtime.setFocusedId(el->id);
     runtime.requestElementRefresh();
     runtime.requestFullPaint();
 
@@ -161,6 +162,49 @@ McpActionResult pressKey(core::dsl::Runtime& runtime, const std::string& element
             std::string hitCandidate = elementId.substr(0, elementId.size() - 5) + ".hit";
             el = runtime.findElement(hitCandidate);
         }
+        if (el == nullptr) {
+            res.success = false;
+            res.message = "Element '" + elementId + "' not found";
+            return res;
+        }
+    } else {
+        // No element specified: check currently focused element
+        if (!runtime.focusedId().empty()) {
+            el = runtime.findElement(runtime.focusedId());
+            if (el == nullptr) {
+                std::string hitCandidate = runtime.focusedId() + ".hit";
+                el = runtime.findElement(hitCandidate);
+            }
+        }
+
+        // If no element currently has focus, search for any active focusable / input / key-event element
+        if (el == nullptr) {
+            auto findInputRecursive = [](auto& self, const core::dsl::Element& element) -> core::dsl::Element* {
+                if (!element.disabled && (element.onKeyEvent != nullptr || element.onTextInput != nullptr || element.focusable)) {
+                    return const_cast<core::dsl::Element*>(&element);
+                }
+                for (const auto* child : element.orderedChildren) {
+                    if (child != nullptr) {
+                        core::dsl::Element* found = self(self, *child);
+                        if (found != nullptr) return found;
+                    }
+                }
+                return nullptr;
+            };
+
+            for (const auto* root : runtime.elementRoots()) {
+                if (root != nullptr) {
+                    el = findInputRecursive(findInputRecursive, *root);
+                    if (el != nullptr) break;
+                }
+            }
+        }
+
+        if (el == nullptr) {
+            res.success = false;
+            res.message = "No focused or input element found in the page to receive key '" + keyName + "'";
+            return res;
+        }
     }
 
     core::InputKey key = parseKeyName(keyName);
@@ -177,26 +221,32 @@ McpActionResult pressKey(core::dsl::Runtime& runtime, const std::string& element
     keyPress.modifiers.shift = shift;
     keyPress.modifiers.alt = alt;
 
-    bool dispatched = false;
-    if (el != nullptr && el->onKeyEvent && !el->disabled) {
-        dispatched = el->onKeyEvent(keyPress);
-    }
+    core::KeyEvent keyRelease = keyPress;
+    keyRelease.action = core::KeyAction::Release;
 
-    // If target has no direct onKeyEvent or wasn't specified, search for focused or input hit element
-    if (!dispatched && el != nullptr) {
-        // Try children or siblings
-        std::string hitId = el->id + ".hit";
+    core::dsl::Element* targetReceiver = el;
+    bool dispatched = false;
+
+    if (targetReceiver->onKeyEvent && !targetReceiver->disabled) {
+        dispatched = targetReceiver->onKeyEvent(keyPress);
+        targetReceiver->onKeyEvent(keyRelease);
+    } else {
+        // Try hit candidate
+        std::string hitId = targetReceiver->id + ".hit";
         core::dsl::Element* hitEl = runtime.findElement(hitId);
         if (hitEl != nullptr && hitEl->onKeyEvent && !hitEl->disabled) {
+            targetReceiver = hitEl;
             dispatched = hitEl->onKeyEvent(keyPress);
+            hitEl->onKeyEvent(keyRelease);
         }
     }
 
+    res.targetBounds = core::Rect{targetReceiver->frame.x, targetReceiver->frame.y, targetReceiver->frame.width, targetReceiver->frame.height};
     runtime.requestElementRefresh();
     runtime.requestFullPaint();
 
     res.success = true;
-    res.message = "Key '" + keyName + "' dispatched (handled=" + (dispatched ? "true" : "false") + ")";
+    res.message = "Key '" + keyName + "' dispatched to '" + targetReceiver->id + "' (handled=" + (dispatched ? "true" : "false") + ")";
     return res;
 }
 

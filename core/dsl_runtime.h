@@ -112,6 +112,7 @@ public:
 
     // Live input and focus state seams for DevTools Input tab
     const std::string& focusedId() const { return focusedId_; }
+    void setFocusedId(const std::string& id);
     const std::string& hoverTargetId() const { return hoverTargetCacheId_; }
     std::string capturedInteractionIdSeam() const { return capturedInteractionId(); }
     const PointerEvent& lastPointerEvent() const { return hoverTargetCacheEvent_; }
@@ -293,8 +294,6 @@ private:
                              bool ancestorDisabled,
                              std::vector<runtime::ToolingHitEntry>& chain) const;
 #endif
-
-    void setFocusedId(const std::string& id);
 
     void updateScroll(const ScrollEvent& event, const std::string& targetId);
 
