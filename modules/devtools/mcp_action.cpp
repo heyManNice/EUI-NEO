@@ -81,15 +81,25 @@ McpActionResult inputText(core::dsl::Runtime& runtime, const std::string& elemen
     McpActionResult res;
     core::dsl::Element* el = runtime.findElement(elementId);
     if (el == nullptr) {
-        res.success = false;
-        res.message = "Element '" + elementId + "' not found";
-        return res;
+        std::string hitCandidate = elementId + ".hit";
+        el = runtime.findElement(hitCandidate);
+        if (el == nullptr && elementId.size() > 5 && elementId.substr(elementId.size() - 5) == ".text") {
+            hitCandidate = elementId.substr(0, elementId.size() - 5) + ".hit";
+            el = runtime.findElement(hitCandidate);
+        }
+        if (el == nullptr) {
+            res.success = false;
+            res.message = "Element '" + elementId + "' not found";
+            return res;
+        }
     }
 
-    res.targetBounds = core::Rect{el->frame.x, el->frame.y, el->frame.width, el->frame.height};
+    const std::string targetId = el->id;
+    const core::Rect bounds{el->frame.x, el->frame.y, el->frame.width, el->frame.height};
+    res.targetBounds = bounds;
 
-    // If it is a Text element, directly update text content and refresh
-    if (el->kind == core::dsl::ElementKind::Text) {
+    // If it is a Text element without text input callback, directly update text content and refresh
+    if (el->kind == core::dsl::ElementKind::Text && !el->onTextInput) {
         el->text = text;
         runtime.requestElementRefresh();
         runtime.requestFullPaint();
@@ -98,16 +108,32 @@ McpActionResult inputText(core::dsl::Runtime& runtime, const std::string& elemen
         return res;
     }
 
-    // Dispatch text input simulation
     core::TextInputEvent inputEv;
     inputEv.text = text;
-    // Request focus
-    el->focusable = true;
+
+    if (el->onPress) {
+        core::PointerEvent pressEv;
+        pressEv.action = core::PointerAction::Press;
+        pressEv.button = core::PointerButton::Left;
+        pressEv.x = bounds.x + bounds.width * 0.5;
+        pressEv.y = bounds.y + bounds.height * 0.5;
+        el->onPress(pressEv, bounds);
+    }
+
+    if (el->onTextInput && !el->disabled) {
+        el->onTextInput(inputEv);
+        runtime.requestElementRefresh();
+        runtime.requestFullPaint();
+        res.success = true;
+        res.message = "Input text simulated on element '" + targetId + "'";
+        return res;
+    }
+
     runtime.requestElementRefresh();
     runtime.requestFullPaint();
 
     res.success = true;
-    res.message = "Input text simulated on element '" + elementId + "'";
+    res.message = "Input text simulated on element '" + targetId + "'";
     return res;
 }
 
