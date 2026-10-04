@@ -84,15 +84,21 @@ std::string resolveTarget(core::dsl::Runtime* rt, const std::string& target) {
 
 void syncUiFrameAfterAction(core::dsl::Runtime* rt) {
     s_uiRevision.fetch_add(1, std::memory_order_relaxed);
+    core::platform::requestUiUpdate();
     if (rt != nullptr) {
         rt->requestElementRefresh();
         rt->requestFullPaint();
     }
 #if defined(EUI_TOOLING)
-    devtoolsHostInstance().requestCompose();
+    auto& host = devtoolsHostInstance();
+    host.requestCompose();
+    if (host.pageRuntime() != nullptr && host.frameSequence() > 0) {
+        const std::uint64_t targetSeq = host.frameSequence() + 2;
+        host.waitForFrame(targetSeq, std::chrono::milliseconds(1200));
+    }
+#else
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 #endif
-    // Wait briefly (~35ms) to give the render thread a complete frame cycle to compose and draw
-    std::this_thread::sleep_for(std::chrono::milliseconds(35));
 }
 
 void appendRequestLog(const std::string& method, const std::string& details, bool isError = false) {

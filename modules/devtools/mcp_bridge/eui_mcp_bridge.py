@@ -90,6 +90,30 @@ def is_port_responding(port: int, timeout: float = 0.5) -> bool:
         return False
 
 
+def stop_running_app() -> tuple[bool, int | None, int | None]:
+    """Terminate any background running EUI-NEO application and clean discovery file."""
+    disc_port, disc_pid = read_discovery_file()
+    stopped = False
+    if disc_pid:
+        try:
+            if sys.platform == "win32":
+                subprocess.run(["taskkill", "/PID", str(disc_pid), "/F"], capture_output=True)
+            else:
+                os.kill(disc_pid, signal.SIGTERM)
+            stopped = True
+        except Exception as e:
+            log(f"Warning: Failed to terminate PID {disc_pid}: {e}")
+
+    disc_path = get_discovery_path()
+    if disc_path.exists():
+        try:
+            disc_path.unlink()
+        except Exception:
+            pass
+
+    return stopped, disc_pid, disc_port
+
+
 def find_default_app_executable() -> pathlib.Path | None:
     """Search for clock executable in standard build directories."""
     repo_root = pathlib.Path(__file__).resolve().parents[3]
@@ -106,10 +130,11 @@ def find_default_app_executable() -> pathlib.Path | None:
 
 
 class McpBridge:
-    def __init__(self, port: int | None = None, app_path: str | None = None, auto_spawn: bool = True):
+    def __init__(self, port: int | None = None, app_path: str | None = None, auto_spawn: bool = True, daemon: bool = False):
         self.port = port
         self.app_path = app_path
         self.auto_spawn = auto_spawn
+        self.daemon = daemon
         self.spawned_proc: subprocess.Popen | None = None
 
     def start(self):
@@ -158,26 +183,48 @@ class McpBridge:
         args = [str(exe), "--mcp-server", f"--mcp-port={port}"]
         work_dir = exe.parent
 
-        self.spawned_proc = subprocess.Popen(
-            args,
-            cwd=str(work_dir),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        creationflags = 0
+        if self.daemon and sys.platform == "win32":
+            creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP | 0x01000000
 
-        atexit.register(self.cleanup)
+        try:
+            self.spawned_proc = subprocess.Popen(
+                args,
+                cwd=str(work_dir),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=creationflags,
+                close_fds=True,
+            )
+        except OSError:
+            creationflags = 0
+            if self.daemon and sys.platform == "win32":
+                creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            self.spawned_proc = subprocess.Popen(
+                args,
+                cwd=str(work_dir),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=creationflags,
+                close_fds=True,
+            )
+
+        if not self.daemon:
+            atexit.register(self.cleanup)
 
         # Wait for server to become responsive
-        max_attempts = 30
+        max_attempts = 35
         for i in range(max_attempts):
             if is_port_responding(port, timeout=0.3):
                 log(f"Application ready and responding on port {port} (PID: {self.spawned_proc.pid})")
                 return
-            if self.spawned_proc.poll() is not None:
+            if not self.daemon and self.spawned_proc.poll() is not None:
                 raise RuntimeError(f"Application process exited unexpectedly with code {self.spawned_proc.returncode}")
             time.sleep(0.1)
 
-        raise TimeoutError(f"Application started but did not respond on port {port} within 3 seconds.")
+        raise TimeoutError(f"Application started but did not respond on port {port} within 3.5 seconds.")
 
     def cleanup(self):
         if self.spawned_proc and self.spawned_proc.poll() is None:
@@ -275,6 +322,7 @@ def handle_cli_call(args, extra_args):
         port=args.port,
         app_path=args.app,
         auto_spawn=not args.no_spawn,
+        daemon=True,
     )
     bridge.start()
 
@@ -391,6 +439,8 @@ def main():
     shot_p = subparsers.add_parser("shot", help="Take viewport screenshot and save to disk")
     shot_p.add_argument("--out", type=str, default="eui_screenshot.png", help="Output PNG file path (default: eui_screenshot.png)")
 
+    subparsers.add_parser("stop", help="Stop background running EUI-NEO application")
+
     # General 'call' subcommand for invoking any MCP tool
     call_parser = subparsers.add_parser("call", help="Directly invoke an MCP tool in a single line")
     call_parser.add_argument("tool", type=str, help="Tool name to call (e.g. describe_screen, click_element, input_text, capture_viewport)")
@@ -453,6 +503,14 @@ def main():
         extra_args = ["--filePath", args.out]
         handle_cli_call(args, extra_args)
         return
+
+    if args.subcommand == "stop":
+        stopped, pid, port = stop_running_app()
+        if stopped:
+            print(f"Stopped EUI-NEO application (PID: {pid}, Port: {port})")
+        else:
+            print("No active EUI-NEO application found to stop.")
+        sys.exit(0)
 
     if args.subcommand == "call":
         handle_cli_call(args, extra_args)

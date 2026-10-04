@@ -1,0 +1,16 @@
+{
+  // EUI-NEO devtools MCP server (stdio -> HTTP bridge that auto-spawns ./build/clock.exe).
+  // Replace "command" with a Python 3 interpreter available on your machine.
+  // On Windows, a bare "python" often resolves to the Microsoft Store placeholder and fails with exit 9009.
+  "servers": {
+    "eui-neo": {
+      "type": "stdio",
+      "command": "C:\\Users\\main\\miniconda3\\python.exe",
+      "args": [
+        "${workspaceFolder}/modules/devtools/mcp_bridge/eui_mcp_bridge.py",
+        "--app",
+        "${workspaceFolder}/build/clock.exe"
+      ]
+    }
+  }
+}

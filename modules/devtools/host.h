@@ -11,8 +11,11 @@
 #include "modules/devtools/tree.h"
 #include "modules/devtools/ui.h"
 
+#include <chrono>
+#include <condition_variable>
 #include <deque>
 #include <functional>
+#include <mutex>
 #include <string>
 
 namespace modules::devtools {
@@ -137,6 +140,8 @@ public:
     bool captureRequested() const;
     void requestCompose();
     float dpiScale() const { return dpiScale_ > 0.0f ? dpiScale_ : 1.0f; }
+    std::uint64_t frameSequence() const;
+    bool waitForFrame(std::uint64_t targetSequence, std::chrono::milliseconds timeout = std::chrono::milliseconds(1200));
 
 private:
     // Everything the panel knows about the page it is attached to, and everything it wrote
@@ -254,6 +259,11 @@ private:
     int cachedFbWidth_ = 0;
     int cachedFbHeight_ = 0;
     std::vector<unsigned char> cachedFbPixels_;
+
+    // Frame synchronization for deterministic automation/MCP actions
+    mutable std::mutex frameMutex_;
+    std::condition_variable frameCv_;
+    std::uint64_t frameSequence_ = 0;
 };
 
 } // namespace modules::devtools

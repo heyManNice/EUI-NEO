@@ -283,6 +283,56 @@ void collectInteractiveElementsRecursive(const core::dsl::Element& element,
             }
         }
 
+        // 5. Detect selection state (Segmented item under indicator, active card, or selected flag)
+        if (parent != nullptr) {
+            // Check if parent or sibling has an indicator
+            const core::dsl::Element* indicator = nullptr;
+            for (const auto* sibling : parent->orderedChildren) {
+                if (sibling != nullptr && sibling->id.find("indicator") != std::string::npos) {
+                    indicator = sibling;
+                    break;
+                }
+            }
+            if (indicator != nullptr) {
+                float ix1 = indicator->frame.x;
+                float ix2 = indicator->frame.x + indicator->frame.width;
+                float ex1 = element.frame.x;
+                float ex2 = element.frame.x + element.frame.width;
+                float overlap = std::max(0.0f, std::min(ix2, ex2) - std::max(ix1, ex1));
+                if (overlap > element.frame.width * 0.4f) {
+                    item.selected = true;
+                }
+            }
+        }
+
+        if (!item.selected) {
+            if (element.id.find("selected") != std::string::npos || (parent && parent->id.find("selected") != std::string::npos)) {
+                item.selected = true;
+            } else if (element.id.find(".bg") != std::string::npos && element.border.width == 0.0f) {
+                const core::dsl::Element* grandParent = nullptr;
+                if (parent != nullptr) {
+                    auto gpit = parentMap.find(parent);
+                    if (gpit != parentMap.end()) grandParent = gpit->second;
+                }
+                if (grandParent != nullptr) {
+                    bool otherHasBorder = false;
+                    for (const auto* sibCard : grandParent->orderedChildren) {
+                        if (sibCard != nullptr && sibCard != parent) {
+                            for (const auto* sibChild : sibCard->orderedChildren) {
+                                if (sibChild != nullptr && sibChild->border.width > 0.0f) {
+                                    otherHasBorder = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (otherHasBorder) {
+                        item.selected = true;
+                    }
+                }
+            }
+        }
+
         result.push_back(std::move(item));
     }
 
@@ -414,6 +464,7 @@ std::string formatInteractiveElementsJson(const std::vector<McpInteractiveElemen
            << ",\"focusable\":" << (item.focusable ? "true" : "false")
            << ",\"clickable\":" << (item.clickable ? "true" : "false")
            << ",\"textInput\":" << (item.textInput ? "true" : "false")
+           << ",\"selected\":" << (item.selected ? "true" : "false")
            << "}";
     }
     ss << "]";
@@ -431,6 +482,7 @@ std::string describeScreen(const core::dsl::Runtime& runtime) {
 
     for (const auto& m : marks) {
         std::string cap;
+        if (m.selected) cap += "[selected] ";
         if (m.clickable) cap += "click ";
         if (m.textInput) cap += "input ";
         if (m.focusable) cap += "focus ";
@@ -455,45 +507,135 @@ std::string describeScreen(const core::dsl::Runtime& runtime) {
     return ss.str();
 }
 
+namespace {
+
+struct SnapshotTreeBuilder {
+    const std::unordered_map<std::string, McpInteractiveElement>& marksMap;
+    std::string focusedId;
+    int maxDepth = 16;
+    bool interactiveOnly = false;
+
+    bool hasInterestingContent(const core::dsl::Element& el, int curDepth) const {
+        if (marksMap.find(el.id) != marksMap.end()) return true;
+        if (el.kind == core::dsl::ElementKind::Text && !el.text.empty() && isPrintableSemanticText(el.text)) {
+            return true;
+        }
+        if (curDepth >= maxDepth) return false;
+        for (const auto* child : el.orderedChildren) {
+            if (child != nullptr && hasInterestingContent(*child, curDepth + 1)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void visit(const core::dsl::Element& el, std::ostringstream& ss, int depth, const std::string& parentLabel) {
+        if (depth > maxDepth) return;
+        if (!hasInterestingContent(el, depth)) return;
+
+        auto it = marksMap.find(el.id);
+        const McpInteractiveElement* mark = (it != marksMap.end()) ? &it->second : nullptr;
+
+        bool isText = (el.kind == core::dsl::ElementKind::Text && !el.text.empty() && isPrintableSemanticText(el.text));
+        bool isContainer = !el.orderedChildren.empty();
+
+        std::string role;
+        std::string label;
+        std::string flags;
+        bool emitLine = false;
+
+        if (mark != nullptr) {
+            emitLine = true;
+            if (mark->textInput) {
+                role = "textbox";
+            } else if (mark->clickable) {
+                role = (el.kind == core::dsl::ElementKind::Text) ? "link" : "button";
+            } else {
+                role = elementKindName(el.kind);
+            }
+            label = mark->text.empty() ? mark->nearestText : mark->text;
+            if (mark->selected) flags += " [selected]";
+            if (mark->disabled) flags += " [disabled]";
+            if (mark->focusable) flags += " [focusable]";
+            if (!focusedId.empty() && el.id == focusedId) flags += " [focused]";
+            flags += " [ref=e" + std::to_string(mark->markIndex) + "]";
+        } else if (isText) {
+            // Avoid duplicate label print if this text was already used by the parent interactive mark
+            if (el.text != parentLabel) {
+                emitLine = true;
+                role = "text";
+                label = el.text;
+            }
+        } else if (isContainer) {
+            // Check if this container represents a meaningful UI section
+            if (depth == 0) {
+                emitLine = true;
+                role = "window";
+                label = el.id.empty() ? "App" : el.id;
+            } else if (el.id.find("card.") != std::string::npos && el.id.find(".bg") == std::string::npos) {
+                emitLine = true;
+                role = "card";
+                label = findSubtreeText(el);
+            } else if (el.id.find("mode") != std::string::npos || el.id.find("hour") != std::string::npos ||
+                       el.id.find("search") != std::string::npos || el.id.find("brand") != std::string::npos ||
+                       el.id.find("hero") != std::string::npos) {
+                if (el.id.find(".wrap") == std::string::npos && el.id.find(".hit") == std::string::npos) {
+                    emitLine = true;
+                    role = "group";
+                    label = el.id;
+                }
+            }
+        }
+
+        int nextDepth = depth;
+        if (emitLine) {
+            std::string indent(static_cast<std::size_t>(depth * 2), ' ');
+            ss << indent << "- " << role;
+            if (!label.empty()) {
+                ss << " \"" << escapeJson(label) << "\"";
+            }
+            if (!flags.empty()) {
+                ss << flags;
+            }
+            ss << "\n";
+            nextDepth = depth + 1;
+        }
+
+        std::string currentLabelForChildren = label.empty() ? parentLabel : label;
+        for (const auto* child : el.orderedChildren) {
+            if (child != nullptr) {
+                visit(*child, ss, nextDepth, currentLabelForChildren);
+            }
+        }
+    }
+};
+
+} // namespace
+
 std::string takeSnapshot(const core::dsl::Runtime& runtime, bool interactiveOnly, int maxDepth) {
-    (void)maxDepth;
     auto marks = extractInteractiveElements(runtime, true);
+
+    std::unordered_map<std::string, McpInteractiveElement> marksMap;
+    for (const auto& m : marks) {
+        marksMap[m.id] = m;
+    }
 
     std::ostringstream ss;
     ss << "=== Accessibility Snapshot ===\n";
-    ss << "Elements count: " << marks.size() << " (use ref handle e<N> in actions)\n\n";
+    ss << "Interactive elements: " << marks.size() << " (address actions using target=[ref=eN] or 'eN')\n\n";
 
-    for (const auto& m : marks) {
-        std::string role = m.kind;
-        if (m.textInput) {
-            role = "textbox";
-        } else if (m.clickable) {
-            if (m.kind == "rect") role = "button";
-            else if (m.kind == "text") role = "link";
-        }
+    SnapshotTreeBuilder builder{
+        marksMap,
+        runtime.focusedId(),
+        maxDepth > 0 ? maxDepth : 16,
+        interactiveOnly
+    };
 
-        std::string label = m.text.empty() ? (m.nearestText.empty() ? "" : ("~" + m.nearestText)) : m.text;
-        std::string flags;
-        if (m.disabled) flags += " [disabled]";
-        if (m.focusable) flags += " [focusable]";
-
-        int rx = static_cast<int>(std::round(m.frame.x));
-        int ry = static_cast<int>(std::round(m.frame.y));
-        int rw = static_cast<int>(std::round(m.frame.width));
-        int rh = static_cast<int>(std::round(m.frame.height));
-
-        ss << "[ref=e" << m.markIndex << "] "
-           << role;
-        if (!label.empty()) {
-            ss << " \"" << escapeJson(label) << "\"";
+    const std::vector<const core::dsl::Element*>& roots = runtime.elementRoots();
+    for (const auto* root : roots) {
+        if (root != nullptr) {
+            builder.visit(*root, ss, 0, "");
         }
-        if (!flags.empty()) {
-            ss << flags;
-        }
-        if (!m.contextText.empty() && m.contextText != label) {
-            ss << " (context: \"" << escapeJson(m.contextText) << "\")";
-        }
-        ss << " " << rx << "," << ry << " " << rw << "x" << rh << "\n";
     }
 
     return ss.str();

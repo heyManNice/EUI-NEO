@@ -21,6 +21,7 @@ struct McpInteractiveElement {
     bool focusable = false;
     bool clickable = false;
     bool textInput = false;
+    bool selected = false;
 };
 
 // Extracts all interactive elements (buttons, inputs, links, clickable items) with Set-of-Mark numbering

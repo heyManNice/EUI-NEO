@@ -21,13 +21,20 @@ int main() {
 
     // 1. Test CLI Launch Options Parsing
     {
-        const char* argv[] = {"app.exe", "--mcp-server", "--mcp-port=9999", "--devtools-tab=mcp"};
-        modules::devtools::McpLaunchOptions options = modules::devtools::parseMcpCommandLine(4, argv);
+        const char* argv[] = {"app.exe", "--mcp-server", "--devtools", "--mcp-port=9999", "--devtools-tab=mcp"};
+        modules::devtools::McpLaunchOptions options = modules::devtools::parseMcpCommandLine(5, argv);
         assert(options.enableMcpServer == true);
         assert(options.enableDevtools == true);
         assert(options.mcpPort == 9999);
         assert(options.initialTab == "mcp");
-        std::cout << "[PASS] CLI launch options parsed successfully" << std::endl;
+
+        // Verify headless MCP server mode (without --devtools) keeps devtools UI closed
+        const char* headlessArgv[] = {"app.exe", "--mcp-server", "--mcp-port=8888"};
+        modules::devtools::McpLaunchOptions headlessOpts = modules::devtools::parseMcpCommandLine(3, headlessArgv);
+        assert(headlessOpts.enableMcpServer == true);
+        assert(headlessOpts.enableDevtools == false);
+        assert(headlessOpts.mcpPort == 8888);
+        std::cout << "[PASS] CLI launch options parsed successfully (including headless MCP mode)" << std::endl;
     }
 
     // 2. Test DSL Runtime compose & Semantic Tree Extraction

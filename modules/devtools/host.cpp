@@ -283,7 +283,13 @@ bool DevtoolsHost::frame(int framebufferWidth, int framebufferHeight, float dpiS
         publishPickedElement();
         session_.page->setHoveredElement(hoveredElement());
     }
-    return updatePanel(framebufferWidth, framebufferHeight, dpiScale, deltaSeconds);
+    const bool updated = updatePanel(framebufferWidth, framebufferHeight, dpiScale, deltaSeconds);
+    {
+        std::lock_guard<std::mutex> lock(frameMutex_);
+        ++frameSequence_;
+    }
+    frameCv_.notify_all();
+    return updated;
 }
 
 void DevtoolsHost::publishElementTree() {
@@ -1449,6 +1455,16 @@ void DevtoolsHost::shutdown() {
     framebufferWidth_ = 0;
     framebufferHeight_ = 0;
     dpiScale_ = 1.0f;
+}
+
+std::uint64_t DevtoolsHost::frameSequence() const {
+    std::lock_guard<std::mutex> lock(frameMutex_);
+    return frameSequence_;
+}
+
+bool DevtoolsHost::waitForFrame(std::uint64_t targetSequence, std::chrono::milliseconds timeout) {
+    std::unique_lock<std::mutex> lock(frameMutex_);
+    return frameCv_.wait_for(lock, timeout, [&] { return frameSequence_ >= targetSequence; });
 }
 
 } // namespace modules::devtools

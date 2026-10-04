@@ -48,7 +48,10 @@ python modules/devtools/mcp_bridge/eui_mcp_bridge.py press Enter
 # 5. Take screenshot directly to disk (saves tokens):
 python modules/devtools/mcp_bridge/eui_mcp_bridge.py shot --out screen.png
 
-# 6. Check active port:
+# 6. Stop background application:
+python modules/devtools/mcp_bridge/eui_mcp_bridge.py stop
+
+# 7. Check active port:
 python modules/devtools/mcp_bridge/eui_mcp_bridge.py --print-port
 ```
 
