@@ -3,7 +3,7 @@
     "eui-neo": {
       "command": "python",
       "args": [
-        "d:/MYDATA/Project/VsCode/EUI-NEO/modules/devtools/mcp_bridge/eui_mcp_bridge.py"
+        "<PATH_TO_EUI_NEO>/modules/devtools/mcp_bridge/eui_mcp_bridge.py"
       ]
     }
   }

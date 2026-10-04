@@ -59,7 +59,7 @@ python modules/devtools/mcp_bridge/eui_mcp_bridge.py --print-port
 
 ## 🚀 Standard MCP Client Setup (Persistent Mode)
 
-> **Note on Windows**: If `python` refers to the Windows Store placeholder (exit 9009), use the absolute path to your Python interpreter (e.g. `C:/Users/<Username>/miniconda3/python.exe`).
+> **Note on Windows**: If `python` refers to the Windows Store placeholder (exit 9009), use the absolute path to your Python interpreter (e.g. `C:/Python312/python.exe`).
 
 ### 1. Cursor / VS Code (Cline / Roo Code)
 Add to your project's `.cursor/mcp.json` or Cline MCP settings:
@@ -86,7 +86,7 @@ Add to your `claude_desktop_config.json` (located at `%APPDATA%\Claude\claude_de
     "eui-neo": {
       "command": "python",
       "args": [
-        "d:/MYDATA/Project/VsCode/EUI-NEO/modules/devtools/mcp_bridge/eui_mcp_bridge.py"
+        "<PATH_TO_EUI_NEO>/modules/devtools/mcp_bridge/eui_mcp_bridge.py"
       ]
     }
   }
