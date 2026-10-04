@@ -79,7 +79,6 @@ void parseArgument(const std::string& arg, McpLaunchOptions& options) {
         options.enableDevtools = true;
     } else if (arg == "--mcp-server") {
         options.enableMcpServer = true;
-        options.enableDevtools = true; // MCP server mode automatically opens devtools workbench
     } else if (arg.rfind("--mcp-port=", 0) == 0) {
         std::string val = arg.substr(11);
         int p = std::atoi(val.c_str());
@@ -416,8 +415,15 @@ const char* kMcpToolsListJson =
 McpLaunchOptions parseMcpCommandLine(int argc, const char* const* argv) {
     McpLaunchOptions options;
     for (int i = 1; i < argc; ++i) {
-        if (argv[i] != nullptr) {
-            parseArgument(argv[i], options);
+        if (argv[i] == nullptr) continue;
+        std::string arg = argv[i];
+        if (arg == "--mcp-port" && i + 1 < argc && argv[i + 1] != nullptr) {
+            int p = std::atoi(argv[++i]);
+            if (p > 0 && p <= 65535) {
+                options.mcpPort = static_cast<uint16_t>(p);
+            }
+        } else {
+            parseArgument(arg, options);
         }
     }
     return options;
@@ -436,6 +442,18 @@ McpLaunchOptions parseCurrentProcessCommandLine() {
             if (!str.empty() && str.back() == '\0') {
                 str.pop_back();
             }
+            if (str == "--mcp-port" && i + 1 < argc && argvW[i + 1] != nullptr) {
+                int next_size = WideCharToMultiByte(CP_UTF8, 0, argvW[i + 1], -1, NULL, 0, NULL, NULL);
+                std::string nextStr(next_size, 0);
+                WideCharToMultiByte(CP_UTF8, 0, argvW[i + 1], -1, &nextStr[0], next_size, NULL, NULL);
+                if (!nextStr.empty() && nextStr.back() == '\0') nextStr.pop_back();
+                int p = std::atoi(nextStr.c_str());
+                if (p > 0 && p <= 65535) {
+                    options.mcpPort = static_cast<uint16_t>(p);
+                    ++i;
+                    continue;
+                }
+            }
             parseArgument(str, options);
         }
         LocalFree(argvW);
@@ -450,23 +468,24 @@ void applyMcpLaunchOptions(const McpLaunchOptions& options) {
         return;
     }
 
-    DevtoolsHost& host = devtoolsHostInstance();
-    DevtoolsTab tab = DevtoolsTab::Mcp;
-    if (options.initialTab == "elements") {
-        tab = DevtoolsTab::Elements;
-    } else if (options.initialTab == "performance") {
-        tab = DevtoolsTab::Performance;
-    } else if (options.initialTab == "scale") {
-        tab = DevtoolsTab::Scale;
-    } else if (options.initialTab == "state") {
-        tab = DevtoolsTab::State;
-    } else if (options.initialTab == "input") {
-        tab = DevtoolsTab::Input;
-    } else {
-        tab = DevtoolsTab::Mcp;
+    if (options.enableDevtools) {
+        DevtoolsHost& host = devtoolsHostInstance();
+        DevtoolsTab tab = DevtoolsTab::Mcp;
+        if (options.initialTab == "elements") {
+            tab = DevtoolsTab::Elements;
+        } else if (options.initialTab == "performance") {
+            tab = DevtoolsTab::Performance;
+        } else if (options.initialTab == "scale") {
+            tab = DevtoolsTab::Scale;
+        } else if (options.initialTab == "state") {
+            tab = DevtoolsTab::State;
+        } else if (options.initialTab == "input") {
+            tab = DevtoolsTab::Input;
+        } else {
+            tab = DevtoolsTab::Mcp;
+        }
+        host.openDevtools(tab);
     }
-
-    host.openDevtools(tab);
 
     if (options.enableMcpServer) {
         startMcpServer(options.mcpPort);
@@ -717,20 +736,43 @@ std::string handleMcpJsonRpcRequest(const std::string& requestJson, core::dsl::R
         std::string params = extractJsonObject(requestJson, "params");
         toolName = extractJsonString(params, "name");
         std::string args = extractJsonObject(params, "arguments");
-        std::string compactArgs;
+        std::string minified;
+        bool inStr = false;
+        bool esc = false;
         for (char c : args) {
-            if (c == '\r' || c == '\n' || c == '\t') {
-                if (!compactArgs.empty() && compactArgs.back() != ' ') compactArgs += ' ';
+            if (esc) {
+                minified += c;
+                esc = false;
+                continue;
+            }
+            if (c == '\\') {
+                esc = true;
+                minified += c;
+                continue;
+            }
+            if (c == '"') {
+                inStr = !inStr;
+                minified += c;
+                continue;
+            }
+            if (inStr) {
+                minified += c;
             } else {
-                compactArgs += c;
+                if (c != ' ' && c != '\t' && c != '\r' && c != '\n') {
+                    minified += c;
+                }
             }
         }
-        if (compactArgs.length() > 64) {
-            compactArgs = compactArgs.substr(0, 61) + "...";
+        if (minified.empty() || minified == "{}" || minified == "null") {
+            details = "";
+        } else {
+            if (minified.length() > 64) {
+                minified = minified.substr(0, 61) + "...";
+            }
+            details = minified;
         }
-        details = "args: " + (compactArgs.empty() ? "{}" : compactArgs);
     } else {
-        details = "method: " + method;
+        details = "";
     }
 
     std::string response = handleMcpJsonRpcRequestInternal(requestJson, explicitRuntime);
