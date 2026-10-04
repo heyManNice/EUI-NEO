@@ -141,6 +141,62 @@ int main() {
         std::cout << "[PASS] MCP vision memory PNG encoding and Base64 format passed" << std::endl;
     }
 
+    // 5. Test MCP JSON-RPC Protocol Handler
+    {
+        // Ping
+        std::string pingReq = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}";
+        std::string pingResp = modules::devtools::handleMcpJsonRpcRequest(pingReq, &runtime);
+        assert(pingResp.find("\"result\":{}") != std::string::npos);
+
+        // Initialize
+        std::string initReq = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"initialize\",\"params\":{}}";
+        std::string initResp = modules::devtools::handleMcpJsonRpcRequest(initReq, &runtime);
+        assert(initResp.find("\"serverInfo\"") != std::string::npos);
+        assert(initResp.find("eui-mcp-server") != std::string::npos);
+
+        // tools/list
+        std::string listReq = "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}";
+        std::string listResp = modules::devtools::handleMcpJsonRpcRequest(listReq, &runtime);
+        assert(listResp.find("\"tools\"") != std::string::npos);
+        assert(listResp.find("extract_element_tree") != std::string::npos);
+        assert(listResp.find("get_element_details") != std::string::npos);
+        assert(listResp.find("get_interactive_marks") != std::string::npos);
+        assert(listResp.find("click_element") != std::string::npos);
+        assert(listResp.find("input_text") != std::string::npos);
+        assert(listResp.find("modify_element_property") != std::string::npos);
+
+        // tools/call: extract_element_tree
+        std::string callTreeReq = "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"extract_element_tree\",\"arguments\":{}}}";
+        std::string callTreeResp = modules::devtools::handleMcpJsonRpcRequest(callTreeReq, &runtime);
+        assert(callTreeResp.find("\"content\"") != std::string::npos);
+        assert(callTreeResp.find("roots") != std::string::npos);
+
+        // tools/call: click_element
+        std::string callClickReq = "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"click_element\",\"arguments\":{\"elementId\":\"test_page.btn_click\"}}}";
+        std::string callClickResp = modules::devtools::handleMcpJsonRpcRequest(callClickReq, &runtime);
+        assert(callClickResp.find("success") != std::string::npos && callClickResp.find("true") != std::string::npos);
+
+        // tools/call: input_text
+        std::string callInputReq = "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"input_text\",\"arguments\":{\"elementId\":\"test_page.title_txt\",\"text\":\"RPC Written Text\"}}}";
+        std::string callInputResp = modules::devtools::handleMcpJsonRpcRequest(callInputReq, &runtime);
+        assert(callInputResp.find("success") != std::string::npos && callInputResp.find("true") != std::string::npos);
+        core::dsl::Element* el = runtime.findElement("test_page.title_txt");
+        assert(el != nullptr && el->text == "RPC Written Text");
+
+        std::cout << "[PASS] MCP JSON-RPC protocol methods (ping, init, tools/list, tools/call) passed" << std::endl;
+    }
+
+    // 6. Test MCP Server Start & Stop Lifecycle
+    {
+        bool started = modules::devtools::startMcpServer(18991);
+        assert(started);
+        assert(modules::devtools::isMcpServerRunning());
+        assert(modules::devtools::currentMcpServerPort() == 18991);
+        modules::devtools::stopMcpServer();
+        assert(!modules::devtools::isMcpServerRunning());
+        std::cout << "[PASS] MCP Server socket lifecycle (start, port check, stop) passed" << std::endl;
+    }
+
     std::cout << "[ALL PASSED] DevTools MCP unit tests finished successfully!" << std::endl;
     return 0;
 }

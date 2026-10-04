@@ -2,13 +2,16 @@
 
 #include "core/dsl_runtime.h"
 #include "core/render/render_backend.h"
+#include "modules/devtools/host.h"
 
 #include <png.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <thread>
 
 namespace modules::devtools {
 
@@ -31,27 +34,74 @@ void pngMemoryFlushCallback(png_structp png_ptr) {
 
 FramebufferImage captureViewportScreenshot(const core::Rect* region) {
     core::render::RenderBackend* backend = core::render::activeRenderBackend();
-    if (backend == nullptr) {
+    
+    // If we have an active backend on this thread, read directly
+    if (backend != nullptr) {
+        const int fbW = backend->framebufferWidth();
+        const int fbH = backend->framebufferHeight();
+        if (fbW <= 0 || fbH <= 0) {
+            return {};
+        }
+
+        int rx = 0;
+        int ry = 0;
+        int rw = fbW;
+        int rh = fbH;
+
+        if (region != nullptr) {
+            rx = std::clamp(static_cast<int>(std::floor(region->x)), 0, fbW);
+            ry = std::clamp(static_cast<int>(std::floor(region->y)), 0, fbH);
+            rw = std::clamp(static_cast<int>(std::ceil(region->width)), 0, fbW - rx);
+            rh = std::clamp(static_cast<int>(std::ceil(region->height)), 0, fbH - ry);
+        }
+
+        if (rw <= 0 || rh <= 0) {
+            return {};
+        }
+
+        FramebufferImage img;
+        img.width = rw;
+        img.height = rh;
+        img.rgba.resize(static_cast<std::size_t>(rw) * rh * 4u);
+
+        if (!backend->readFramebufferPixels(rx, ry, rw, rh, img.rgba.data())) {
+            return {};
+        }
+        return img;
+    }
+
+    // Otherwise, we are likely on the MCP worker thread:
+    // Request render pass to capture framebuffer and wait briefly
+    DevtoolsHost& host = devtoolsHostInstance();
+    host.requestFramebufferCapture();
+
+    int fullW = 0;
+    int fullH = 0;
+    std::vector<unsigned char> fullPixels;
+
+    for (int i = 0; i < 30; ++i) {
+        if (host.getCachedFramebuffer(fullW, fullH, fullPixels)) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    }
+
+    if (fullW <= 0 || fullH <= 0 || fullPixels.empty()) {
         return {};
     }
 
-    const int fbW = backend->framebufferWidth();
-    const int fbH = backend->framebufferHeight();
-    if (fbW <= 0 || fbH <= 0) {
-        return {};
+    if (region == nullptr) {
+        FramebufferImage img;
+        img.width = fullW;
+        img.height = fullH;
+        img.rgba = std::move(fullPixels);
+        return img;
     }
 
-    int rx = 0;
-    int ry = 0;
-    int rw = fbW;
-    int rh = fbH;
-
-    if (region != nullptr) {
-        rx = std::clamp(static_cast<int>(std::floor(region->x)), 0, fbW);
-        ry = std::clamp(static_cast<int>(std::floor(region->y)), 0, fbH);
-        rw = std::clamp(static_cast<int>(std::ceil(region->width)), 0, fbW - rx);
-        rh = std::clamp(static_cast<int>(std::ceil(region->height)), 0, fbH - ry);
-    }
+    int rx = std::clamp(static_cast<int>(std::floor(region->x)), 0, fullW);
+    int ry = std::clamp(static_cast<int>(std::floor(region->y)), 0, fullH);
+    int rw = std::clamp(static_cast<int>(std::ceil(region->width)), 0, fullW - rx);
+    int rh = std::clamp(static_cast<int>(std::ceil(region->height)), 0, fullH - ry);
 
     if (rw <= 0 || rh <= 0) {
         return {};
@@ -62,8 +112,10 @@ FramebufferImage captureViewportScreenshot(const core::Rect* region) {
     img.height = rh;
     img.rgba.resize(static_cast<std::size_t>(rw) * rh * 4u);
 
-    if (!backend->readFramebufferPixels(rx, ry, rw, rh, img.rgba.data())) {
-        return {};
+    for (int row = 0; row < rh; ++row) {
+        const std::size_t srcOffset = (static_cast<std::size_t>(ry + row) * fullW + rx) * 4u;
+        const std::size_t dstOffset = (static_cast<std::size_t>(row) * rw) * 4u;
+        std::memcpy(&img.rgba[dstOffset], &fullPixels[srcOffset], static_cast<std::size_t>(rw) * 4u);
     }
 
     return img;

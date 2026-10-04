@@ -131,6 +131,11 @@ public:
     void setTab(DevtoolsTab tab);
     core::dsl::Runtime* pageRuntime() const { return session_.page; }
     bool modifyElementProperty(const std::string& id, ElementField field, const FieldValue& value);
+    void cacheRenderFramebuffer(int width, int height, std::vector<unsigned char> rgba);
+    bool getCachedFramebuffer(int& outWidth, int& outHeight, std::vector<unsigned char>& outRgba);
+    void requestFramebufferCapture();
+    bool captureRequested() const;
+    float dpiScale() const { return dpiScale_ > 0.0f ? dpiScale_ : 1.0f; }
 
 private:
     // Everything the panel knows about the page it is attached to, and everything it wrote
@@ -233,6 +238,8 @@ private:
     bool panelEdgeActive_ = false;
     bool visible_ = false;
     DockPosition dockPosition_ = DockPosition::Bottom;
+    DevtoolsTab requestedInitialTab_ = DevtoolsTab::Elements;
+    bool hasRequestedInitialTab_ = false;
     bool composeRequested_ = true;
     // The primitive the box model preview is drawn with. The overlay owns what it draws
     // with, which is what lets the framework hand over the render pass without keeping a
@@ -241,6 +248,12 @@ private:
     bool boxPreviewPrimitiveInitialized_ = false;
     core::TextPrimitive boxPreviewTextPrimitive_;
     bool boxPreviewTextPrimitiveInitialized_ = false;
+
+    // Framebuffer capture caching for MCP vision
+    bool captureRequested_ = false;
+    int cachedFbWidth_ = 0;
+    int cachedFbHeight_ = 0;
+    std::vector<unsigned char> cachedFbPixels_;
 };
 
 } // namespace modules::devtools

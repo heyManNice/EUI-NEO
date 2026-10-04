@@ -19,10 +19,10 @@ struct FramebufferImage {
 };
 
 // Capture current viewport framebuffer or a specific region (in physical framebuffer pixels)
-FramebufferImage captureViewportScreenshot(const core::Rect* region = nullptr);
+FramebufferImage captureViewportScreenshot(const ::core::Rect* region = nullptr);
 
 // Capture screenshot cropped to a specific element by ID in the runtime
-FramebufferImage captureElementScreenshot(const core::dsl::Runtime& runtime, const std::string& elementId, float dpiScale = 1.0f);
+FramebufferImage captureElementScreenshot(const ::core::dsl::Runtime& runtime, const std::string& elementId, float dpiScale = 1.0f);
 
 // Encode raw RGBA buffer to PNG in memory
 std::vector<unsigned char> encodeRgbaToPng(const unsigned char* rgba, int width, int height);

@@ -4,6 +4,10 @@
 #include <string>
 #include <vector>
 
+namespace core::dsl {
+class Runtime;
+}
+
 namespace modules::devtools {
 
 struct McpLaunchOptions {
@@ -26,5 +30,19 @@ McpLaunchOptions parseCurrentProcessCommandLine();
 
 // Applies launch options to the DevTools host session
 void applyMcpLaunchOptions(const McpLaunchOptions& options);
+
+// Server lifecycle management
+bool startMcpServer(uint16_t port = 8990);
+void stopMcpServer();
+bool isMcpServerRunning();
+uint16_t currentMcpServerPort();
+
+// Direct MCP JSON-RPC protocol request execution
+// Handles methods:
+//   - "tools/list"
+//   - "tools/call" (get_element_tree, get_element_details, get_interactive_marks,
+//                   click_element, click_mark, input_text, scroll, capture_viewport,
+//                   capture_element, modify_property)
+std::string handleMcpJsonRpcRequest(const std::string& requestJson, core::dsl::Runtime* explicitRuntime = nullptr);
 
 } // namespace modules::devtools

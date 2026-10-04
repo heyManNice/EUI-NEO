@@ -2,6 +2,8 @@
 
 #if defined(EUI_TOOLING)
 
+#include "core/render/render_backend.h"
+#include "modules/devtools/mcp_server.h"
 #include "modules/devtools/preview.h"
 #include "modules/devtools/theme.h"
 #include "modules/devtools/tree.h"
@@ -59,6 +61,8 @@ DevtoolsHost& devtoolsHostInstance() {
 
 void DevtoolsHost::openDevtools(DevtoolsTab initialTab) {
     visible_ = true;
+    requestedInitialTab_ = initialTab;
+    hasRequestedInitialTab_ = true;
     if (panelState_ != nullptr) {
         panelState_->activeTab = initialTab;
     }
@@ -79,6 +83,35 @@ bool DevtoolsHost::modifyElementProperty(const std::string& id, ElementField fie
     edit.value = value;
     queueElementPropertyEdit(edit);
     return true;
+}
+
+void DevtoolsHost::cacheRenderFramebuffer(int width, int height, std::vector<unsigned char> rgba) {
+    cachedFbWidth_ = width;
+    cachedFbHeight_ = height;
+    cachedFbPixels_ = std::move(rgba);
+    captureRequested_ = false;
+}
+
+bool DevtoolsHost::getCachedFramebuffer(int& outWidth, int& outHeight, std::vector<unsigned char>& outRgba) {
+    if (cachedFbWidth_ <= 0 || cachedFbHeight_ <= 0 || cachedFbPixels_.empty()) {
+        return false;
+    }
+    outWidth = cachedFbWidth_;
+    outHeight = cachedFbHeight_;
+    outRgba = cachedFbPixels_;
+    return true;
+}
+
+void DevtoolsHost::requestFramebufferCapture() {
+    captureRequested_ = true;
+    if (hasPage()) {
+        session_.page->requestFullPaint();
+    }
+    core::platform::requestUiUpdate();
+}
+
+bool DevtoolsHost::captureRequested() const {
+    return captureRequested_;
 }
 
 bool attachDevtoolsHost() {
@@ -111,6 +144,18 @@ bool attachDevtoolsHost() {
         };
         value.render = [](int windowWidth, int windowHeight, float dpiScale, const core::Rect* dirtyRect) {
             devtoolsHost().render(windowWidth, windowHeight, dpiScale, dirtyRect);
+            if (devtoolsHost().captureRequested()) {
+                if (core::render::RenderBackend* backend = core::render::activeRenderBackend()) {
+                    const int fbW = backend->framebufferWidth();
+                    const int fbH = backend->framebufferHeight();
+                    if (fbW > 0 && fbH > 0) {
+                        std::vector<unsigned char> pixels(static_cast<std::size_t>(fbW) * fbH * 4u);
+                        if (backend->readFramebufferPixels(0, 0, fbW, fbH, pixels.data())) {
+                            devtoolsHost().cacheRenderFramebuffer(fbW, fbH, std::move(pixels));
+                        }
+                    }
+                }
+            }
         };
         value.performance = [](const app::PerformanceSnapshot& snapshot) {
             devtoolsHost().setPerformanceSnapshot(snapshot);
@@ -142,6 +187,12 @@ void DevtoolsHost::attach(core::dsl::Runtime* page, const app::detail::OverlayWi
     if (page == nullptr) {
         return;
     }
+
+    // Process command line options (e.g. --mcp-server, --mcp-port, --devtools)
+    McpLaunchOptions launchOpts = parseCurrentProcessCommandLine();
+    if (launchOpts.enableDevtools || launchOpts.enableMcpServer) {
+        applyMcpLaunchOptions(launchOpts);
+    }
     // The panel owns what it does to the page: the pointer it takes, the frame it draws,
     // and the preview. All three are runtime hooks, so there is no framework layer in
     // between the panel and the page.
@@ -150,6 +201,18 @@ void DevtoolsHost::attach(core::dsl::Runtime* page, const app::detail::OverlayWi
     });
     page->setOverlayRenderer([this](int width, int height, float dpiScale, const core::Rect* dirtyRect) {
         render(width, height, dpiScale, dirtyRect);
+        if (captureRequested()) {
+            if (core::render::RenderBackend* backend = core::render::activeRenderBackend()) {
+                const int fbW = backend->framebufferWidth();
+                const int fbH = backend->framebufferHeight();
+                if (fbW > 0 && fbH > 0) {
+                    std::vector<unsigned char> pixels(static_cast<std::size_t>(fbW) * fbH * 4u);
+                    if (backend->readFramebufferPixels(0, 0, fbW, fbH, pixels.data())) {
+                        cacheRenderFramebuffer(fbW, fbH, std::move(pixels));
+                    }
+                }
+            }
+        }
     });
     page->setPassRenderer([this](const core::dsl::runtime::RenderPassContext& pass) {
         renderPageOverlay(pass);
@@ -855,6 +918,10 @@ void DevtoolsHost::composeUi(core::dsl::Ui& ui, float width, float height, const
     // runtimes composes at a time, so the host tracks whichever one is active.
     DevtoolsPanelState& panelState = ui.state<DevtoolsPanelState>("devtools.panel");
     panelState_ = &panelState;
+    if (hasRequestedInitialTab_) {
+        panelState.activeTab = requestedInitialTab_;
+        hasRequestedInitialTab_ = false;
+    }
 
     DevtoolsUiState state;
     state.width = width;
@@ -996,8 +1063,16 @@ DevtoolsUiActions DevtoolsHost::buildActions(DevtoolsPanelState& state) {
         requestCompose();
     };
     actions.mcp.setServerRunning = [this, &state](bool running) {
-        state.mcpServerRunning = running;
-        state.mcpStatusMessage = running ? ("MCP Server running on port " + std::to_string(state.mcpPort)) : "MCP Server stopped";
+        if (running) {
+            bool ok = startMcpServer(state.mcpPort);
+            state.mcpServerRunning = ok;
+            state.mcpStatusMessage = ok ? ("MCP Server running on port " + std::to_string(state.mcpPort))
+                                        : "Failed to start MCP server on port " + std::to_string(state.mcpPort);
+        } else {
+            stopMcpServer();
+            state.mcpServerRunning = false;
+            state.mcpStatusMessage = "MCP Server stopped";
+        }
         requestCompose();
     };
     actions.mcp.setPort = [this, &state](uint16_t port) {
@@ -1337,6 +1412,7 @@ void DevtoolsHost::releaseGraphicsResources() {
 }
 
 void DevtoolsHost::shutdown() {
+    stopMcpServer();
     // The panel's runtime is shut down without asking it to release device resources: with a
     // device that is still current there is nothing left of them (the app's own
     // releaseGraphics hook ran first), and without a device a call into it would be worse
