@@ -4,7 +4,7 @@
 
 namespace modules::devtools {
 
-McpActionResult clickElement(core::dsl::Runtime& runtime, const std::string& elementId) {
+McpActionResult clickElement(core::dsl::Runtime& runtime, const std::string& elementId, bool force) {
     McpActionResult res;
     core::dsl::Element* el = runtime.findElement(elementId);
     if (el == nullptr) {
@@ -22,19 +22,56 @@ McpActionResult clickElement(core::dsl::Runtime& runtime, const std::string& ele
         return res;
     }
 
+    if (el->disabled && !force) {
+        res.success = false;
+        res.message = "Element '" + elementId + "' is disabled. Use --force to override.";
+        return res;
+    }
+
+    const double centerX = static_cast<double>(bounds.x + bounds.width * 0.5f);
+    const double centerY = static_cast<double>(bounds.y + bounds.height * 0.5f);
+
+    // Hit testing / occlusion check: check what element would receive a pointer event at this point
+    auto hitChain = runtime.hitTestChain(static_cast<float>(centerX), static_cast<float>(centerY), 1.0f);
+    std::string hitTarget;
+    for (const auto& entry : hitChain) {
+        if (entry.interactive && !entry.disabled) {
+            hitTarget = entry.id;
+            break;
+        }
+    }
+
+    bool isOccluded = false;
+    if (!hitTarget.empty() && hitTarget != elementId) {
+        // Target is considered matching if it is the element itself, its hit target, or a descendant
+        bool isSubOrHit = (hitTarget == elementId + ".hit") ||
+                          (hitTarget.rfind(elementId + ".", 0) == 0) ||
+                          (elementId.rfind(hitTarget + ".", 0) == 0);
+        if (!isSubOrHit) {
+            isOccluded = true;
+            res.occludedBy = hitTarget;
+        }
+    }
+
+    if (isOccluded && !force) {
+        res.success = false;
+        res.message = "Element '" + elementId + "' is occluded by '" + res.occludedBy + "'. Use --force to override.";
+        return res;
+    }
+
     // Direct invocation if onClick callback is bound
     if (el->onClick) {
         el->onClick();
         runtime.requestFullPaint();
         res.success = true;
         res.message = "Element '" + elementId + "' onClick callback invoked successfully";
+        if (isOccluded) {
+            res.message += " (warning: element was occluded by '" + res.occludedBy + "')";
+        }
         return res;
     }
 
     // Otherwise, simulate pointer press and release at center coordinates
-    const double centerX = static_cast<double>(bounds.x + bounds.width * 0.5f);
-    const double centerY = static_cast<double>(bounds.y + bounds.height * 0.5f);
-
     core::PointerEvent moveEv;
     moveEv.action = core::PointerAction::Move;
     moveEv.x = centerX;
@@ -62,13 +99,16 @@ McpActionResult clickElement(core::dsl::Runtime& runtime, const std::string& ele
     res.message = "Pointer click dispatched to element '" + elementId + "' at (" +
                   std::to_string(static_cast<int>(centerX)) + ", " +
                   std::to_string(static_cast<int>(centerY)) + ")";
+    if (isOccluded) {
+        res.message += " (warning: element was occluded by '" + res.occludedBy + "')";
+    }
     return res;
 }
 
-McpActionResult clickMark(core::dsl::Runtime& runtime, int markIndex, const std::vector<McpInteractiveElement>& marks) {
+McpActionResult clickMark(core::dsl::Runtime& runtime, int markIndex, const std::vector<McpInteractiveElement>& marks, bool force) {
     for (const auto& mark : marks) {
         if (mark.markIndex == markIndex) {
-            return clickElement(runtime, mark.id);
+            return clickElement(runtime, mark.id, force);
         }
     }
     McpActionResult res;

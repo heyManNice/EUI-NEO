@@ -377,6 +377,37 @@ def handle_cli_call(args, extra_args):
     bridge.start()
 
     # Parse extra key-value arguments: --key value or --flag
+def run_single_cli_action(bridge, tool_name, tool_args, output_file=None):
+    res = bridge.execute_tool(tool_name, tool_args)
+    if "error" in res:
+        sys.stderr.write(f"Error ({res['error'].get('code')}): {res['error'].get('message')}\n")
+        return False
+
+    result_obj = res.get("result", {})
+    contents = result_obj.get("content", [])
+    for c in contents:
+        ctype = c.get("type")
+        if ctype == "text":
+            text = c.get("text", "")
+            try:
+                parsed = json.loads(text)
+                print(json.dumps(parsed, indent=2, ensure_ascii=False))
+            except Exception:
+                print(text)
+        elif ctype == "image":
+            data_b64 = c.get("data", "")
+            if output_file:
+                import base64
+                img_data = base64.b64decode(data_b64)
+                with open(output_file, "wb") as f:
+                    f.write(img_data)
+                print(f"Screenshot saved to: {output_file} ({len(img_data)} bytes)")
+            else:
+                print(f"[Image captured: base64 len {len(data_b64)} chars. Use --output <file.png> to save directly]")
+    return True
+
+
+def parse_cli_kwargs(extra_args):
     tool_args = {}
     i = 0
     while i < len(extra_args):
@@ -390,60 +421,100 @@ def handle_cli_call(args, extra_args):
                 continue
             if i + 1 < len(extra_args) and not extra_args[i + 1].startswith("--"):
                 val = extra_args[i + 1]
-                # String parameters that should NEVER be converted to numbers
-                if key in ("target", "elementId", "id", "key", "text", "mode", "filePath", "path"):
-                    tool_args[key] = str(val)
-                elif val.lower() == "true":
+                if val.lower() == "true":
                     tool_args[key] = True
                 elif val.lower() == "false":
                     tool_args[key] = False
                 else:
-                    try:
-                        if "." in val:
-                            tool_args[key] = float(val)
-                        else:
-                            tool_args[key] = int(val)
-                    except ValueError:
-                        tool_args[key] = val
+                    tool_args[key] = val
                 i += 2
             else:
-                # Boolean flag
                 tool_args[key] = True
                 i += 1
         else:
             i += 1
+    return tool_args
 
-    tool_name = args.tool
-    res = bridge.execute_tool(tool_name, tool_args)
 
-    if "error" in res:
-        sys.stderr.write(f"Error ({res['error'].get('code')}): {res['error'].get('message')}\n")
+def handle_cli_call(args, extra_args):
+    """Direct single-line CLI tool execution."""
+    auto_spawn = False if getattr(args, "readonly", False) else not args.no_spawn
+    if getattr(args, "spawn", False):
+        auto_spawn = True
+
+    bridge = McpBridge(
+        port=args.port,
+        app_path=args.app,
+        auto_spawn=auto_spawn,
+        daemon=True,
+    )
+    bridge.start()
+
+    tool_args = parse_cli_kwargs(extra_args)
+    if not run_single_cli_action(bridge, args.tool, tool_args, getattr(args, "output", None)):
         sys.exit(1)
 
-    result_obj = res.get("result", {})
-    contents = result_obj.get("content", [])
 
-    for c in contents:
-        ctype = c.get("type")
-        if ctype == "text":
-            text = c.get("text", "")
-            # If the text is JSON, try pretty-printing it if compact is not requested
-            try:
-                parsed = json.loads(text)
-                print(json.dumps(parsed, indent=2, ensure_ascii=False))
-            except Exception:
-                print(text)
-        elif ctype == "image":
-            data_b64 = c.get("data", "")
-            out_file = getattr(args, "output", None)
-            if out_file:
-                import base64
-                img_data = base64.b64decode(data_b64)
-                with open(out_file, "wb") as f:
-                    f.write(img_data)
-                print(f"Screenshot saved to: {out_file} ({len(img_data)} bytes)")
-            else:
-                print(f"[Image captured: base64 len {len(data_b64)} chars. Use --output <file.png> to save directly]")
+def handle_batch_mode(args):
+    """Runs interactive or piped batch actions over a single persistent bridge connection."""
+    bridge = McpBridge(
+        port=args.port,
+        app_path=args.app,
+        auto_spawn=not args.no_spawn,
+        daemon=True,
+    )
+    bridge.start()
+    log(f"Batch mode ready on port {bridge.port}. Enter commands (snapshot, click <target>, fill <target> <text>, press <key>, shot <out.png>, sync_refs, or call <tool> [--key val]):")
+
+    for line in sys.stdin:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line in ("exit", "quit", "q"):
+            break
+
+        import shlex
+        parts = shlex.split(line)
+        if not parts:
+            continue
+        cmd = parts[0]
+        sub_args = parts[1:]
+
+        if cmd == "snapshot":
+            kw = parse_cli_kwargs(sub_args)
+            run_single_cli_action(bridge, "take_snapshot", kw)
+        elif cmd == "click" and len(sub_args) >= 1:
+            target = sub_args[0]
+            kw = parse_cli_kwargs(sub_args[1:])
+            kw["target"] = target
+            run_single_cli_action(bridge, "click_element", kw)
+        elif cmd == "fill" and len(sub_args) >= 2:
+            target = sub_args[0]
+            text = sub_args[1]
+            kw = parse_cli_kwargs(sub_args[2:])
+            kw["target"] = target
+            kw["text"] = text
+            if "mode" not in kw:
+                kw["mode"] = "replace"
+            run_single_cli_action(bridge, "input_text", kw)
+        elif cmd == "press" and len(sub_args) >= 1:
+            key = sub_args[0]
+            kw = parse_cli_kwargs(sub_args[1:])
+            kw["key"] = key
+            run_single_cli_action(bridge, "press_key", kw)
+        elif cmd == "shot":
+            out_file = sub_args[0] if sub_args else "eui_screenshot.png"
+            abs_out = str(pathlib.Path(out_file).resolve())
+            run_single_cli_action(bridge, "capture_viewport", {"filePath": abs_out}, abs_out)
+        elif cmd == "sync_refs":
+            run_single_cli_action(bridge, "sync_refs", {})
+        elif cmd == "call" and len(sub_args) >= 1:
+            tname = sub_args[0]
+            kw = parse_cli_kwargs(sub_args[1:])
+            run_single_cli_action(bridge, tname, kw)
+        else:
+            sys.stderr.write(f"Unknown batch command: {cmd}\n")
+    sys.exit(0)
 
 
 def main():
@@ -470,26 +541,41 @@ def main():
         action="store_true",
         help="Do not auto-spawn application if not running; only connect to existing instance.",
     )
+    parser.add_argument(
+        "--spawn",
+        action="store_true",
+        help="Force auto-spawn application if not running even for read-only commands.",
+    )
 
     subparsers = parser.add_subparsers(dest="subcommand", help="Subcommand to run")
 
     # Top-level direct shortcuts:
-    subparsers.add_parser("snapshot", help="Take accessibility text snapshot")
-    
+    snap_p = subparsers.add_parser("snapshot", help="Take accessibility text snapshot")
+    snap_p.add_argument("--interactiveOnly", action="store_true", help="Include only interactive elements")
+    snap_p.add_argument("--maxDepth", type=int, default=16, help="Maximum hierarchy tree depth (default: 16)")
+
     click_p = subparsers.add_parser("click", help="Click an element (e.g. click e2 or click <id>)")
     click_p.add_argument("target", type=str, help="Target ref handle (e.g. e2) or element ID")
+    click_p.add_argument("--force", action="store_true", help="Force click even if element is disabled or occluded")
+    click_p.add_argument("--includeSnapshot", action="store_true", help="Include fresh snapshot in response")
     
     fill_p = subparsers.add_parser("fill", help="Fill/replace text in an element (e.g. fill e5 'Beijing')")
     fill_p.add_argument("target", type=str, help="Target ref handle (e.g. e5) or element ID")
     fill_p.add_argument("text", type=str, help="Text to input")
     fill_p.add_argument("--append", action="store_true", help="Append text instead of replace")
+    fill_p.add_argument("--includeSnapshot", action="store_true", help="Include fresh snapshot in response")
 
     press_p = subparsers.add_parser("press", help="Press keyboard key (e.g. press Enter)")
     press_p.add_argument("key", type=str, help="Key name (Enter, Backspace, Escape, Tab, etc.)")
     press_p.add_argument("--target", type=str, default="", help="Target ref handle or element ID")
+    press_p.add_argument("--includeSnapshot", action="store_true", help="Include fresh snapshot in response")
 
     shot_p = subparsers.add_parser("shot", help="Take viewport screenshot and save to disk")
     shot_p.add_argument("--out", type=str, default="eui_screenshot.png", help="Output PNG file path (default: eui_screenshot.png)")
+
+    subparsers.add_parser("sync-refs", help="Synchronize ref handles baseline without full tree token re-read")
+
+    subparsers.add_parser("batch", help="Run batch interactive or piped commands over a single bridge process")
 
     subparsers.add_parser("stop", help="Stop background running EUI-NEO application")
 
@@ -521,44 +607,74 @@ def main():
             print("No active EUI MCP server found.")
             sys.exit(1)
 
+    if args.subcommand == "batch":
+        handle_batch_mode(args)
+        return
+
     if args.subcommand == "snapshot":
         args.tool = "take_snapshot"
         args.output = None
+        args.readonly = True
+        extra_args = []
+        if getattr(args, "interactiveOnly", False):
+            extra_args.append("--interactiveOnly")
+        if getattr(args, "maxDepth", 16) != 16:
+            extra_args += ["--maxDepth", str(args.maxDepth)]
         handle_cli_call(args, extra_args)
         return
 
     if args.subcommand == "click":
         args.tool = "click_element"
         args.output = None
-        extra_args = ["--target", args.target] + extra_args
+        args.readonly = False
+        click_flags = ["--target", args.target]
+        if getattr(args, "force", False):
+            click_flags.append("--force")
+        if getattr(args, "includeSnapshot", False):
+            click_flags.append("--includeSnapshot")
+        extra_args = click_flags + extra_args
         handle_cli_call(args, extra_args)
         return
 
     if args.subcommand == "fill":
         args.tool = "input_text"
         args.output = None
+        args.readonly = False
         mode = "append" if args.append else "replace"
-        extra_args = ["--target", args.target, "--text", args.text, "--mode", mode] + extra_args
+        fill_flags = ["--target", args.target, "--text", args.text, "--mode", mode]
+        if getattr(args, "includeSnapshot", False):
+            fill_flags.append("--includeSnapshot")
+        extra_args = fill_flags + extra_args
         handle_cli_call(args, extra_args)
         return
 
     if args.subcommand == "press":
         args.tool = "press_key"
         args.output = None
-        extra_args = ["--key", args.key]
+        args.readonly = False
+        press_flags = ["--key", args.key]
         if args.target:
-            extra_args += ["--target", args.target]
+            press_flags += ["--target", args.target]
+        if getattr(args, "includeSnapshot", False):
+            press_flags.append("--includeSnapshot")
+        extra_args = press_flags + extra_args
         handle_cli_call(args, extra_args)
         return
 
     if args.subcommand == "shot":
         args.tool = "capture_viewport"
-        # Resolved here, where the caller's working directory is the one meant: the server writes
-        # the file and its own directory is the application's, not this one.
+        args.readonly = True
         out_path = str(pathlib.Path(args.out).resolve())
         args.output = out_path
         extra_args = ["--filePath", out_path]
         handle_cli_call(args, extra_args)
+        return
+
+    if args.subcommand == "sync-refs":
+        args.tool = "sync_refs"
+        args.output = None
+        args.readonly = False
+        handle_cli_call(args, [])
         return
 
     if args.subcommand == "stop":
@@ -570,15 +686,11 @@ def main():
         sys.exit(0)
 
     if args.subcommand == "restart":
-        # The pair a rebuild needs: the running binary holds its own file, so the old instance has
-        # to go before the build writes, and something has to bring the new one up afterwards.
         stopped, pid, port = stop_running_app()
         if stopped:
             print(f"Stopped EUI-NEO application (PID: {pid}, Port: {port})")
         else:
             print("No active EUI-NEO application found to stop.")
-        # daemon=True, like every other CLI entry point: without it the bridge registers its own
-        # cleanup on exit and kills the application it was just asked to leave running.
         bridge = McpBridge(port=args.port, app_path=args.app, auto_spawn=True, daemon=True)
         bridge.start()
         launched = bridge.spawned_proc.pid if bridge.spawned_proc is not None else "attached"
@@ -586,6 +698,7 @@ def main():
         sys.exit(0)
 
     if args.subcommand == "call":
+        args.readonly = False
         handle_cli_call(args, extra_args)
         return
 

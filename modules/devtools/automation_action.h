@@ -13,13 +13,14 @@ struct McpActionResult {
     bool success = false;
     std::string message;
     core::Rect targetBounds{};
+    std::string occludedBy;
 };
 
 // Clicks on an element by its ID (dispatches PointerMove, PointerPress, and PointerRelease at element center)
-McpActionResult clickElement(core::dsl::Runtime& runtime, const std::string& elementId);
+McpActionResult clickElement(core::dsl::Runtime& runtime, const std::string& elementId, bool force = false);
 
 // Clicks on an element by its Set-of-Mark index from a list of interactive elements
-McpActionResult clickMark(core::dsl::Runtime& runtime, int markIndex, const std::vector<McpInteractiveElement>& marks);
+McpActionResult clickMark(core::dsl::Runtime& runtime, int markIndex, const std::vector<McpInteractiveElement>& marks, bool force = false);
 
 // Injects text input into an element (or active focused element).
 // mode can be "replace" (default clears existing text before inputting) or "append".

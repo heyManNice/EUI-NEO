@@ -415,81 +415,112 @@ static void appendUtf8CodePoint(std::string& out, uint32_t cp) {
 }
 
 // Minimal JSON parser helpers
-std::string extractJsonString(const std::string& json, const std::string& key) {
-    std::string pattern = "\"" + key + "\"";
-    std::size_t pos = 0;
-    while ((pos = json.find(pattern, pos)) != std::string::npos) {
-        // Ensure this pattern is a key (preceded by { or , or whitespace) and followed by ':'
-        bool validPre = (pos == 0) || (json[pos - 1] == '{' || json[pos - 1] == ',' ||
-                                      json[pos - 1] == ' ' || json[pos - 1] == '\t' ||
-                                      json[pos - 1] == '\r' || json[pos - 1] == '\n');
-        std::size_t afterKey = pos + pattern.length();
-        while (afterKey < json.length() && (json[afterKey] == ' ' || json[afterKey] == '\t' || json[afterKey] == '\r' || json[afterKey] == '\n')) {
-            afterKey++;
-        }
-        if (validPre && afterKey < json.length() && json[afterKey] == ':') {
-            afterKey++; // skip ':'
-            while (afterKey < json.length() && (json[afterKey] == ' ' || json[afterKey] == '\t' || json[afterKey] == '\r' || json[afterKey] == '\n')) {
-                afterKey++;
+// Find top-level or matching object property key, skipping string literals and nested scopes appropriately
+static std::size_t findJsonKeyPosition(const std::string& json, const std::string& key) {
+    const std::string pattern = "\"" + key + "\"";
+    bool inStr = false;
+
+    for (std::size_t i = 0; i < json.length(); ++i) {
+        char c = json[i];
+        if (inStr) {
+            if (c == '\\') {
+                i++; // skip next escaped character
+                continue;
             }
-            if (afterKey >= json.length() || json[afterKey] != '"') return {};
-            afterKey++; // skip opening '"'
-            std::string result;
-            bool escape = false;
-            while (afterKey < json.length()) {
-                char c = json[afterKey++];
-                if (escape) {
-                    if (c == '"') result += '"';
-                    else if (c == '\\') result += '\\';
-                    else if (c == '/') result += '/';
-                    else if (c == 'b') result += '\b';
-                    else if (c == 'f') result += '\f';
-                    else if (c == 'n') result += '\n';
-                    else if (c == 'r') result += '\r';
-                    else if (c == 't') result += '\t';
-                    else if (c == 'u') {
-                        std::size_t hexStart = afterKey;
-                        int cp = parse4Hex(json, hexStart);
-                        if (cp >= 0) {
-                            afterKey = hexStart;
-                            // Check for surrogate pairs: high surrogate 0xD800..0xDBFF followed by \uDC00..0xDFFF
-                            if (cp >= 0xD800 && cp <= 0xDBFF) {
-                                if (afterKey + 6 <= json.length() && json[afterKey] == '\\' && json[afterKey + 1] == 'u') {
-                                    std::size_t nextIdx = afterKey + 2;
-                                    int low = parse4Hex(json, nextIdx);
-                                    if (low >= 0xDC00 && low <= 0xDFFF) {
-                                        afterKey = nextIdx;
-                                        uint32_t fullCp = 0x10000 + (((cp - 0xD800) << 10) | (low - 0xDC00));
-                                        appendUtf8CodePoint(result, fullCp);
-                                    } else {
-                                        appendUtf8CodePoint(result, static_cast<uint32_t>(cp));
-                                    }
-                                } else {
-                                    appendUtf8CodePoint(result, static_cast<uint32_t>(cp));
-                                }
+            if (c == '"') {
+                inStr = false;
+            }
+            continue;
+        }
+
+        if (c == '"') {
+            if (i + pattern.length() <= json.length() && json.compare(i, pattern.length(), pattern) == 0) {
+                std::size_t afterKey = i + pattern.length();
+                while (afterKey < json.length() && (json[afterKey] == ' ' || json[afterKey] == '\t' ||
+                                                    json[afterKey] == '\r' || json[afterKey] == '\n')) {
+                    afterKey++;
+                }
+                if (afterKey < json.length() && json[afterKey] == ':') {
+                    return i;
+                }
+            }
+            inStr = true;
+        }
+    }
+    return std::string::npos;
+}
+
+// Minimal JSON parser helpers with string-awareness
+std::string extractJsonString(const std::string& json, const std::string& key) {
+    std::size_t pos = findJsonKeyPosition(json, key);
+    if (pos == std::string::npos) return {};
+
+    std::string pattern = "\"" + key + "\"";
+    std::size_t afterKey = pos + pattern.length();
+    while (afterKey < json.length() && (json[afterKey] == ' ' || json[afterKey] == '\t' ||
+                                        json[afterKey] == '\r' || json[afterKey] == '\n')) {
+        afterKey++;
+    }
+    if (afterKey >= json.length() || json[afterKey] != ':') return {};
+    afterKey++; // skip ':'
+    while (afterKey < json.length() && (json[afterKey] == ' ' || json[afterKey] == '\t' ||
+                                        json[afterKey] == '\r' || json[afterKey] == '\n')) {
+        afterKey++;
+    }
+    if (afterKey >= json.length() || json[afterKey] != '"') return {};
+    afterKey++; // skip opening '"'
+
+    std::string result;
+    bool escape = false;
+    while (afterKey < json.length()) {
+        char c = json[afterKey++];
+        if (escape) {
+            if (c == '"') result += '"';
+            else if (c == '\\') result += '\\';
+            else if (c == '/') result += '/';
+            else if (c == 'b') result += '\b';
+            else if (c == 'f') result += '\f';
+            else if (c == 'n') result += '\n';
+            else if (c == 'r') result += '\r';
+            else if (c == 't') result += '\t';
+            else if (c == 'u') {
+                std::size_t hexStart = afterKey;
+                int cp = parse4Hex(json, hexStart);
+                if (cp >= 0) {
+                    afterKey = hexStart;
+                    if (cp >= 0xD800 && cp <= 0xDBFF) {
+                        if (afterKey + 6 <= json.length() && json[afterKey] == '\\' && json[afterKey + 1] == 'u') {
+                            std::size_t nextIdx = afterKey + 2;
+                            int low = parse4Hex(json, nextIdx);
+                            if (low >= 0xDC00 && low <= 0xDFFF) {
+                                afterKey = nextIdx;
+                                uint32_t fullCp = 0x10000 + (((cp - 0xD800) << 10) | (low - 0xDC00));
+                                appendUtf8CodePoint(result, fullCp);
                             } else {
                                 appendUtf8CodePoint(result, static_cast<uint32_t>(cp));
                             }
                         } else {
-                            result += 'u';
+                            appendUtf8CodePoint(result, static_cast<uint32_t>(cp));
                         }
                     } else {
-                        result += c;
+                        appendUtf8CodePoint(result, static_cast<uint32_t>(cp));
                     }
-                    escape = false;
-                } else if (c == '\\') {
-                    escape = true;
-                } else if (c == '"') {
-                    return result;
                 } else {
-                    result += c;
+                    result += 'u';
                 }
+            } else {
+                result += c;
             }
+            escape = false;
+        } else if (c == '\\') {
+            escape = true;
+        } else if (c == '"') {
             return result;
+        } else {
+            result += c;
         }
-        pos += pattern.length();
     }
-    return {};
+    return result;
 }
 
 // Extracts string if quoted, or number / identifier token as string if unquoted (e.g. "target": 1 -> "1")
@@ -497,44 +528,56 @@ std::string extractJsonStringOrToken(const std::string& json, const std::string&
     std::string s = extractJsonString(json, key);
     if (!s.empty()) return s;
 
+    std::size_t pos = findJsonKeyPosition(json, key);
+    if (pos == std::string::npos) return {};
+
     std::string pattern = "\"" + key + "\"";
-    std::size_t pos = 0;
-    while ((pos = json.find(pattern, pos)) != std::string::npos) {
-        bool validPre = (pos == 0) || (json[pos - 1] == '{' || json[pos - 1] == ',' ||
-                                      json[pos - 1] == ' ' || json[pos - 1] == '\t' ||
-                                      json[pos - 1] == '\r' || json[pos - 1] == '\n');
-        std::size_t afterKey = pos + pattern.length();
-        while (afterKey < json.length() && (json[afterKey] == ' ' || json[afterKey] == '\t' || json[afterKey] == '\r' || json[afterKey] == '\n')) {
+    std::size_t afterKey = pos + pattern.length();
+    while (afterKey < json.length() && (json[afterKey] == ' ' || json[afterKey] == '\t' ||
+                                        json[afterKey] == '\r' || json[afterKey] == '\n')) {
+        afterKey++;
+    }
+    if (afterKey >= json.length() || json[afterKey] != ':') return {};
+    afterKey++; // skip ':'
+    while (afterKey < json.length() && (json[afterKey] == ' ' || json[afterKey] == '\t' ||
+                                        json[afterKey] == '\r' || json[afterKey] == '\n')) {
+        afterKey++;
+    }
+    if (afterKey < json.length() && json[afterKey] != '"' && json[afterKey] != '{' && json[afterKey] != '[') {
+        std::size_t start = afterKey;
+        while (afterKey < json.length() && json[afterKey] != ',' && json[afterKey] != '}' && json[afterKey] != ']' &&
+               json[afterKey] != ' ' && json[afterKey] != '\t' && json[afterKey] != '\r' && json[afterKey] != '\n') {
             afterKey++;
         }
-        if (validPre && afterKey < json.length() && json[afterKey] == ':') {
-            afterKey++; // skip ':'
-            while (afterKey < json.length() && (json[afterKey] == ' ' || json[afterKey] == '\t' || json[afterKey] == '\r' || json[afterKey] == '\n')) {
-                afterKey++;
-            }
-            if (afterKey < json.length() && json[afterKey] != '"' && json[afterKey] != '{' && json[afterKey] != '[') {
-                std::size_t start = afterKey;
-                while (afterKey < json.length() && json[afterKey] != ',' && json[afterKey] != '}' && json[afterKey] != ']' &&
-                       json[afterKey] != ' ' && json[afterKey] != '\t' && json[afterKey] != '\r' && json[afterKey] != '\n') {
-                    afterKey++;
-                }
-                return json.substr(start, afterKey - start);
-            }
-        }
-        pos += pattern.length();
+        return json.substr(start, afterKey - start);
     }
     return {};
 }
 
+// Extracts numeric value whether serialized as bare number or quoted string (e.g. "port": 8080 or "port": "8080")
 double extractJsonNumber(const std::string& json, const std::string& key, double defaultVal = 0.0) {
-    std::string pattern = "\"" + key + "\"";
-    std::size_t pos = json.find(pattern);
+    std::size_t pos = findJsonKeyPosition(json, key);
     if (pos == std::string::npos) return defaultVal;
+
+    std::string pattern = "\"" + key + "\"";
     pos += pattern.length();
     while (pos < json.length() && (json[pos] == ' ' || json[pos] == ':' || json[pos] == '\t' || json[pos] == '\r' || json[pos] == '\n')) {
         pos++;
     }
     if (pos >= json.length()) return defaultVal;
+
+    // Handle quoted numeric string
+    if (json[pos] == '"') {
+        pos++;
+        std::size_t start = pos;
+        if (pos < json.length() && (json[pos] == '-' || json[pos] == '+')) pos++;
+        while (pos < json.length() && (std::isdigit(static_cast<unsigned char>(json[pos])) || json[pos] == '.' || json[pos] == 'e' || json[pos] == 'E' || json[pos] == '-')) {
+            pos++;
+        }
+        if (pos == start) return defaultVal;
+        return std::atof(json.substr(start, pos - start).c_str());
+    }
+
     std::size_t start = pos;
     if (json[pos] == '-' || json[pos] == '+') pos++;
     while (pos < json.length() && (std::isdigit(static_cast<unsigned char>(json[pos])) || json[pos] == '.' || json[pos] == 'e' || json[pos] == 'E' || json[pos] == '-')) {
@@ -545,9 +588,10 @@ double extractJsonNumber(const std::string& json, const std::string& key, double
 }
 
 bool extractJsonBool(const std::string& json, const std::string& key, bool defaultVal = false) {
-    std::string pattern = "\"" + key + "\"";
-    std::size_t pos = json.find(pattern);
+    std::size_t pos = findJsonKeyPosition(json, key);
     if (pos == std::string::npos) return defaultVal;
+
+    std::string pattern = "\"" + key + "\"";
     pos += pattern.length();
     while (pos < json.length() && (json[pos] == ' ' || json[pos] == ':' || json[pos] == '\t' || json[pos] == '\r' || json[pos] == '\n')) {
         pos++;
@@ -558,14 +602,16 @@ bool extractJsonBool(const std::string& json, const std::string& key, bool defau
 }
 
 std::string extractJsonObject(const std::string& json, const std::string& key) {
-    std::string pattern = "\"" + key + "\"";
-    std::size_t pos = json.find(pattern);
+    std::size_t pos = findJsonKeyPosition(json, key);
     if (pos == std::string::npos) return {};
+
+    std::string pattern = "\"" + key + "\"";
     pos += pattern.length();
     while (pos < json.length() && (json[pos] == ' ' || json[pos] == ':' || json[pos] == '\t' || json[pos] == '\r' || json[pos] == '\n')) {
         pos++;
     }
     if (pos >= json.length() || json[pos] != '{') return {};
+
     int depth = 0;
     std::size_t start = pos;
     bool inStr = false;
@@ -1154,14 +1200,22 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             std::string target = extractJsonStringOrToken(arguments, "target");
             if (target.empty()) target = extractJsonStringOrToken(arguments, "elementId");
             if (target.empty()) target = extractJsonStringOrToken(arguments, "id");
+            bool force = extractJsonBool(arguments, "force", false);
+            bool adoptRefs = extractJsonBool(arguments, "adoptRefs", true);
             std::string realId = resolveTarget(rt, target);
-            auto res = clickElement(*rt, realId);
+            auto res = clickElement(*rt, realId, force);
             syncUiFrameAfterAction(rt);
+            if (adoptRefs) {
+                rememberSnapshotRefs(*rt);
+            }
             bool incSnap = extractJsonBool(arguments, "includeSnapshot", false);
             std::ostringstream ss;
             ss << "{\"success\":" << (res.success ? "true" : "false")
                << ",\"revision\":" << s_uiRevision.load()
                << ",\"message\":\"" << escapeJson(res.message) << "\"";
+            if (!res.occludedBy.empty()) {
+                ss << ",\"occludedBy\":\"" << escapeJson(res.occludedBy) << "\"";
+            }
             ss << actionDiffField();
             if (incSnap) {
                 ss << ",\"snapshot\":\"" << escapeJson(takeSnapshotTrackingRefs(*rt, false)) << "\"";
@@ -1175,14 +1229,22 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
             int markIdx = static_cast<int>(extractJsonNumber(arguments, "markIndex", 0.0));
+            bool force = extractJsonBool(arguments, "force", false);
+            bool adoptRefs = extractJsonBool(arguments, "adoptRefs", true);
             auto marks = extractInteractiveElements(*rt, true);
-            auto res = clickMark(*rt, markIdx, marks);
+            auto res = clickMark(*rt, markIdx, marks, force);
             syncUiFrameAfterAction(rt);
+            if (adoptRefs) {
+                rememberSnapshotRefs(*rt);
+            }
             bool incSnap = extractJsonBool(arguments, "includeSnapshot", false);
             std::ostringstream ss;
             ss << "{\"success\":" << (res.success ? "true" : "false")
                << ",\"revision\":" << s_uiRevision.load()
                << ",\"message\":\"" << escapeJson(res.message) << "\"";
+            if (!res.occludedBy.empty()) {
+                ss << ",\"occludedBy\":\"" << escapeJson(res.occludedBy) << "\"";
+            }
             ss << actionDiffField();
             if (incSnap) {
                 ss << ",\"snapshot\":\"" << escapeJson(takeSnapshotTrackingRefs(*rt, false)) << "\"";
@@ -1205,8 +1267,12 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
                 mode = "replace"; // Default to replace mode to avoid duplicate concatenated text
             }
             bool clearFirst = extractJsonBool(arguments, "clearFirst", false);
+            bool adoptRefs = extractJsonBool(arguments, "adoptRefs", true);
             auto res = inputText(*rt, realId, text, mode, clearFirst);
             syncUiFrameAfterAction(rt);
+            if (adoptRefs) {
+                rememberSnapshotRefs(*rt);
+            }
             bool incSnap = extractJsonBool(arguments, "includeSnapshot", false);
             std::ostringstream ss;
             ss << "{\"success\":" << (res.success ? "true" : "false")
@@ -1232,8 +1298,12 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             bool ctrl = extractJsonBool(arguments, "ctrl", false);
             bool shift = extractJsonBool(arguments, "shift", false);
             bool alt = extractJsonBool(arguments, "alt", false);
+            bool adoptRefs = extractJsonBool(arguments, "adoptRefs", true);
             auto res = pressKey(*rt, realId, keyName, ctrl, shift, alt);
             syncUiFrameAfterAction(rt);
+            if (adoptRefs) {
+                rememberSnapshotRefs(*rt);
+            }
             bool incSnap = extractJsonBool(arguments, "includeSnapshot", false);
             std::ostringstream ss;
             ss << "{\"success\":" << (res.success ? "true" : "false")
@@ -1388,6 +1458,17 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             std::ostringstream ss;
             ss << "{\"success\":" << (ok ? "true" : "false")
                << ",\"elementId\":\"" << escapeJson(elementId) << "\"}";
+            return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
+        }
+
+        if (toolName == "sync_refs") {
+            if (rt == nullptr) {
+                return makeJsonRpcError(idStr, -32000, "No active page runtime available");
+            }
+            rememberSnapshotRefs(*rt);
+            std::ostringstream ss;
+            ss << "{\"success\":true,\"revision\":" << s_uiRevision.load()
+               << ",\"message\":\"Reference baseline synchronized successfully without re-reading the tree\"}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
         }
 

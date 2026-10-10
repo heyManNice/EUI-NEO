@@ -252,13 +252,38 @@ int main() {
         std::string callPressResp = modules::devtools::handleMcpJsonRpcRequest(callPressKey, &runtime);
         assert(callPressResp.find("success") != std::string::npos && callPressResp.find("true") != std::string::npos);
 
-        // Verify takeSnapshot interactiveOnly filtering
+        // Verify takeSnapshot interactiveOnly filtering and element id presence
         std::string fullSnap = modules::devtools::takeSnapshot(runtime, false);
         std::string interactiveSnap = modules::devtools::takeSnapshot(runtime, true);
         assert(fullSnap.find("- text \"东京\"") != std::string::npos);
+        assert(fullSnap.find("[id=\"test_page.title_txt\"]") != std::string::npos);
         assert(interactiveSnap.find("- text \"东京\"") == std::string::npos);
 
-        std::cout << "[PASS] MCP JSON-RPC protocol methods (ping, init, tools/list, unicode \\uXXXX, numeric handle, press_key focus) passed" << std::endl;
+        // Test string-aware JSON tokenizer: parameter inside string literal should NOT hijack true target
+        std::string trickyJson = "{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"tools/call\",\"params\":{\"name\":\"click_element\",\"arguments\":{\"text\":\",\\\"target\\\":\\\"missing_fake\\\"\",\"target\":\"test_page.btn_click\"}}}";
+        std::string trickyResp = modules::devtools::handleMcpJsonRpcRequest(trickyJson, &runtime);
+        assert(trickyResp.find("success") != std::string::npos && trickyResp.find("true") != std::string::npos);
+
+        // Test disabled element rejection and --force override
+        core::dsl::Element* btnEl = runtime.findElement("test_page.btn_click");
+        assert(btnEl != nullptr);
+        btnEl->disabled = true;
+        std::string callDisabled = "{\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"tools/call\",\"params\":{\"name\":\"click_element\",\"arguments\":{\"target\":\"test_page.btn_click\"}}}";
+        std::string disResp = modules::devtools::handleMcpJsonRpcRequest(callDisabled, &runtime);
+        assert(disResp.find("success") != std::string::npos && disResp.find("false") != std::string::npos);
+        assert(disResp.find("disabled") != std::string::npos);
+
+        std::string callForce = "{\"jsonrpc\":\"2.0\",\"id\":12,\"method\":\"tools/call\",\"params\":{\"name\":\"click_element\",\"arguments\":{\"target\":\"test_page.btn_click\",\"force\":true}}}";
+        std::string forceResp = modules::devtools::handleMcpJsonRpcRequest(callForce, &runtime);
+        assert(forceResp.find("success") != std::string::npos && forceResp.find("true") != std::string::npos);
+        btnEl->disabled = false;
+
+        // Test sync_refs tool
+        std::string callSyncRefs = "{\"jsonrpc\":\"2.0\",\"id\":13,\"method\":\"tools/call\",\"params\":{\"name\":\"sync_refs\",\"arguments\":{}}}";
+        std::string syncResp = modules::devtools::handleMcpJsonRpcRequest(callSyncRefs, &runtime);
+        assert(syncResp.find("success") != std::string::npos && syncResp.find("true") != std::string::npos);
+
+        std::cout << "[PASS] MCP JSON-RPC protocol methods (ping, init, tools/list, unicode \\uXXXX, numeric handle, press_key focus, disabled check, JSON string isolation, sync_refs) passed" << std::endl;
     }
 
     // 6. Test MCP Server Start & Stop Lifecycle

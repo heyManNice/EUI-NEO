@@ -35,7 +35,7 @@ std::string describeScreen(const core::dsl::Runtime& runtime);
 
 // Returns indentation-based text accessibility snapshot with short handles (#eN) and semantic roles
 // If interactiveOnly is true, non-interactive purely layout elements are skipped
-std::string takeSnapshot(const core::dsl::Runtime& runtime, bool interactiveOnly = true, int maxDepth = 16);
+std::string takeSnapshot(const core::dsl::Runtime& runtime, bool interactiveOnly = false, int maxDepth = 16);
 
 // Returns element tree JSON hierarchy with filtering support
 std::string extractElementTreeJson(const core::dsl::Runtime& runtime, int maxDepth = 32, bool compact = false, bool interactiveOnly = false);

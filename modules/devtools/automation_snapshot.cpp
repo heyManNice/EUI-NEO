@@ -585,6 +585,7 @@ struct SnapshotTreeBuilder {
             if (mark->disabled) flags += " [disabled]";
             if (mark->focusable) flags += " [focusable]";
             if (!focusedId.empty() && el.id == focusedId) flags += " [focused]";
+            if (!mark->id.empty()) flags += " [id=\"" + escapeJson(mark->id) + "\"]";
             flags += " [ref=e" + std::to_string(mark->markIndex) + "]";
         } else if (isText) {
             // Avoid duplicate label print if this text equals parentLabel or siblingLastEmitted
@@ -592,6 +593,7 @@ struct SnapshotTreeBuilder {
                 emitLine = true;
                 role = "text";
                 label = el.text;
+                if (!el.id.empty()) flags += " [id=\"" + escapeJson(el.id) + "\"]";
             }
         } else if (isContainer) {
             if (depth == 0) {
@@ -602,6 +604,7 @@ struct SnapshotTreeBuilder {
                 emitLine = true;
                 role = "card";
                 label = findSubtreeText(el);
+                if (!el.id.empty()) flags += " [id=\"" + escapeJson(el.id) + "\"]";
             } else if (el.kind == core::dsl::ElementKind::Stack || el.kind == core::dsl::ElementKind::Row || el.kind == core::dsl::ElementKind::Column) {
                 if (el.id.find(".wrap") == std::string::npos && el.id.find(".hit") == std::string::npos && el.id.find(".bg") == std::string::npos) {
                     emitLine = true;
@@ -650,7 +653,7 @@ std::string takeSnapshot(const core::dsl::Runtime& runtime, bool interactiveOnly
 
     std::ostringstream ss;
     ss << "=== Accessibility Snapshot ===\n";
-    ss << "Interactive elements: " << marks.size() << " (address actions using target=[ref=eN] or 'eN')\n\n";
+    ss << "Interactive elements: " << marks.size() << " (address actions using target=[ref=eN], 'eN', or stable id)\n\n";
 
     SnapshotTreeBuilder builder{
         marksMap,
