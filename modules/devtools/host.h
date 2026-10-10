@@ -16,8 +16,12 @@
 #include <condition_variable>
 #include <deque>
 #include <functional>
+#include <future>
 #include <mutex>
 #include <string>
+#include <thread>
+#include <type_traits>
+#include <vector>
 
 namespace modules::devtools {
 
@@ -134,6 +138,7 @@ public:
     void openDevtools(DevtoolsTab initialTab = DevtoolsTab::Mcp);
     void setTab(DevtoolsTab tab);
     core::dsl::Runtime* pageRuntime() const { return session_.page; }
+    bool hasPage() const { return session_.page != nullptr; }
     bool modifyElementProperty(const std::string& id, ElementField field, const FieldValue& value);
     void cacheRenderFramebuffer(int width, int height, std::vector<unsigned char> rgba);
     // What dates the cached frame. Every frame cached bumps it, so a caller that is about to
@@ -159,6 +164,45 @@ public:
     int framebufferHeight() const { return framebufferHeight_; }
     std::uint64_t frameSequence() const;
     bool waitForFrame(std::uint64_t targetSequence, std::chrono::milliseconds timeout = std::chrono::milliseconds(1200));
+
+    // Schedules tasks to run on the application thread during frame updates, ensuring
+    // thread-safe reads and mutations of the DSL element tree.
+    void postAppTask(std::function<void()> task);
+    void executePendingAppTasks();
+
+    template <typename F>
+    auto runOnAppThread(F&& fn) -> decltype(fn()) {
+        using ResultType = decltype(fn());
+        if (!hasPage() || appThreadId_ == std::thread::id() || std::this_thread::get_id() == appThreadId_) {
+            return fn();
+        }
+
+        auto promise = std::make_shared<std::promise<ResultType>>();
+        auto future = promise->get_future();
+
+        postAppTask([promise, fn = std::forward<F>(fn)]() mutable {
+            try {
+                if constexpr (std::is_void_v<ResultType>) {
+                    fn();
+                    promise->set_value();
+                } else {
+                    promise->set_value(fn());
+                }
+            } catch (...) {
+                promise->set_exception(std::current_exception());
+            }
+        });
+
+        if (future.wait_for(std::chrono::seconds(5)) == std::future_status::ready) {
+            return future.get();
+        }
+
+        if constexpr (std::is_void_v<ResultType>) {
+            return;
+        } else {
+            return ResultType{};
+        }
+    }
 
 private:
     // Everything the panel knows about the page it is attached to, and everything it wrote
@@ -212,7 +256,6 @@ private:
     void publishPickedElement();
     void applyElementPropertyEdits();
 
-    bool hasPage() const { return session_.page != nullptr; }
     // Takes the panel's hooks off the page it is wired to, so that page stops calling it.
     void unhookPage();
     // The panel's preferences (dock, size, tab, expansion) kept in its own runtime; the
@@ -294,6 +337,10 @@ private:
     mutable std::mutex frameMutex_;
     std::condition_variable frameCv_;
     std::uint64_t frameSequence_ = 0;
+
+    std::thread::id appThreadId_{};
+    mutable std::mutex appTaskMutex_;
+    std::vector<std::function<void()>> pendingAppTasks_;
 };
 
 } // namespace modules::devtools

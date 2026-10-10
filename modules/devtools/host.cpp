@@ -41,8 +41,8 @@ namespace {
 // The panel host lives for the whole process and is deliberately never destroyed: the hooks
 // point at it, while the session that owns them is a file scope object in the application and
 // is therefore destroyed *after* it. One leaked object at exit is what keeps that ordering
-// from writing into freed storage. What belongs to one run â€?the panel runtime, its state, the
-// preview primitive â€?is released by `shutdown()`, not by this object going away.
+// from writing into freed storage. What belongs to one run ï¿½?the panel runtime, its state, the
+// preview primitive ï¿½?is released by `shutdown()`, not by this object going away.
 DevtoolsHost& devtoolsHost() {
     static DevtoolsHost* host = new DevtoolsHost();
     return *host;
@@ -204,12 +204,13 @@ void detachDevtoolsHost() {
 
 void DevtoolsHost::attach(core::dsl::Runtime* page, const app::detail::OverlayWindows& windows) {
     // A new page is attached, and the previous one is let go first, hooks and all: a page the
-    // panel no longer inspects must not keep calling it. That page has to be alive â€?a page is
+    // panel no longer inspects must not keep calling it. That page has to be alive ï¿½?a page is
     // detached before it is destroyed, which is the order the app layer keeps.
     unhookPage();
     session_ = PageSession{};
     session_.page = page;
     session_.windows = windows;
+    appThreadId_ = std::this_thread::get_id();
     if (page == nullptr) {
         return;
     }
@@ -249,6 +250,8 @@ void DevtoolsHost::attach(core::dsl::Runtime* page, const app::detail::OverlayWi
 }
 
 void DevtoolsHost::detach() {
+    executePendingAppTasks();
+    appThreadId_ = std::thread::id();
     // One whole session goes away: the page pointer, the windows, everything the panel
     // wrote on it, everything it copied from it and the pick in progress. The panel's own
     // preferences are not in here and survive to be used on the next page.
@@ -275,7 +278,7 @@ void DevtoolsHost::unhookPage() {
 //
 // The state is reached through the last compose, so a panel that never composed has none to
 // forget, and a panel whose state is unreachable keeps a selection the next page does not
-// have â€?which the area that shows it reads as "nothing selected". The clearing is not
+// have ï¿½?which the area that shows it reads as "nothing selected". The clearing is not
 // deferred to the next compose: it would then throw away what the user did in between.
 void DevtoolsHost::forgetPageSelection() {
     composeRequested_ = true;
@@ -291,6 +294,7 @@ void DevtoolsHost::forgetPageSelection() {
 }
 
 bool DevtoolsHost::frame(int framebufferWidth, int framebufferHeight, float dpiScale, float deltaSeconds) {
+    executePendingAppTasks();
     // One frame of the panel, in the order the two sides depend on:
     //
     //   1. the tree of this frame, so the panel composes against what the user sees
@@ -1531,6 +1535,28 @@ std::uint64_t DevtoolsHost::frameSequence() const {
 bool DevtoolsHost::waitForFrame(std::uint64_t targetSequence, std::chrono::milliseconds timeout) {
     std::unique_lock<std::mutex> lock(frameMutex_);
     return frameCv_.wait_for(lock, timeout, [&] { return frameSequence_ >= targetSequence; });
+}
+
+
+void DevtoolsHost::postAppTask(std::function<void()> task) {
+    {
+        std::lock_guard<std::mutex> lock(appTaskMutex_);
+        pendingAppTasks_.push_back(std::move(task));
+    }
+    core::platform::requestUiUpdate();
+}
+
+void DevtoolsHost::executePendingAppTasks() {
+    std::vector<std::function<void()>> tasks;
+    {
+        std::lock_guard<std::mutex> lock(appTaskMutex_);
+        tasks.swap(pendingAppTasks_);
+    }
+    for (auto& task : tasks) {
+        if (task) {
+            task();
+        }
+    }
 }
 
 } // namespace modules::devtools

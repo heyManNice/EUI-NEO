@@ -366,17 +366,6 @@ class McpBridge:
             return {"jsonrpc": "2.0", "id": "cli_call", "error": {"code": -32603, "message": str(e)}}
 
 
-def handle_cli_call(args, extra_args):
-    """Direct single-line CLI tool execution."""
-    bridge = McpBridge(
-        port=args.port,
-        app_path=args.app,
-        auto_spawn=not args.no_spawn,
-        daemon=True,
-    )
-    bridge.start()
-
-    # Parse extra key-value arguments: --key value or --flag
 def run_single_cli_action(bridge, tool_name, tool_args, output_file=None):
     res = bridge.execute_tool(tool_name, tool_args)
     if "error" in res:
@@ -438,8 +427,13 @@ def parse_cli_kwargs(extra_args):
 
 def handle_cli_call(args, extra_args):
     """Direct single-line CLI tool execution."""
+    spawn_requested = getattr(args, "spawn", False)
+    if "--spawn" in extra_args:
+        spawn_requested = True
+        extra_args.remove("--spawn")
+
     auto_spawn = False if getattr(args, "readonly", False) else not args.no_spawn
-    if getattr(args, "spawn", False):
+    if spawn_requested:
         auto_spawn = True
 
     bridge = McpBridge(
@@ -448,7 +442,11 @@ def handle_cli_call(args, extra_args):
         auto_spawn=auto_spawn,
         daemon=True,
     )
-    bridge.start()
+    try:
+        bridge.start()
+    except RuntimeError as e:
+        sys.stderr.write(f"Error: {e}\n")
+        sys.exit(1)
 
     tool_args = parse_cli_kwargs(extra_args)
     if not run_single_cli_action(bridge, args.tool, tool_args, getattr(args, "output", None)):
@@ -463,7 +461,11 @@ def handle_batch_mode(args):
         auto_spawn=not args.no_spawn,
         daemon=True,
     )
-    bridge.start()
+    try:
+        bridge.start()
+    except RuntimeError as e:
+        sys.stderr.write(f"Error: {e}\n")
+        sys.exit(1)
     log(f"Batch mode ready on port {bridge.port}. Enter commands (snapshot, click <target>, fill <target> <text>, press <key>, shot <out.png>, sync_refs, or call <tool> [--key val]):")
 
     for line in sys.stdin:
@@ -506,7 +508,7 @@ def handle_batch_mode(args):
             out_file = sub_args[0] if sub_args else "eui_screenshot.png"
             abs_out = str(pathlib.Path(out_file).resolve())
             run_single_cli_action(bridge, "capture_viewport", {"filePath": abs_out}, abs_out)
-        elif cmd == "sync_refs":
+        elif cmd in ("sync_refs", "sync-refs"):
             run_single_cli_action(bridge, "sync_refs", {})
         elif cmd == "call" and len(sub_args) >= 1:
             tname = sub_args[0]
@@ -551,26 +553,31 @@ def main():
 
     # Top-level direct shortcuts:
     snap_p = subparsers.add_parser("snapshot", help="Take accessibility text snapshot")
+    snap_p.add_argument("--spawn", action="store_true", help="Launch application if not currently running")
     snap_p.add_argument("--interactiveOnly", action="store_true", help="Include only interactive elements")
     snap_p.add_argument("--maxDepth", type=int, default=16, help="Maximum hierarchy tree depth (default: 16)")
 
     click_p = subparsers.add_parser("click", help="Click an element (e.g. click e2 or click <id>)")
     click_p.add_argument("target", type=str, help="Target ref handle (e.g. e2) or element ID")
     click_p.add_argument("--force", action="store_true", help="Force click even if element is disabled or occluded")
+    click_p.add_argument("--adoptRefs", action="store_true", help="Advance stale-ref baseline after executing action (default: false)")
     click_p.add_argument("--includeSnapshot", action="store_true", help="Include fresh snapshot in response")
     
     fill_p = subparsers.add_parser("fill", help="Fill/replace text in an element (e.g. fill e5 'Beijing')")
     fill_p.add_argument("target", type=str, help="Target ref handle (e.g. e5) or element ID")
     fill_p.add_argument("text", type=str, help="Text to input")
     fill_p.add_argument("--append", action="store_true", help="Append text instead of replace")
+    fill_p.add_argument("--adoptRefs", action="store_true", help="Advance stale-ref baseline after executing action (default: false)")
     fill_p.add_argument("--includeSnapshot", action="store_true", help="Include fresh snapshot in response")
 
     press_p = subparsers.add_parser("press", help="Press keyboard key (e.g. press Enter)")
     press_p.add_argument("key", type=str, help="Key name (Enter, Backspace, Escape, Tab, etc.)")
     press_p.add_argument("--target", type=str, default="", help="Target ref handle or element ID")
+    press_p.add_argument("--adoptRefs", action="store_true", help="Advance stale-ref baseline after executing action (default: false)")
     press_p.add_argument("--includeSnapshot", action="store_true", help="Include fresh snapshot in response")
 
     shot_p = subparsers.add_parser("shot", help="Take viewport screenshot and save to disk")
+    shot_p.add_argument("--spawn", action="store_true", help="Launch application if not currently running")
     shot_p.add_argument("--out", type=str, default="eui_screenshot.png", help="Output PNG file path (default: eui_screenshot.png)")
 
     subparsers.add_parser("sync-refs", help="Synchronize ref handles baseline without full tree token re-read")
@@ -614,7 +621,7 @@ def main():
     if args.subcommand == "snapshot":
         args.tool = "take_snapshot"
         args.output = None
-        args.readonly = True
+        args.readonly = not getattr(args, "spawn", False)
         extra_args = []
         if getattr(args, "interactiveOnly", False):
             extra_args.append("--interactiveOnly")
@@ -630,6 +637,8 @@ def main():
         click_flags = ["--target", args.target]
         if getattr(args, "force", False):
             click_flags.append("--force")
+        if getattr(args, "adoptRefs", False):
+            click_flags.append("--adoptRefs")
         if getattr(args, "includeSnapshot", False):
             click_flags.append("--includeSnapshot")
         extra_args = click_flags + extra_args
@@ -642,6 +651,8 @@ def main():
         args.readonly = False
         mode = "append" if args.append else "replace"
         fill_flags = ["--target", args.target, "--text", args.text, "--mode", mode]
+        if getattr(args, "adoptRefs", False):
+            fill_flags.append("--adoptRefs")
         if getattr(args, "includeSnapshot", False):
             fill_flags.append("--includeSnapshot")
         extra_args = fill_flags + extra_args
@@ -655,6 +666,8 @@ def main():
         press_flags = ["--key", args.key]
         if args.target:
             press_flags += ["--target", args.target]
+        if getattr(args, "adoptRefs", False):
+            press_flags.append("--adoptRefs")
         if getattr(args, "includeSnapshot", False):
             press_flags.append("--includeSnapshot")
         extra_args = press_flags + extra_args
@@ -663,7 +676,7 @@ def main():
 
     if args.subcommand == "shot":
         args.tool = "capture_viewport"
-        args.readonly = True
+        args.readonly = not getattr(args, "spawn", False)
         out_path = str(pathlib.Path(args.out).resolve())
         args.output = out_path
         extra_args = ["--filePath", out_path]

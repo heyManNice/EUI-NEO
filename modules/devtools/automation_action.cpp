@@ -32,7 +32,8 @@ McpActionResult clickElement(core::dsl::Runtime& runtime, const std::string& ele
     const double centerY = static_cast<double>(bounds.y + bounds.height * 0.5f);
 
     // Hit testing / occlusion check: check what element would receive a pointer event at this point
-    auto hitChain = runtime.hitTestChain(static_cast<float>(centerX), static_cast<float>(centerY), 1.0f);
+    const float dpi = runtime.lastPointerDpiScale() > 0.0f ? runtime.lastPointerDpiScale() : 1.0f;
+    auto hitChain = runtime.hitTestChain(static_cast<float>(centerX), static_cast<float>(centerY), dpi);
     std::string hitTarget;
     for (const auto& entry : hitChain) {
         if (entry.interactive && !entry.disabled) {

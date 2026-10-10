@@ -222,6 +222,9 @@ int main() {
         assert(listResp.find("click_element") != std::string::npos);
         assert(listResp.find("input_text") != std::string::npos);
         assert(listResp.find("modify_element_property") != std::string::npos);
+        assert(listResp.find("sync_refs") != std::string::npos);
+        assert(listResp.find("force") != std::string::npos);
+        assert(listResp.find("adoptRefs") != std::string::npos);
 
         // tools/call: extract_element_tree
         std::string callTreeReq = "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"extract_element_tree\",\"arguments\":{}}}";
@@ -276,6 +279,11 @@ int main() {
         std::string callForce = "{\"jsonrpc\":\"2.0\",\"id\":12,\"method\":\"tools/call\",\"params\":{\"name\":\"click_element\",\"arguments\":{\"target\":\"test_page.btn_click\",\"force\":true}}}";
         std::string forceResp = modules::devtools::handleMcpJsonRpcRequest(callForce, &runtime);
         assert(forceResp.find("success") != std::string::npos && forceResp.find("true") != std::string::npos);
+
+        // Test quoted string boolean recognition: "force": "true"
+        std::string callQuotedForce = "{\"jsonrpc\":\"2.0\",\"id\":120,\"method\":\"tools/call\",\"params\":{\"name\":\"click_element\",\"arguments\":{\"target\":\"test_page.btn_click\",\"force\":\"true\"}}}";
+        std::string quotedForceResp = modules::devtools::handleMcpJsonRpcRequest(callQuotedForce, &runtime);
+        assert(quotedForceResp.find("success") != std::string::npos && quotedForceResp.find("true") != std::string::npos);
         btnEl->disabled = false;
 
         // Test sync_refs tool

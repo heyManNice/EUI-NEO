@@ -156,6 +156,17 @@ std::string takeSnapshotTrackingRefs(core::dsl::Runtime& runtime, bool interacti
     return takeSnapshot(runtime, interactiveOnly, maxDepth);
 }
 
+template <typename F>
+auto runOnAppThread(core::dsl::Runtime* rt, F&& fn) -> decltype(fn()) {
+#if defined(EUI_TOOLING)
+    DevtoolsHost& host = devtoolsHostInstance();
+    if (rt != nullptr && host.hasPage() && rt == host.pageRuntime()) {
+        return host.runOnAppThread(std::forward<F>(fn));
+    }
+#endif
+    return fn();
+}
+
 void syncUiFrameAfterAction(core::dsl::Runtime* rt) {
     s_uiRevision.fetch_add(1, std::memory_order_relaxed);
     core::platform::requestUiUpdate();
@@ -596,8 +607,11 @@ bool extractJsonBool(const std::string& json, const std::string& key, bool defau
     while (pos < json.length() && (json[pos] == ' ' || json[pos] == ':' || json[pos] == '\t' || json[pos] == '\r' || json[pos] == '\n')) {
         pos++;
     }
-    if (pos + 4 <= json.length() && json.substr(pos, 4) == "true") return true;
-    if (pos + 5 <= json.length() && json.substr(pos, 5) == "false") return false;
+    if (pos < json.length() && json[pos] == '"') {
+        pos++;
+    }
+    if (pos + 4 <= json.length() && json.compare(pos, 4, "true") == 0) return true;
+    if (pos + 5 <= json.length() && json.compare(pos, 5, "false") == 0) return false;
     return defaultVal;
 }
 
@@ -830,24 +844,33 @@ const char* kMcpToolsListJson =
       "}"
     "},"
     "{"
+      "\"name\":\"sync_refs\","
+      "\"description\":\"Advance the stale-ref baseline to the current screen state without returning the full tree, saving tokens. Call this after receiving action diffs to accept new ref positions.\","
+      "\"inputSchema\":{\"type\":\"object\"}"
+    "},"
+    "{"
       "\"name\":\"click_element\","
-      "\"description\":\"Simulate user click action on target element by ID or short handle (e.g. 'e2' or 'clock.city.add.hit'). The reply reports what changed in a \"diff\" field; a reply without one changed nothing.\","
+      "\"description\":\"Simulate user click action on target element by ID or short handle (e.g. 'e2' or 'clock.city.add.hit'). The reply reports what changed in a \\\"diff\\\" field; a reply without one changed nothing.\","
       "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
           "\"target\":{\"type\":\"string\",\"description\":\"Target element ID or ref handle (e.g. 'e2' or 'clock.button')\"},"
           "\"elementId\":{\"type\":\"string\",\"description\":\"Alternative name for target\"},"
+          "\"force\":{\"type\":\"boolean\",\"description\":\"Bypass disabled check and occlusion/z-order check (default false)\"},"
+          "\"adoptRefs\":{\"type\":\"boolean\",\"description\":\"Advance stale-ref baseline after executing this action (default false)\"},"
           "\"includeSnapshot\":{\"type\":\"boolean\",\"description\":\"Include updated text snapshot in response (default false)\"}"
         "}"
       "}"
     "},"
     "{"
       "\"name\":\"click_mark\","
-      "\"description\":\"Simulate user click action on target element by its Set-of-Mark index (from get_interactive_marks or describe_screen). The reply reports what changed in a \"diff\" field; a reply without one changed nothing.\","
+      "\"description\":\"Simulate user click action on target element by its Set-of-Mark index (from get_interactive_marks or describe_screen). The reply reports what changed in a \\\"diff\\\" field; a reply without one changed nothing.\","
       "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
           "\"markIndex\":{\"type\":\"number\",\"description\":\"Mark index number (1-based)\"},"
+          "\"force\":{\"type\":\"boolean\",\"description\":\"Bypass disabled check and occlusion/z-order check (default false)\"},"
+          "\"adoptRefs\":{\"type\":\"boolean\",\"description\":\"Advance stale-ref baseline after executing this action (default false)\"},"
           "\"includeSnapshot\":{\"type\":\"boolean\",\"description\":\"Include updated text snapshot in response (default false)\"}"
         "},"
         "\"required\":[\"markIndex\"]"
@@ -855,7 +878,7 @@ const char* kMcpToolsListJson =
     "},"
     "{"
       "\"name\":\"input_text\","
-      "\"description\":\"Inject text into target element by ID, ref handle ('e2'), or active focus. Supports replace mode (default) to replace existing content cleanly, or append mode. The reply reports what changed in a \"diff\" field; a reply without one changed nothing.\","
+      "\"description\":\"Inject text into target element by ID, ref handle ('e2'), or active focus. Supports replace mode (default) to replace existing content cleanly, or append mode. The reply reports what changed in a \\\"diff\\\" field; a reply without one changed nothing.\","
       "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
@@ -864,6 +887,7 @@ const char* kMcpToolsListJson =
           "\"text\":{\"type\":\"string\",\"description\":\"Text content to input\"},"
           "\"mode\":{\"type\":\"string\",\"enum\":[\"replace\",\"append\"],\"description\":\"'replace' (default) clears text first; 'append' adds to end\"},"
           "\"clearFirst\":{\"type\":\"boolean\",\"description\":\"Explicitly clear input before typing (default false)\"},"
+          "\"adoptRefs\":{\"type\":\"boolean\",\"description\":\"Advance stale-ref baseline after executing this action (default false)\"},"
           "\"includeSnapshot\":{\"type\":\"boolean\",\"description\":\"Include updated text snapshot in response (default false)\"}"
         "},"
         "\"required\":[\"text\"]"
@@ -871,7 +895,7 @@ const char* kMcpToolsListJson =
     "},"
     "{"
       "\"name\":\"press_key\","
-      "\"description\":\"Dispatch a keyboard key event (e.g. Enter, Backspace, Escape, Tab, Up, Down, Left, Right). The reply reports what changed in a \"diff\" field; a reply without one changed nothing.\","
+      "\"description\":\"Dispatch a keyboard key event (e.g. Enter, Backspace, Escape, Tab, Up, Down, Left, Right). The reply reports what changed in a \\\"diff\\\" field; a reply without one changed nothing.\","
       "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
@@ -881,6 +905,7 @@ const char* kMcpToolsListJson =
           "\"ctrl\":{\"type\":\"boolean\",\"description\":\"Ctrl modifier flag (default false)\"},"
           "\"shift\":{\"type\":\"boolean\",\"description\":\"Shift modifier flag (default false)\"},"
           "\"alt\":{\"type\":\"boolean\",\"description\":\"Alt modifier flag (default false)\"},"
+          "\"adoptRefs\":{\"type\":\"boolean\",\"description\":\"Advance stale-ref baseline after executing this action (default false)\"},"
           "\"includeSnapshot\":{\"type\":\"boolean\",\"description\":\"Include updated text snapshot in response (default false)\"}"
         "},"
         "\"required\":[\"key\"]"
@@ -888,25 +913,29 @@ const char* kMcpToolsListJson =
     "},"
     "{"
       "\"name\":\"focus_element\","
-      "\"description\":\"Set keyboard focus on target element by ID or ref handle. The reply reports what changed in a \"diff\" field; a reply without one changed nothing.\","
+      "\"description\":\"Set keyboard focus on target element by ID or ref handle. The reply reports what changed in a \\\"diff\\\" field; a reply without one changed nothing.\","
       "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
           "\"target\":{\"type\":\"string\",\"description\":\"Target element ID or ref handle (e.g. 'e5')\"},"
-          "\"elementId\":{\"type\":\"string\",\"description\":\"Alternative name for target\"}"
+          "\"elementId\":{\"type\":\"string\",\"description\":\"Alternative name for target\"},"
+          "\"adoptRefs\":{\"type\":\"boolean\",\"description\":\"Advance stale-ref baseline after executing this action (default false)\"},"
+          "\"includeSnapshot\":{\"type\":\"boolean\",\"description\":\"Include updated text snapshot in response (default false)\"}"
         "}"
       "}"
     "},"
     "{"
       "\"name\":\"scroll_element\","
-      "\"description\":\"Dispatch a scroll delta to the nearest scrollable element at or above the target. The pointer is moved over the target first, so the scroll reaches that element. Fails when the target is missing, disabled, or has no scrollable element at or above it. Without a target the delta goes to the current pointer position. The reply reports what changed in a \"diff\" field; a reply without one changed nothing.\","
+      "\"description\":\"Dispatch a scroll delta to the nearest scrollable element at or above the target. The pointer is moved over the target first, so the scroll reaches that element. Fails when the target is missing, disabled, or has no scrollable element at or above it. Without a target the delta goes to the current pointer position. The reply reports what changed in a \\\"diff\\\" field; a reply without one changed nothing.\","
       "\"inputSchema\":{"
         "\"type\":\"object\","
         "\"properties\":{"
           "\"target\":{\"type\":\"string\",\"description\":\"Target container element ID or ref handle. Scrolled element is the nearest scroll host at or above it\"},"
           "\"elementId\":{\"type\":\"string\",\"description\":\"Alternative name for target\"},"
           "\"deltaX\":{\"type\":\"number\",\"description\":\"Horizontal scroll delta\"},"
-          "\"deltaY\":{\"type\":\"number\",\"description\":\"Vertical scroll delta\"}"
+          "\"deltaY\":{\"type\":\"number\",\"description\":\"Vertical scroll delta\"},"
+          "\"adoptRefs\":{\"type\":\"boolean\",\"description\":\"Advance stale-ref baseline after executing this action (default false)\"},"
+          "\"includeSnapshot\":{\"type\":\"boolean\",\"description\":\"Include updated text snapshot in response (default false)\"}"
         "},"
         "\"required\":[\"deltaY\"]"
       "}"
@@ -1109,7 +1138,7 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
         // A handle is a position in the set of interactive elements, so one held across a change
         // to that set names something else now. Checked before any tool runs, so no action lands
         // on an element the caller never saw.
-        if (const std::string drift = refDriftError(rt, arguments); !drift.empty()) {
+        if (const std::string drift = runOnAppThread(rt, [&] { return refDriftError(rt, arguments); }); !drift.empty()) {
             return makeJsonRpcError(idStr, -32000, drift);
         }
 
@@ -1121,13 +1150,15 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
                                     toolName == "scroll_element" || toolName == "focus_element";
         std::vector<ActionStateEntry> stateBeforeAction;
         if (changesThePage && rt != nullptr) {
-            stateBeforeAction = captureActionState(*rt);
+            stateBeforeAction = runOnAppThread(rt, [&] { return captureActionState(*rt); });
         }
         const auto actionDiffField = [&]() -> std::string {
             if (!changesThePage || rt == nullptr) {
                 return {};
             }
-            const std::string diff = actionDiffJson(stateBeforeAction, captureActionState(*rt));
+            const std::string diff = runOnAppThread(rt, [&] {
+                return actionDiffJson(stateBeforeAction, captureActionState(*rt));
+            });
             return diff.empty() ? std::string{} : (",\"diff\":" + diff);
         };
 
@@ -1135,12 +1166,24 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             return makeJsonRpcResponse(idStr, makeMcpTextContent(appStatusJson()));
         }
 
+        if (toolName == "sync_refs") {
+            if (rt == nullptr) {
+                return makeJsonRpcError(idStr, -32000, "No active page runtime available");
+            }
+            runOnAppThread(rt, [&] {
+                rememberSnapshotRefs(*rt);
+            });
+            return makeJsonRpcResponse(idStr, makeMcpTextContent("{\"success\":true}"));
+        }
+
         if (toolName == "describe_screen") {
             if (rt == nullptr) {
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
-            rememberSnapshotRefs(*rt);
-            std::string desc = describeScreen(*rt);
+            std::string desc = runOnAppThread(rt, [&] {
+                rememberSnapshotRefs(*rt);
+                return describeScreen(*rt);
+            });
             return makeJsonRpcResponse(idStr, makeMcpTextContent(desc));
         }
 
@@ -1150,7 +1193,9 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             }
             bool interactiveOnly = extractJsonBool(arguments, "interactiveOnly", false);
             int maxDepth = static_cast<int>(extractJsonNumber(arguments, "maxDepth", 16.0));
-            std::string snap = takeSnapshotTrackingRefs(*rt, interactiveOnly, maxDepth);
+            std::string snap = runOnAppThread(rt, [&] {
+                return takeSnapshotTrackingRefs(*rt, interactiveOnly, maxDepth);
+            });
             return makeJsonRpcResponse(idStr, makeMcpTextContent(snap));
         }
 
@@ -1161,7 +1206,9 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             int maxDepth = static_cast<int>(extractJsonNumber(arguments, "maxDepth", 32.0));
             bool compact = extractJsonBool(arguments, "compact", false);
             bool interactiveOnly = extractJsonBool(arguments, "interactiveOnly", false);
-            std::string treeJson = extractElementTreeJson(*rt, maxDepth, compact, interactiveOnly);
+            std::string treeJson = runOnAppThread(rt, [&] {
+                return extractElementTreeJson(*rt, maxDepth, compact, interactiveOnly);
+            });
             return makeJsonRpcResponse(idStr, makeMcpTextContent(treeJson));
         }
 
@@ -1175,8 +1222,10 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             if (target.empty()) {
                 return makeJsonRpcError(idStr, -32602, "Missing target or elementId argument");
             }
-            std::string realId = resolveTarget(rt, target);
-            std::string detailsJson = extractElementDetailsJson(*rt, realId);
+            std::string detailsJson = runOnAppThread(rt, [&] {
+                std::string realId = resolveTarget(rt, target);
+                return extractElementDetailsJson(*rt, realId);
+            });
             return makeJsonRpcResponse(idStr, makeMcpTextContent(detailsJson));
         }
 
@@ -1185,11 +1234,13 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
                 return makeJsonRpcError(idStr, -32000, "No active page runtime available");
             }
             bool onlyVisible = extractJsonBool(arguments, "onlyVisible", true);
-            if (onlyVisible) {
-                rememberSnapshotRefs(*rt);
-            }
-            auto marks = extractInteractiveElements(*rt, onlyVisible);
-            std::string marksJson = formatInteractiveElementsJson(marks);
+            std::string marksJson = runOnAppThread(rt, [&] {
+                if (onlyVisible) {
+                    rememberSnapshotRefs(*rt);
+                }
+                auto marks = extractInteractiveElements(*rt, onlyVisible);
+                return formatInteractiveElementsJson(marks);
+            });
             return makeJsonRpcResponse(idStr, makeMcpTextContent(marksJson));
         }
 
@@ -1201,12 +1252,14 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             if (target.empty()) target = extractJsonStringOrToken(arguments, "elementId");
             if (target.empty()) target = extractJsonStringOrToken(arguments, "id");
             bool force = extractJsonBool(arguments, "force", false);
-            bool adoptRefs = extractJsonBool(arguments, "adoptRefs", true);
-            std::string realId = resolveTarget(rt, target);
-            auto res = clickElement(*rt, realId, force);
+            bool adoptRefs = extractJsonBool(arguments, "adoptRefs", false);
+            auto res = runOnAppThread(rt, [&] {
+                std::string realId = resolveTarget(rt, target);
+                return clickElement(*rt, realId, force);
+            });
             syncUiFrameAfterAction(rt);
             if (adoptRefs) {
-                rememberSnapshotRefs(*rt);
+                runOnAppThread(rt, [&] { rememberSnapshotRefs(*rt); });
             }
             bool incSnap = extractJsonBool(arguments, "includeSnapshot", false);
             std::ostringstream ss;
@@ -1218,7 +1271,8 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             }
             ss << actionDiffField();
             if (incSnap) {
-                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshotTrackingRefs(*rt, false)) << "\"";
+                std::string snapText = runOnAppThread(rt, [&] { return takeSnapshotTrackingRefs(*rt, false); });
+                ss << ",\"snapshot\":\"" << escapeJson(snapText) << "\"";
             }
             ss << "}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
@@ -1230,12 +1284,14 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             }
             int markIdx = static_cast<int>(extractJsonNumber(arguments, "markIndex", 0.0));
             bool force = extractJsonBool(arguments, "force", false);
-            bool adoptRefs = extractJsonBool(arguments, "adoptRefs", true);
-            auto marks = extractInteractiveElements(*rt, true);
-            auto res = clickMark(*rt, markIdx, marks, force);
+            bool adoptRefs = extractJsonBool(arguments, "adoptRefs", false);
+            auto res = runOnAppThread(rt, [&] {
+                auto marks = extractInteractiveElements(*rt, true);
+                return clickMark(*rt, markIdx, marks, force);
+            });
             syncUiFrameAfterAction(rt);
             if (adoptRefs) {
-                rememberSnapshotRefs(*rt);
+                runOnAppThread(rt, [&] { rememberSnapshotRefs(*rt); });
             }
             bool incSnap = extractJsonBool(arguments, "includeSnapshot", false);
             std::ostringstream ss;
@@ -1247,7 +1303,8 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             }
             ss << actionDiffField();
             if (incSnap) {
-                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshotTrackingRefs(*rt, false)) << "\"";
+                std::string snapText = runOnAppThread(rt, [&] { return takeSnapshotTrackingRefs(*rt, false); });
+                ss << ",\"snapshot\":\"" << escapeJson(snapText) << "\"";
             }
             ss << "}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
@@ -1260,18 +1317,20 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             std::string target = extractJsonStringOrToken(arguments, "target");
             if (target.empty()) target = extractJsonStringOrToken(arguments, "elementId");
             if (target.empty()) target = extractJsonStringOrToken(arguments, "id");
-            std::string realId = resolveTarget(rt, target);
             std::string text = extractJsonString(arguments, "text");
             std::string mode = extractJsonString(arguments, "mode");
             if (mode.empty()) {
                 mode = "replace"; // Default to replace mode to avoid duplicate concatenated text
             }
             bool clearFirst = extractJsonBool(arguments, "clearFirst", false);
-            bool adoptRefs = extractJsonBool(arguments, "adoptRefs", true);
-            auto res = inputText(*rt, realId, text, mode, clearFirst);
+            bool adoptRefs = extractJsonBool(arguments, "adoptRefs", false);
+            auto res = runOnAppThread(rt, [&] {
+                std::string realId = resolveTarget(rt, target);
+                return inputText(*rt, realId, text, mode, clearFirst);
+            });
             syncUiFrameAfterAction(rt);
             if (adoptRefs) {
-                rememberSnapshotRefs(*rt);
+                runOnAppThread(rt, [&] { rememberSnapshotRefs(*rt); });
             }
             bool incSnap = extractJsonBool(arguments, "includeSnapshot", false);
             std::ostringstream ss;
@@ -1280,7 +1339,8 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
                << ",\"message\":\"" << escapeJson(res.message) << "\"";
             ss << actionDiffField();
             if (incSnap) {
-                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshotTrackingRefs(*rt, false)) << "\"";
+                std::string snapText = runOnAppThread(rt, [&] { return takeSnapshotTrackingRefs(*rt, false); });
+                ss << ",\"snapshot\":\"" << escapeJson(snapText) << "\"";
             }
             ss << "}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
@@ -1294,15 +1354,17 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             std::string target = extractJsonStringOrToken(arguments, "target");
             if (target.empty()) target = extractJsonStringOrToken(arguments, "elementId");
             if (target.empty()) target = extractJsonStringOrToken(arguments, "id");
-            std::string realId = resolveTarget(rt, target);
             bool ctrl = extractJsonBool(arguments, "ctrl", false);
             bool shift = extractJsonBool(arguments, "shift", false);
             bool alt = extractJsonBool(arguments, "alt", false);
-            bool adoptRefs = extractJsonBool(arguments, "adoptRefs", true);
-            auto res = pressKey(*rt, realId, keyName, ctrl, shift, alt);
+            bool adoptRefs = extractJsonBool(arguments, "adoptRefs", false);
+            auto res = runOnAppThread(rt, [&] {
+                std::string realId = resolveTarget(rt, target);
+                return pressKey(*rt, realId, keyName, ctrl, shift, alt);
+            });
             syncUiFrameAfterAction(rt);
             if (adoptRefs) {
-                rememberSnapshotRefs(*rt);
+                runOnAppThread(rt, [&] { rememberSnapshotRefs(*rt); });
             }
             bool incSnap = extractJsonBool(arguments, "includeSnapshot", false);
             std::ostringstream ss;
@@ -1311,7 +1373,8 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
                << ",\"message\":\"" << escapeJson(res.message) << "\"";
             ss << actionDiffField();
             if (incSnap) {
-                ss << ",\"snapshot\":\"" << escapeJson(takeSnapshotTrackingRefs(*rt, false)) << "\"";
+                std::string snapText = runOnAppThread(rt, [&] { return takeSnapshotTrackingRefs(*rt, false); });
+                ss << ",\"snapshot\":\"" << escapeJson(snapText) << "\"";
             }
             ss << "}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
@@ -1324,14 +1387,25 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             std::string target = extractJsonStringOrToken(arguments, "target");
             if (target.empty()) target = extractJsonStringOrToken(arguments, "elementId");
             if (target.empty()) target = extractJsonStringOrToken(arguments, "id");
-            std::string realId = resolveTarget(rt, target);
-            auto res = focusElement(*rt, realId);
+            bool adoptRefs = extractJsonBool(arguments, "adoptRefs", false);
+            auto res = runOnAppThread(rt, [&] {
+                std::string realId = resolveTarget(rt, target);
+                return focusElement(*rt, realId);
+            });
             syncUiFrameAfterAction(rt);
+            if (adoptRefs) {
+                runOnAppThread(rt, [&] { rememberSnapshotRefs(*rt); });
+            }
+            bool incSnap = extractJsonBool(arguments, "includeSnapshot", false);
             std::ostringstream ss;
             ss << "{\"success\":" << (res.success ? "true" : "false")
                << ",\"revision\":" << s_uiRevision.load()
                << ",\"message\":\"" << escapeJson(res.message) << "\"";
             ss << actionDiffField();
+            if (incSnap) {
+                std::string snapText = runOnAppThread(rt, [&] { return takeSnapshotTrackingRefs(*rt, false); });
+                ss << ",\"snapshot\":\"" << escapeJson(snapText) << "\"";
+            }
             ss << "}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
         }
@@ -1343,16 +1417,27 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             std::string target = extractJsonStringOrToken(arguments, "target");
             if (target.empty()) target = extractJsonStringOrToken(arguments, "elementId");
             if (target.empty()) target = extractJsonStringOrToken(arguments, "id");
-            std::string realId = resolveTarget(rt, target);
             float deltaX = static_cast<float>(extractJsonNumber(arguments, "deltaX", 0.0));
             float deltaY = static_cast<float>(extractJsonNumber(arguments, "deltaY", 0.0));
-            auto res = scrollElement(*rt, realId, deltaX, deltaY);
+            bool adoptRefs = extractJsonBool(arguments, "adoptRefs", false);
+            auto res = runOnAppThread(rt, [&] {
+                std::string realId = resolveTarget(rt, target);
+                return scrollElement(*rt, realId, deltaX, deltaY);
+            });
             syncUiFrameAfterAction(rt);
+            if (adoptRefs) {
+                runOnAppThread(rt, [&] { rememberSnapshotRefs(*rt); });
+            }
+            bool incSnap = extractJsonBool(arguments, "includeSnapshot", false);
             std::ostringstream ss;
             ss << "{\"success\":" << (res.success ? "true" : "false")
                << ",\"revision\":" << s_uiRevision.load()
                << ",\"message\":\"" << escapeJson(res.message) << "\"";
             ss << actionDiffField();
+            if (incSnap) {
+                std::string snapText = runOnAppThread(rt, [&] { return takeSnapshotTrackingRefs(*rt, false); });
+                ss << ",\"snapshot\":\"" << escapeJson(snapText) << "\"";
+            }
             ss << "}";
             return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
         }
@@ -1394,9 +1479,11 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
             std::string target = extractJsonStringOrToken(arguments, "target");
             if (target.empty()) target = extractJsonStringOrToken(arguments, "elementId");
             if (target.empty()) target = extractJsonStringOrToken(arguments, "id");
-            std::string realId = resolveTarget(rt, target);
             float currentDpi = devtoolsHostInstance().dpiScale();
-            FramebufferImage img = captureElementScreenshot(*rt, realId, currentDpi);
+            FramebufferImage img = runOnAppThread(rt, [&] {
+                std::string realId = resolveTarget(rt, target);
+                return captureElementScreenshot(*rt, realId, currentDpi);
+            });
             if (!img.valid()) {
                 return makeJsonRpcError(idStr, -32000, "Element region capture failed or element not visible");
             }
@@ -1411,10 +1498,6 @@ static std::string handleMcpJsonRpcRequestInternal(const std::string& requestJso
                        << ",\"frameGeneration\":" << img.generation << "}";
                     return makeJsonRpcResponse(idStr, makeMcpTextContent(ss.str()));
                 } else {
-                    // A path is resolved against this process's working directory, which is not the
-                    // caller's. A relative path that works for the caller can land nowhere here, and
-                    // falling through to a base64 reply would hide that behind an image the caller
-                    // never asked to have inline.
                     return makeJsonRpcError(idStr, -32000,
                                             "Cannot write screenshot to '" + filePath +
                                                 "'; paths are resolved against the application's "
